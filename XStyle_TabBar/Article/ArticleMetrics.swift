@@ -16,6 +16,4 @@ enum ArticleMetrics {
     static let galleryCurrentDotWidth = 20.0
     static let galleryDotSpacing = 6.0
     static let galleryIndicatorPadding = 8.0
-    /// Matches a navigation bar button, and Apple's minimum tap size.
-    static let barButtonSize = 44.0
 }

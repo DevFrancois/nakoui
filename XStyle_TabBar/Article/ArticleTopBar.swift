@@ -21,7 +21,7 @@ struct ArticleTopBar: View {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
         }
-        .buttonStyle(ArticleBarButtonStyle())
+        .buttonStyle(GlassCircleButtonStyle())
         .padding(.horizontal)
     }
 

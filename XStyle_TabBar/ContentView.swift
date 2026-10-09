@@ -32,7 +32,8 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @AccessibilityFocusState private var isMenuButtonFocused: Bool
-    @Namespace private var articleNamespace
+    /// Shared by the zoom transitions into articles and quizzes.
+    @Namespace private var zoomNamespace
     private let mainTitle = "Nako"
 
     var body: some View {
@@ -97,7 +98,10 @@ struct ContentView: View {
                             .onAppear { revealSidebarRoute(route) }
                     }
                     .navigationDestination(for: Article.self) { article in
-                        ArticleView(article: article, namespace: articleNamespace)
+                        ArticleView(article: article, namespace: zoomNamespace)
+                    }
+                    .navigationDestination(for: QuizKind.self) { kind in
+                        QuizDestination(kind: kind, namespace: zoomNamespace)
                     }
             }
             .opacity(isRouteContentVisible ? 1 : 0)
@@ -122,7 +126,7 @@ struct ContentView: View {
                     FeedPage(
                         tab: tab,
                         topInset: statusBarInset + TopMenuMetrics.expandedHeight,
-                        articleNamespace: articleNamespace
+                        zoomNamespace: zoomNamespace
                     )
                         .onScrollGeometryChange(for: CGFloat.self) { geometry in
                             geometry.contentOffset.y + geometry.contentInsets.top

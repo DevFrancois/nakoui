@@ -26,6 +26,9 @@ struct AmbientGradientPalette: Equatable {
     static let meadowLight = AmbientGradientPalette(hexColors: [
         0xBDEBD0, 0xD4F0C3, 0xBBE4EA, 0xD6D6FA
     ])
+    static let lagoonMist = AmbientGradientPalette(hexColors: [
+        0xBFE6F2, 0xC9D8FF, 0xBDEFE6, 0xE6D4FA
+    ])
 
     nonisolated private static func rgb(_ hex: UInt32) -> SIMD3<Float> {
         SIMD3(

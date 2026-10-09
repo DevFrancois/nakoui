@@ -6,6 +6,7 @@ enum AppTab: String, TopMenuTab {
     case videos = "Videos"
     case articles = "Articles"
     case likes = "Likes"
+    case quizz = "Quizz"
 
     var title: String {
         rawValue
@@ -17,6 +18,7 @@ enum AppTab: String, TopMenuTab {
         case .videos: "play.square.stack"
         case .articles: "long.text.page.and.pencil"
         case .likes: "heart"
+        case .quizz: "pawprint"
         }
     }
 
@@ -26,6 +28,7 @@ enum AppTab: String, TopMenuTab {
         case .videos: .orange
         case .articles: .green
         case .likes: .pink
+        case .quizz: .teal
         }
     }
 
@@ -35,6 +38,7 @@ enum AppTab: String, TopMenuTab {
         case .videos: .peachBloom
         case .articles: .meadowLight
         case .likes: .roseDawn
+        case .quizz: .lagoonMist
         }
     }
 
