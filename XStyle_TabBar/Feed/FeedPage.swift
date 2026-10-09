@@ -10,6 +10,8 @@ struct FeedPage: View {
     /// Shared with the article and quiz destinations for the zoom transitions.
     let zoomNamespace: Namespace.ID
 
+    @State private var isShowingWhatsNew = false
+
     private static let postCount = 40
 
     var body: some View {
@@ -21,6 +23,10 @@ struct FeedPage: View {
                     QuizHub(namespace: zoomNamespace)
                 } else {
                     LazyVStack(spacing: 0) {
+                        if tab == .bookmarks {
+                            WhatsNewRow(tint: tab.tint) { isShowingWhatsNew = true }
+                        }
+
                         ForEach(1...Self.postCount, id: \.self) { number in
                             if tab == .articles {
                                 ArticleRow(article: .placeholder(number: number, tint: tab.tint), namespace: zoomNamespace)
@@ -36,5 +42,8 @@ struct FeedPage: View {
         .ignoresSafeArea(.container, edges: .top)
         .contentMargins(.top, topInset, for: .scrollContent)
         .contentMargins(.top, topInset, for: .scrollIndicators)
+        .sheet(isPresented: $isShowingWhatsNew) {
+            WhatsNewSheet()
+        }
     }
 }
