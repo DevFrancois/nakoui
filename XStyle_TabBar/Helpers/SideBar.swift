@@ -41,8 +41,10 @@ enum SidebarRoute: String, Hashable, CaseIterable {
     }
 }
 
-struct SideBar<Footer: View>: View {
+struct SideBar<QuickActions: View, Footer: View>: View {
     let onSelect: (SidebarRoute) -> Void
+    /// Under the profile, above the routes.
+    @ViewBuilder let quickActions: QuickActions
     /// Pinned to the menu's bottom edge, below the scrolling routes.
     @ViewBuilder let footer: Footer
 
@@ -50,6 +52,9 @@ struct SideBar<Footer: View>: View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 0) {
                 profileHeader
+                    .padding(.bottom, 15)
+
+                quickActions
                     .padding(.bottom, 15)
 
                 Divider()
@@ -158,8 +163,8 @@ struct SideBar<Footer: View>: View {
     }
 }
 
-extension SideBar where Footer == EmptyView {
+extension SideBar where QuickActions == EmptyView, Footer == EmptyView {
     init(onSelect: @escaping (SidebarRoute) -> Void) {
-        self.init(onSelect: onSelect) {}
+        self.init(onSelect: onSelect) {} footer: {}
     }
 }

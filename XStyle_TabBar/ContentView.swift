@@ -46,6 +46,8 @@ struct ContentView: View {
             onDismissed: sidebarDidDismiss
         ) { _ in
             SideBar(onSelect: selectSidebarRoute) {
+                SideMenuQuickActions(onOpen: openQuickAction)
+            } footer: {
                 #if DEBUG
                 ResetTasksDebugButton(action: resetTasks)
                 #endif
@@ -214,6 +216,18 @@ struct ContentView: View {
     private func voiceOverDidChange() {
         if voiceOverEnabled {
             logoCollapse.reveal()
+        }
+    }
+
+    /// Bookmarks opens like its route below; Likes closes the menu onto the
+    /// Likes page.
+    private func openQuickAction(_ action: SideMenuQuickAction) {
+        switch action {
+        case .bookmarks:
+            selectSidebarRoute(.bookmarks)
+        case .likes:
+            isSidebarExpanded = false
+            pager.select(.likes)
         }
     }
 
