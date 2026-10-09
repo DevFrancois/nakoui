@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A8D0C0DE3018F95500099B01 /* BarcodeDecoding in Frameworks */ = {isa = PBXBuildFile; productRef = A8D0C0DE3018F95500099B02 /* BarcodeDecoding */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		A815BAAA3018F95500099B0B /* XStyle_TabBar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = XStyle_TabBar.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A8D0C0DE3018F95500099B01 /* BarcodeDecoding in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -64,6 +69,9 @@
 				A815BAAC3018F95500099B0B /* XStyle_TabBar */,
 			);
 			name = XStyle_TabBar;
+			packageProductDependencies = (
+				A8D0C0DE3018F95500099B02 /* BarcodeDecoding */,
+			);
 			productName = XStyle_TabBar;
 			productReference = A815BAAA3018F95500099B0B /* XStyle_TabBar.app */;
 			productType = "com.apple.product-type.application";
@@ -92,6 +100,9 @@
 			);
 			mainGroup = A815BAA13018F95500099B0B;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A8D0C0DE3018F95500099B03 /* XCLocalSwiftPackageReference "Packages/BarcodeDecoding" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A815BAAB3018F95500099B0B /* Products */;
 			projectDirPath = "";
@@ -254,6 +265,7 @@
 				DEVELOPMENT_TEAM = TM8GM2Y6B8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Nako uses the camera to scan product barcodes.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -291,6 +303,7 @@
 				DEVELOPMENT_TEAM = TM8GM2Y6B8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Nako uses the camera to scan product barcodes.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -340,6 +353,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A8D0C0DE3018F95500099B03 /* XCLocalSwiftPackageReference "Packages/BarcodeDecoding" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/BarcodeDecoding;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A8D0C0DE3018F95500099B02 /* BarcodeDecoding */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BarcodeDecoding;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A815BAA23018F95500099B0B /* Project object */;
 }

@@ -15,6 +15,9 @@ struct ContentView: View {
     @State private var selectedTab: AppTab = .bookmarks
     /// The bottom tab bar's selection.
     @State private var rootTab: RootTab = .home
+    /// Owned here, not by the Scan tab, so this body's frequent passes during
+    /// pager scrolls never construct another one.
+    @State private var scanner = ScannerModel()
     @State private var tapTransition: TabTransition?
     @State private var pendingTab: AppTab?
     /// Holds sidebar routes and articles, so either can be pushed.
@@ -77,6 +80,12 @@ struct ContentView: View {
                             }
                     } label: {
                         Label(RootTab.home.title, systemImage: RootTab.home.symbol)
+                    }
+
+                    Tab(value: RootTab.scanner) {
+                        ScannerView(model: scanner, isActive: rootTab == .scanner)
+                    } label: {
+                        Label(RootTab.scanner.title, systemImage: RootTab.scanner.symbol)
                     }
 
                     ForEach(RootTab.placeholderTabs, id: \.self) { tab in
