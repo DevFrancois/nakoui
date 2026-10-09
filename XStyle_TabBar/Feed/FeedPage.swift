@@ -28,9 +28,9 @@ struct FeedPage: View {
                 } else {
                     LazyVStack(spacing: 0) {
                         if tab == .bookmarks {
-                            if !taskList.stacked.isEmpty {
-                                TaskStack(tasks: taskList.stacked, onOpen: showTasks, onDismiss: dismissStackedTask)
-                            }
+                            // Always present, so the last card lifts away like
+                            // the others instead of fading out with the stack.
+                            TaskStack(tasks: taskList.stacked, onOpen: showTasks, onDismiss: dismissStackedTask)
 
                             WhatsNewRow(tint: tab.tint) { presentedDestination = .whatsNew }
 
@@ -75,7 +75,6 @@ struct FeedPage: View {
         .sensoryFeedback(trigger: isShowingTasks) { _, isShowing in
             isShowing ? .impact(flexibility: .soft) : nil
         }
-        // Here rather than on the stack, which is gone once its last card is.
         .sensoryFeedback(trigger: taskList.stacked.count) { oldCount, newCount in
             newCount < oldCount ? .impact(weight: .light) : nil
         }

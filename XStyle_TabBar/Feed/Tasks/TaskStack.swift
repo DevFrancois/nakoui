@@ -3,8 +3,8 @@ import SwiftUI
 /// The For you feed's task stack: the next task's card, with up to two more
 /// peeking out underneath, each a little narrower and dimmer than the one in
 /// front. Tapping anywhere on the front card, apart from its close button,
-/// opens every task. When the front task goes, its card fades out while the
-/// ones behind grow forward.
+/// opens every task. When the front task goes, its card lifts toward you,
+/// blurring and fading, while the ones behind grow forward.
 struct TaskStack: View {
     let tasks: [ForYouTask]
     let onOpen: () -> Void
@@ -29,13 +29,20 @@ struct TaskStack: View {
                 // Counted from the back, so a card fading out on removal keeps
                 // drawing over the ones growing forward behind it.
                 .zIndex(Double(tasks.count - index))
-                .transition(.opacity)
+                .layoutValue(key: TaskStackDepth.self, value: index)
+                .transition(.asymmetric(insertion: .opacity, removal: removal))
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tasks")
         .padding(.horizontal)
-        .padding(.vertical, 8)
+        // Empty once the last card has gone, so nothing is left behind.
+        .padding(.vertical, tasks.isEmpty ? 0 : 8)
+    }
+
+    /// With Reduce Motion, the card just fades.
+    private var removal: AnyTransition {
+        reduceMotion ? .opacity : AnyTransition(TaskLiftTransition())
     }
 }
 

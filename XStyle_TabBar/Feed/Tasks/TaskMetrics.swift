@@ -30,5 +30,5 @@ enum TaskMetrics {
     static let stackDimStep = 0.5
 
     /// Cards leaving, and the card behind growing into place.
-    static let stackAnimation = Animation.smooth(duration: 0.45)
+    static let stackAnimation = Animation.smooth(duration: 0.4)
 }
