@@ -4,7 +4,8 @@ import SwiftUI
 /// `AmbientGradientShader.metal`. Ported from ZoomInUIKit's `GridGradientSurface`.
 struct AmbientGradientSurface: View {
     let frame: AmbientGradientFrame
-    let isDark: Bool
+    /// The color the lights fade into.
+    let background: SIMD3<Float>
     /// The fraction of the height the lights spread over, anchored at the top.
     let verticalCoverage: CGFloat
 
@@ -24,7 +25,7 @@ struct AmbientGradientSurface: View {
         let bloom = min(max(frame.bloom, 0), 1)
         let spread = 1 + bloom * 0.12
         let colors = frame.colors
-        let background = isDark ? AmbientGradientPalette.darkBackground : AmbientGradientPalette.lightBackground
+        let isDark = background.max() < 0.5
         let hasBoundedColors = colors.allSatisfy { color in
             color.x >= 0 && color.x <= 1
                 && color.y >= 0 && color.y <= 1

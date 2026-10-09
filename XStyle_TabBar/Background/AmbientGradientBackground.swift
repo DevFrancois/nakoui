@@ -20,7 +20,9 @@ struct AmbientGradientBackground: View {
 
             AmbientGradientSurface(
                 frame: .sample(palettes: palettes, progress: progress, reduceMotion: reduceMotion),
-                isDark: colorScheme == .dark,
+                background: colorScheme == .dark
+                    ? AmbientGradientPalette.darkBackground
+                    : AmbientGradientPalette.lightBackground,
                 verticalCoverage: Self.verticalCoverage
             )
             .opacity(Self.strength)

@@ -17,7 +17,7 @@ struct FeedPage: View {
             LazyVStack(spacing: 0) {
                 ForEach(1...Self.postCount, id: \.self) { number in
                     if tab == .articles {
-                        ArticleRow(article: .placeholder(number: number, tint: tab.tint, palette: tab.palette), namespace: articleNamespace)
+                        ArticleRow(article: .placeholder(number: number, tint: tab.tint), namespace: articleNamespace)
                     } else {
                         FeedRow(tab: tab, number: number)
                     }

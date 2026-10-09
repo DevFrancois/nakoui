@@ -6,6 +6,7 @@ struct ArticleView: View {
 
     @State private var isLiked = false
     @State private var isBookmarked = false
+    @State private var backdrop = ArticleBackdrop.neutral
 
     var body: some View {
         ScrollView {
@@ -35,16 +36,24 @@ struct ArticleView: View {
             }
             .padding()
         }
-        // The home screen's shader, lit with this article's colors.
         .background {
-            AmbientGradientBackground(palettes: [article.palette], progress: 0)
+            ArticleBackdropView(backdrop: backdrop)
         }
         // Part of the page, not the navigation bar, so the buttons follow the zoom.
         .safeAreaBar(edge: .top) {
             ArticleTopBar(article: article)
         }
         .toolbarVisibility(.hidden, for: .navigationBar)
+        // The backdrop is always dark, so the page always uses light text.
+        .environment(\.colorScheme, .dark)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .navigationTransition(.zoom(sourceID: article.id, in: namespace))
+        .onAppear(perform: sampleHero)
+    }
+
+    /// Takes the backdrop's colors from the hero illustration.
+    private func sampleHero() {
+        backdrop = ArticleBackdrop(rendering: ArticleHeroPlaceholder(tint: article.tint)) ?? .neutral
     }
 }
 
@@ -52,6 +61,6 @@ struct ArticleView: View {
     @Previewable @Namespace var namespace
 
     NavigationStack {
-        ArticleView(article: .placeholder(number: 1, tint: .green, palette: .meadowLight), namespace: namespace)
+        ArticleView(article: .placeholder(number: 1, tint: .green), namespace: namespace)
     }
 }
