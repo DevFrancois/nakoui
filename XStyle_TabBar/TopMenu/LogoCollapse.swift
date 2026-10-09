@@ -6,7 +6,8 @@ import SwiftUI
 /// fully in or out.
 ///
 /// Only user scrolling moves it, as in Apple's `onScrollPhaseChange` example:
-/// geometry changes while idle, or during programmatic scrolls, leave it be.
+/// geometry changes while idle, or during programmatic scrolls, leave it be,
+/// except that a scroll back to the top always brings it back.
 /// The collapse is drawn with transforms and never changes the menu's size,
 /// so it can't move the pages it follows. It lives in its own observable
 /// object so per-frame changes redraw the menu alone.
@@ -47,7 +48,14 @@ final class LogoCollapse {
 
     /// Follows the selected page from `old` to `new` while the user scrolls it.
     func follow(from old: PageScrollPosition, to new: PageScrollPosition) {
-        guard isFollowing else { return }
+        guard isFollowing else {
+            // Other scrolls, such as a tap on the status bar, leave the row
+            // alone until they near the top, where it comes back with them.
+            if distance > new.offset {
+                distance = new.offset
+            }
+            return
+        }
         let moved = distance + new.offset - old.offset
         // Near the top, the row can't be more hidden than the content has
         // scrolled, so it's always fully back at the top.
