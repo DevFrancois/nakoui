@@ -19,10 +19,10 @@ struct WhatsNewRow: View {
                 .contentShape(.rect(cornerRadius: Self.cornerRadius))
         }
         .buttonStyle(PassthroughButtonStyle())
-        .glassEffect(
-            .regular.tint(tint.opacity(0.2)),
-            in: .rect(cornerRadius: Self.cornerRadius)
-        )
+        // The colour is a fill, not a glass tint: the snapshot iOS takes for
+        // the app switcher drops glass rendering, tint included.
+        .background(tint.opacity(0.2), in: .rect(cornerRadius: Self.cornerRadius))
+        .glassEffect(.regular, in: .rect(cornerRadius: Self.cornerRadius))
         .accessibilityIdentifier("bookmarks.whatsNew")
         .padding(.horizontal)
         .padding(.vertical, 8)

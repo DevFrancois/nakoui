@@ -10,7 +10,7 @@ struct FeedPage: View {
     /// Shared with the article and quiz destinations for the zoom transitions.
     let zoomNamespace: Namespace.ID
 
-    @State private var isShowingWhatsNew = false
+    @State private var presentedDestination: ForYouDestination?
 
     private static let postCount = 40
 
@@ -24,7 +24,21 @@ struct FeedPage: View {
                 } else {
                     LazyVStack(spacing: 0) {
                         if tab == .bookmarks {
-                            WhatsNewRow(tint: tab.tint) { isShowingWhatsNew = true }
+                            WhatsNewRow(tint: tab.tint) { presentedDestination = .whatsNew }
+
+                            VStack(spacing: 12) {
+                                HStack(spacing: 12) {
+                                    tile(.first)
+                                    tile(.second)
+                                }
+
+                                HStack(spacing: 12) {
+                                    tile(.third, size: .compact)
+                                    tile(.fourth, size: .compact)
+                                }
+                            }
+                            .padding(.horizontal)
+                            .padding(.vertical, 8)
                         }
 
                         ForEach(1...Self.postCount, id: \.self) { number in
@@ -42,8 +56,16 @@ struct FeedPage: View {
         .ignoresSafeArea(.container, edges: .top)
         .contentMargins(.top, topInset, for: .scrollContent)
         .contentMargins(.top, topInset, for: .scrollIndicators)
-        .sheet(isPresented: $isShowingWhatsNew) {
-            WhatsNewSheet()
+        .sheet(item: $presentedDestination, content: ForYouDetailSheet.init)
+        // A tap on a card, not the sheet's dismissal.
+        .sensoryFeedback(trigger: presentedDestination) { _, newValue in
+            newValue == nil ? nil : .impact(flexibility: .soft)
+        }
+    }
+
+    private func tile(_ destination: ForYouDestination, size: FeedTileSize = .regular) -> some View {
+        FeedTile(caption: "Placeholder caption", title: destination.title, tint: destination.tint, size: size) {
+            presentedDestination = destination
         }
     }
 }
