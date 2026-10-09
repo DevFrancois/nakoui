@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The home screen's ambient shader, lit with colors from the article's image
-/// and spread down the page over a dark base.
+/// and spread down the page over a base also taken from it.
 struct ArticleBackdropView: View {
     let backdrop: ArticleBackdrop
 

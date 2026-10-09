@@ -6,7 +6,10 @@ struct ArticleView: View {
 
     @State private var isLiked = false
     @State private var isBookmarked = false
-    @State private var backdrop = ArticleBackdrop.neutral
+    /// Nil until the hero image has been sampled.
+    @State private var backdrop: ArticleBackdrop?
+
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ScrollView {
@@ -37,23 +40,32 @@ struct ArticleView: View {
             .padding()
         }
         .background {
-            ArticleBackdropView(backdrop: backdrop)
+            if let backdrop {
+                ArticleBackdropView(backdrop: backdrop)
+            } else {
+                Rectangle()
+                    .fill(.background)
+                    .ignoresSafeArea()
+            }
         }
         // Part of the page, not the navigation bar, so the buttons follow the zoom.
         .safeAreaBar(edge: .top) {
             ArticleTopBar(article: article)
         }
         .toolbarVisibility(.hidden, for: .navigationBar)
-        // The backdrop is always dark, so the page always uses light text.
-        .environment(\.colorScheme, .dark)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         .navigationTransition(.zoom(sourceID: article.id, in: namespace))
-        .onAppear(perform: sampleHero)
+        // The backdrop is toned to match the appearance, so text keeps its contrast.
+        .onChange(of: colorScheme, initial: true) {
+            sampleHero()
+        }
     }
 
     /// Takes the backdrop's colors from the hero image, as it is shown.
     private func sampleHero() {
-        backdrop = ArticleBackdrop(rendering: ArticleHeroImage(image: article.image)) ?? .neutral
+        backdrop = ArticleBackdrop(
+            rendering: ArticleHeroImage(image: article.image),
+            tone: colorScheme == .dark ? .dark : .light
+        )
     }
 }
 
