@@ -108,7 +108,6 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
                 .overlay {
                     backgroundShape
                         .fill(.fill.tertiary)
-                        .stroke(.fill.secondary, lineWidth: 1)
                         .ignoresSafeArea()
                         .contentShape(.rect)
                         .onTapGesture { settle(expanded: false) }
@@ -121,7 +120,9 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
                         .ignoresSafeArea()
                 }
                 .compositingGroup()
-                .shadow(color: .black.opacity(0.06 * progress), radius: 5, x: -10, y: 0)
+                .overlay {
+                    rim
+                }
                 .offset(x: xOffset)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -150,6 +151,25 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
     }
 
     private var width: CGFloat { max(sideBarWidth, 1) }
+
+    /// Light catching the content's rounded edge while the menu shows,
+    /// brightest at the top corner, like the rim of a glass pane. Outside the
+    /// mask, so the line isn't cut in half.
+    private var rim: some View {
+        backgroundShape
+            .stroke(
+                LinearGradient(
+                    colors: [.white.opacity(0.6), .white.opacity(0.08), .white.opacity(0.25)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 1.5
+            )
+            .opacity(progress)
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
 
     private var isModal: Bool {
         // Closing hands control back at once; waiting for the spring's long
