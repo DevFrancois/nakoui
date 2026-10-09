@@ -23,11 +23,13 @@ struct QuizCard: View {
                     .foregroundStyle(.secondary)
 
                 HStack {
-                    Text("^[\(kind.questionCount) question](inflect: true)")
+                    Text(kind.lengthLabel)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
-                    QuizBestScoreBadge(kind: kind)
+                    if kind.isScored {
+                        QuizBestScoreBadge(kind: kind)
+                    }
                 }
             }
 

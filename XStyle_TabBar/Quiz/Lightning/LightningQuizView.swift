@@ -6,7 +6,7 @@ import SwiftUI
 struct LightningQuizView: View {
     let namespace: Namespace.ID
 
-    @State private var session = QuizSession(questionCount: QuizKind.lightning.questionCount)
+    @State private var session = QuizSession(kind: .lightning)
     @State private var choice: Bool?
     @State private var questionStart = Date.now
     /// When the clock stopped, on an answer or a timeout.

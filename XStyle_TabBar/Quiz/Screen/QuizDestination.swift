@@ -15,6 +15,22 @@ struct QuizDestination: View {
             LightningQuizView(namespace: namespace)
         case .estimate:
             EstimateQuizView(namespace: namespace)
+        case .bubblePop:
+            BubblePopQuizView(namespace: namespace)
+        case .pawPairs:
+            PawPairsQuizView(namespace: namespace)
+        case .mysteryPet:
+            MysteryPetQuizView(namespace: namespace)
+        case .wordWag:
+            WordWagQuizView(namespace: namespace)
+        case .higherLower:
+            HigherLowerQuizView(namespace: namespace)
+        case .petMatch:
+            PetMatchQuizView(namespace: namespace)
+        case .lineUp:
+            LineUpQuizView(namespace: namespace)
+        case .whosHiding:
+            WhosHidingQuizView(namespace: namespace)
         }
     }
 }

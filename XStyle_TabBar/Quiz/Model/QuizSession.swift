@@ -6,6 +6,9 @@ import Observation
 @Observable
 final class QuizSession {
     let questionCount: Int
+    /// The most points a game can earn; more than `questionCount` when a
+    /// format awards extra points for speed or for using fewer hints.
+    let maxScore: Int
     private(set) var index = 0
     private(set) var score = 0
     private(set) var streak = 0
@@ -14,8 +17,13 @@ final class QuizSession {
     private(set) var outcome: QuizOutcome?
     private(set) var isFinished = false
 
-    init(questionCount: Int) {
+    init(questionCount: Int, maxScore: Int? = nil) {
         self.questionCount = questionCount
+        self.maxScore = maxScore ?? questionCount
+    }
+
+    convenience init(kind: QuizKind) {
+        self.init(questionCount: kind.questionCount, maxScore: kind.maxScore)
     }
 
     var isAnswered: Bool {
@@ -32,10 +40,12 @@ final class QuizSession {
         return Double(index + (isAnswered ? 1 : 0)) / Double(questionCount)
     }
 
-    func submit(isCorrect: Bool) {
+    /// Settles the current question. A right answer earns `points`, one by
+    /// default; formats that reward speed or fewer hints pass more.
+    func submit(isCorrect: Bool, points: Int = 1) {
         guard outcome == nil, !isFinished else { return }
         if isCorrect {
-            score += 1
+            score += max(points, 0)
             streak += 1
             bestStreak = max(bestStreak, streak)
             outcome = .correct

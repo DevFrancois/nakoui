@@ -17,14 +17,8 @@ struct QuizHub: View {
                     .foregroundStyle(.secondary)
             }
 
-            ForEach(QuizKind.allCases) { kind in
-                NavigationLink(value: kind) {
-                    QuizCard(kind: kind)
-                        .matchedTransitionSource(id: kind, in: namespace) { source in
-                            source.clipShape(.rect(cornerRadius: QuizMetrics.cardCornerRadius))
-                        }
-                }
-                .buttonStyle(PassthroughButtonStyle())
+            ForEach(QuizCategory.allCases) { category in
+                QuizCategorySection(category: category, namespace: namespace)
             }
         }
         .padding()

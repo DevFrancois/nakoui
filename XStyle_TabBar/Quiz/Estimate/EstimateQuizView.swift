@@ -5,7 +5,7 @@ import SwiftUI
 struct EstimateQuizView: View {
     let namespace: Namespace.ID
 
-    @State private var session = QuizSession(questionCount: QuizKind.estimate.questionCount)
+    @State private var session = QuizSession(kind: .estimate)
     @State private var guess = 0.0
     @Namespace private var glassNamespace
 

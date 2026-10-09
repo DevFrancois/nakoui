@@ -5,7 +5,7 @@ import SwiftUI
 struct DogOrCatQuizView: View {
     let namespace: Namespace.ID
 
-    @State private var session = QuizSession(questionCount: QuizKind.dogOrCat.questionCount)
+    @State private var session = QuizSession(kind: .dogOrCat)
     @State private var dragOffset = 0.0
     @State private var choice: PetSpecies?
     @Namespace private var glassNamespace

@@ -5,7 +5,7 @@ import SwiftUI
 struct ClassicQuizView: View {
     let namespace: Namespace.ID
 
-    @State private var session = QuizSession(questionCount: QuizKind.classic.questionCount)
+    @State private var session = QuizSession(kind: .classic)
     @State private var selection: Int?
     @Namespace private var glassNamespace
 

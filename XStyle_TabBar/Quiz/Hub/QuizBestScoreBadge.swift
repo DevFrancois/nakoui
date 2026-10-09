@@ -13,7 +13,7 @@ struct QuizBestScoreBadge: View {
 
     var body: some View {
         if bestScore > 0 {
-            Label("Best \(bestScore)/\(kind.questionCount)", systemImage: "trophy.fill")
+            Label("Best \(bestScore)/\(kind.maxScore)", systemImage: "trophy.fill")
                 .font(.footnote)
                 .bold()
                 .padding(.horizontal, 8)

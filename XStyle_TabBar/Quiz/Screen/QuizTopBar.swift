@@ -5,6 +5,7 @@ import SwiftUI
 struct QuizTopBar: View {
     let kind: QuizKind
     let session: QuizSession
+    var showsScore = true
 
     @Environment(\.dismiss) private var dismiss
 
@@ -20,7 +21,14 @@ struct QuizTopBar: View {
 
                 Spacer(minLength: 0)
 
-                QuizScoreBadge(score: session.score)
+                if showsScore {
+                    QuizScoreBadge(score: session.score)
+                } else {
+                    // Keeps the progress capsule centered.
+                    Color.clear
+                        .frame(width: TopMenuMetrics.minimumTapSize, height: TopMenuMetrics.minimumTapSize)
+                        .accessibilityHidden(true)
+                }
             }
         }
         .padding(.horizontal)

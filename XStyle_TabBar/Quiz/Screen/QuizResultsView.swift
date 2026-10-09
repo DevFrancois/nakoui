@@ -18,14 +18,14 @@ struct QuizResultsView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            QuizScoreRing(score: session.score, total: session.questionCount, tint: kind.tint)
+            QuizScoreRing(score: session.score, total: session.maxScore, tint: kind.tint)
 
             VStack(spacing: 8) {
                 Text(headline)
                     .font(.title)
                     .bold()
 
-                Text("You got \(session.score) out of \(session.questionCount) right.")
+                Text(summary)
                     .foregroundStyle(.secondary)
 
                 if session.bestStreak > 1 {
@@ -65,8 +65,16 @@ struct QuizResultsView: View {
         .onAppear(perform: recordBestScore)
     }
 
+    private var summary: LocalizedStringResource {
+        if session.maxScore == session.questionCount {
+            "You got \(session.score) out of \(session.questionCount) right."
+        } else {
+            "You scored \(session.score) out of \(session.maxScore) points."
+        }
+    }
+
     private var headline: LocalizedStringResource {
-        let fraction = Double(session.score) / Double(max(session.questionCount, 1))
+        let fraction = Double(session.score) / Double(max(session.maxScore, 1))
         if fraction >= 0.8 {
             return "Pawsome!"
         } else if fraction >= 0.5 {

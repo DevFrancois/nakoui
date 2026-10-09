@@ -34,7 +34,7 @@ struct QuizScoreRing: View {
         .glassEffect(in: .circle)
         .onAppear(perform: fill)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("\(score) out of \(total) correct"))
+        .accessibilityLabel(Text("Score: \(score) out of \(total)"))
     }
 
     private func fill() {
