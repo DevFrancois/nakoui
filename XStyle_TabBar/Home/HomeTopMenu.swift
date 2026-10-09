@@ -2,13 +2,12 @@ import SwiftUI
 
 /// The Home tab's top menu, highlighting the chip under the pager. It reads
 /// the pager itself, so a swipe redraws the menu and not `ContentView`.
-struct HomeTopMenu<Leading: View, Trailing: View>: View {
+struct HomeTopMenu<Leading: View>: View {
     let title: String
     let pager: PagerState
     let logoCollapse: LogoCollapse
     let onSelect: (AppTab) -> Void
     @ViewBuilder let leading: Leading
-    @ViewBuilder let trailing: Trailing
 
     var body: some View {
         TopMenuBar(
@@ -21,7 +20,8 @@ struct HomeTopMenu<Leading: View, Trailing: View>: View {
         ) {
             leading
         } trailing: {
-            trailing
+            // Nothing on the right: search lives in the tab bar.
+            EmptyView()
         }
     }
 }

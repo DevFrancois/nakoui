@@ -75,8 +75,6 @@ struct ContentView: View {
                                     TopMenuIconButton(title: "Open menu", systemImage: "line.3.horizontal", action: openMenu)
                                         .accessibilityIdentifier("navigation.openMenu")
                                         .accessibilityFocused($isMenuButtonFocused)
-                                } trailing: {
-                                    TopMenuIconButton(title: "Search", systemImage: "magnifyingglass", action: search)
                                 }
                             }
                             .background {
@@ -202,11 +200,6 @@ struct ContentView: View {
     private func openMenu() {
         pendingSidebarOpen = true
         openPendingSidebar()
-    }
-
-    /// The top menu's search button opens the Search tab.
-    private func search() {
-        rootTab = .search
     }
 
     /// A menu tap still waiting for the pager to settle is dropped on leaving
