@@ -50,7 +50,9 @@ struct CategoryChipStrip<Tab: TopMenuTab>: View {
         } action: { _, newGeometry in
             geometry = newGeometry
         }
-        .onChange(of: selection) {
+        // Clamped, so a pager bouncing past its last page doesn't scroll the
+        // row to the same place every frame.
+        .onChange(of: clampedSelection) {
             revealSelection()
         }
         .frame(height: TopMenuMetrics.chipRowHeight)

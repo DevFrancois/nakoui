@@ -26,7 +26,9 @@ struct ContentView: View {
     @State private var pendingSidebarOpen = false
     @State private var revealingRoute: SidebarRoute?
     @State private var isRouteContentVisible = true
-    @State private var isLogoVisible = true
+    /// Follows the shown page's scroll. Only the menu reads it, so its
+    /// per-frame changes redraw the menu alone.
+    @State private var logoCollapse = LogoCollapse()
     /// The safe-area top without the menu, which pages add the menu to.
     @State private var statusBarInset: CGFloat = 0
     /// The tapped tab being reached. The chips show it at once and ignore the
@@ -65,7 +67,7 @@ struct ContentView: View {
                                     selection: chipSelection,
                                     selectedTab: lockedTab ?? selectedTab,
                                     isSelectionLocked: lockedTab != nil,
-                                    isLogoVisible: isLogoVisible,
+                                    logoCollapse: logoCollapse,
                                     onSelect: selectTab
                                 ) {
                                     TopMenuIconButton(title: "Open menu", systemImage: "line.3.horizontal", action: openMenu)
@@ -103,6 +105,9 @@ struct ContentView: View {
                     }
                 }
                 .onChange(of: rootTab, rootTabDidChange)
+                .onChange(of: selectedTab) {
+                    logoCollapse.selectedPageDidChange(to: selectedTab)
+                }
                 .onChange(of: voiceOverEnabled, voiceOverDidChange)
                 .navigationTitle(mainTitle)
                 .navigationBarTitleDisplayMode(.inline)
@@ -148,10 +153,13 @@ struct ContentView: View {
                         topInset: statusBarInset + TopMenuMetrics.expandedHeight,
                         zoomNamespace: zoomNamespace
                     )
-                        .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                            geometry.contentOffset.y + geometry.contentInsets.top
-                        } action: { oldOffset, newOffset in
-                            pageDidScroll(tab, from: oldOffset, to: newOffset)
+                        .onScrollGeometryChange(for: PageScrollPosition.self) { geometry in
+                            PageScrollPosition(geometry)
+                        } action: { oldPosition, newPosition in
+                            pageDidScroll(tab, from: oldPosition, to: newPosition)
+                        }
+                        .onScrollPhaseChange { _, newPhase in
+                            pageScrollPhaseDidChange(tab, to: newPhase)
                         }
                         .containerRelativeFrame(.horizontal)
                         .visualEffect { content, geometry in
@@ -255,7 +263,7 @@ struct ContentView: View {
     private func sidebarDidDismiss() {
         revealingRoute = nil
         // A collapsed logo row hides the menu button from VoiceOver.
-        if navigationPath.isEmpty && isLogoVisible {
+        if navigationPath.isEmpty && logoCollapse.isShown {
             isMenuButtonFocused = true
         }
     }
@@ -281,7 +289,7 @@ struct ContentView: View {
     /// VoiceOver needs the menu button, so the logo row stays put while it runs.
     private func voiceOverDidChange() {
         if voiceOverEnabled {
-            isLogoVisible = true
+            logoCollapse.reveal()
         }
     }
 
@@ -291,17 +299,18 @@ struct ContentView: View {
         startPendingTransition()
     }
 
-    /// Only the shown page drives the logo row, from the change since its
-    /// previous scroll update. Page switches leave the row as it is.
-    private func pageDidScroll(_ tab: AppTab, from oldOffset: CGFloat, to newOffset: CGFloat) {
-        guard tab == selectedTab, tapTransition == nil, !voiceOverEnabled,
-              let visible = LogoVisibilityRule.visibility(previousOffset: oldOffset, offset: newOffset),
-              visible != isLogoVisible else { return }
-        // Unanimated: the menu animates its chips and logo row itself, while its
-        // footprint, and the safe area the pages sit in, change in one step.
-        // An animated safe area would move the pages' offsets mid-scroll and
-        // feed back into this rule.
-        isLogoVisible = visible
+    /// Only the shown page moves the logo row.
+    private func pageDidScroll(_ tab: AppTab, from oldPosition: PageScrollPosition, to newPosition: PageScrollPosition) {
+        logoCollapse.record(newPosition, for: tab)
+        guard tab == selectedTab, tapTransition == nil, !voiceOverEnabled else { return }
+        logoCollapse.follow(from: oldPosition, to: newPosition)
+    }
+
+    /// The logo row follows only the user scrolling the shown page, and
+    /// settles once it stops.
+    private func pageScrollPhaseDidChange(_ tab: AppTab, to phase: ScrollPhase) {
+        guard tab == selectedTab else { return }
+        logoCollapse.scrollPhaseDidChange(to: phase)
     }
 
     private func startPendingTransition() {

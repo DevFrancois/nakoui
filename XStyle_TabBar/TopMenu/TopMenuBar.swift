@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// ZoomInUIKit's top menu: a logo row over a row of glass chips, laid over
-/// scrolling content. When the logo row collapses, the chips slide up into
-/// its place and its items fly into the device pill.
+/// scrolling content. As the logo row collapses, in step with the scroll,
+/// the chips slide up into its place and its items fly into the device pill.
 struct TopMenuBar<Tab: TopMenuTab, Leading: View, Trailing: View>: View {
     let title: String
     /// Fractional index of the highlighted chip.
@@ -11,7 +11,7 @@ struct TopMenuBar<Tab: TopMenuTab, Leading: View, Trailing: View>: View {
     let selectedTab: Tab
     /// True while a tapped tab is being reached.
     let isSelectionLocked: Bool
-    let isLogoVisible: Bool
+    let logoCollapse: LogoCollapse
     let onSelect: (Tab) -> Void
     @ViewBuilder let leading: Leading
     @ViewBuilder let trailing: Trailing
@@ -28,12 +28,12 @@ struct TopMenuBar<Tab: TopMenuTab, Leading: View, Trailing: View>: View {
                 isSelectionLocked: isSelectionLocked,
                 onSelect: onSelect
             )
-            .padding(.top, isLogoVisible ? TopMenuMetrics.logoRowHeight : 0)
-            .animation(TopMenuMetrics.collapseAnimation, value: isLogoVisible)
+            .padding(.top, TopMenuMetrics.logoRowHeight)
+            .offset(y: -logoCollapse.distance)
 
             TopMenuLogoRow(
                 title: title,
-                isVisible: isLogoVisible,
+                collapse: logoCollapse.distance,
                 flight: flight,
                 wordmarkSize: $wordmarkSize
             ) {
@@ -44,12 +44,9 @@ struct TopMenuBar<Tab: TopMenuTab, Leading: View, Trailing: View>: View {
             // Flies above the chips, as ZoomInUIKit's unclipped copies do.
             .zIndex(1)
         }
-        // As a safe-area bar, this height sets how far the soft edge reaches,
-        // so it shrinks with the logo row, as ZoomInUIKit's menu does.
-        .frame(
-            height: isLogoVisible ? TopMenuMetrics.expandedHeight : TopMenuMetrics.chipRowHeight,
-            alignment: .top
-        )
+        // A fixed height: the collapse moves what's inside, never the menu's
+        // footprint, so the pages under it never move with it.
+        .frame(height: TopMenuMetrics.expandedHeight, alignment: .top)
         // Separate values, so the side menu's horizontal slide writes no state.
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.frame(in: .global).minY
@@ -71,7 +68,7 @@ struct TopMenuBar<Tab: TopMenuTab, Leading: View, Trailing: View>: View {
 
 #Preview {
     @Previewable @State var selection: CGFloat = 0
-    @Previewable @State var isLogoVisible = true
+    @Previewable @State var logoCollapse = LogoCollapse()
 
     VStack {
         TopMenuBar(
@@ -79,7 +76,7 @@ struct TopMenuBar<Tab: TopMenuTab, Leading: View, Trailing: View>: View {
             selection: selection,
             selectedTab: AppTab.allCases[Int(selection.rounded())],
             isSelectionLocked: false,
-            isLogoVisible: isLogoVisible,
+            logoCollapse: logoCollapse,
             onSelect: { selection = CGFloat($0.index) }
         ) {
             Button("Open menu", systemImage: "line.3.horizontal") {}
@@ -92,7 +89,9 @@ struct TopMenuBar<Tab: TopMenuTab, Leading: View, Trailing: View>: View {
         Spacer()
 
         Slider(value: $selection, in: 0...CGFloat(AppTab.allCases.count - 1))
-        Toggle("Logo row", isOn: $isLogoVisible)
+        Button("Toggle logo row") {
+            logoCollapse.isShown ? logoCollapse.hide() : logoCollapse.reveal()
+        }
     }
     .padding(.bottom)
     .background {

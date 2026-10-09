@@ -1,10 +1,12 @@
 import SwiftUI
 
 /// The menu's upper row: buttons at the edges, the wordmark in the middle.
-/// When the row collapses, every item flies into the device pill.
+/// As the row collapses, every item flies toward the device pill in step
+/// with the scroll.
 struct TopMenuLogoRow<Leading: View, Trailing: View>: View {
     let title: String
-    let isVisible: Bool
+    /// How far the row has collapsed, in points.
+    let collapse: CGFloat
     let flight: LogoFlight
     @Binding var wordmarkSize: CGSize
     @ViewBuilder let leading: Leading
@@ -13,12 +15,12 @@ struct TopMenuLogoRow<Leading: View, Trailing: View>: View {
     var body: some View {
         HStack(spacing: 0) {
             leading
-                .modifier(LogoFlightEffect(isVisible: isVisible, flight: flight))
+                .modifier(LogoFlightEffect(distance: collapse, flight: flight))
 
             Spacer(minLength: 0)
 
             trailing
-                .modifier(LogoFlightEffect(isVisible: isVisible, flight: flight))
+                .modifier(LogoFlightEffect(distance: collapse, flight: flight))
         }
         .overlay {
             Wordmark(title: title)
@@ -27,7 +29,7 @@ struct TopMenuLogoRow<Leading: View, Trailing: View>: View {
                 } action: { newSize in
                     wordmarkSize = newSize
                 }
-                .modifier(LogoFlightEffect(isVisible: isVisible, flight: flight))
+                .modifier(LogoFlightEffect(distance: collapse, flight: flight))
                 .allowsHitTesting(false)
                 .accessibilityIdentifier("navigation.mainTitle")
         }
@@ -35,7 +37,7 @@ struct TopMenuLogoRow<Leading: View, Trailing: View>: View {
         .foregroundStyle(.primary)
         .padding(.horizontal, TopMenuMetrics.logoRowHorizontalPadding)
         .frame(height: TopMenuMetrics.logoRowHeight)
-        .allowsHitTesting(isVisible)
-        .accessibilityHidden(!isVisible)
+        .allowsHitTesting(collapse < TopMenuMetrics.logoRowHeight / 2)
+        .accessibilityHidden(collapse >= TopMenuMetrics.logoRowHeight / 2)
     }
 }

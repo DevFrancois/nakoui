@@ -6,8 +6,8 @@ enum TopMenuMetrics {
 
     static let logoRowHeight: CGFloat = 40
     static let chipRowHeight = chipHeight + chipVerticalInset * 2
-    /// The menu's height with the logo row shown. Content keeps this inset even
-    /// when the row collapses, so scrolling cannot feed back into the menu.
+    /// The menu's height, whatever the logo row does: its collapse is drawn
+    /// with transforms, so the layout, and the pages' scroll, never move.
     static let expandedHeight = logoRowHeight + chipRowHeight
     /// Space between the menu and the first row of content.
     static let contentTopPadding: CGFloat = 10
@@ -38,14 +38,6 @@ enum TopMenuMetrics {
     static let lightPlatter = Color.white
     static let darkPlatter = Color(white: 0.30)
 
-    // MARK: Scroll behaviour
-
-    /// Movement between two scroll updates that hides (down) or shows (up) the
-    /// logo row. Per update, not accumulated, so slow drags leave it alone.
-    static let logoScrollThreshold: CGFloat = 4
-    /// Within this distance of the top, the logo row is always shown.
-    static let logoTopZone: CGFloat = 6
-
     // MARK: Device pill
 
     static let pillWidth: CGFloat = 126
@@ -60,8 +52,8 @@ enum TopMenuMetrics {
 
     // MARK: Animations
 
-    static let collapseAnimation = Animation.easeOut(duration: 0.15)
-    static let flightAnimation = Animation.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.22)
+    /// Finishes a half-way logo row once scrolling stops.
+    static let logoSettleAnimation = Animation.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.22)
     static let selectionAnimation = Animation.easeOut(duration: 0.22)
     static let revealAnimation = Animation.smooth(duration: 0.3)
 }
