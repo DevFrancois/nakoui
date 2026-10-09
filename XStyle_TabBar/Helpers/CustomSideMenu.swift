@@ -56,7 +56,6 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
     @ViewBuilder var content: (_ progress: CGFloat) -> Content
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
     @State private var progress: CGFloat
     @State private var xOffset: CGFloat
     @State private var dragStart: DragStart?
@@ -102,6 +101,12 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
             menuContent(progress)
                 .frame(width: width)
                 .frame(maxHeight: .infinity)
+                // Its own background, edge to edge, so the menu is opaque.
+                .background {
+                    Rectangle()
+                        .fill(.background)
+                        .ignoresSafeArea()
+                }
                 .opacity(progress)
                 .scaleEffect(reduceMotion ? 1 : 0.95 + 0.05 * progress)
                 .allowsHitTesting(isExpanded && dragStart == nil && settlingTarget == nil)
@@ -109,9 +114,8 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
 
             content(progress)
                 // Drained of color while the menu shows, so the menu holds
-                // the color: washed lighter in light mode, darker in dark mode.
+                // the color.
                 .saturation(Double(1 - 0.85 * progress))
-                .brightness(Double((colorScheme == .dark ? -0.15 : 0.15) * progress))
                 .containerRelativeFrame(.horizontal)
                 .frame(maxHeight: .infinity)
                 .allowsHitTesting(!isModal)

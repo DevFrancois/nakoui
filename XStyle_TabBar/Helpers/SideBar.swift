@@ -78,7 +78,9 @@ struct SideBar<QuickActions: View, Footer: View>: View {
             .padding(15)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
+            // Opaque, so routes scrolling underneath don't show through.
             footer
+                .background(.background)
         }
         .accessibilityIdentifier("sidebar.menu")
     }
