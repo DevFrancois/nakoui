@@ -21,7 +21,7 @@ struct ArticleRow: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
 
-                    ArticleHeroPlaceholder(tint: article.tint)
+                    ArticleHeroImage(image: article.image)
                         .frame(height: ArticleMetrics.thumbnailHeight)
                         .clipShape(.rect(cornerRadius: ArticleMetrics.thumbnailCornerRadius))
                         .matchedTransitionSource(id: article.id, in: namespace) { source in

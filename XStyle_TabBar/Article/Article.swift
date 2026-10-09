@@ -8,6 +8,7 @@ struct Article: Identifiable, Hashable {
     /// Placeholder copy, intentionally not localized.
     let body: String
     let tint: Color
+    let image: ImageResource
 
     // Identity alone decides equality, so navigation compares articles by ID.
     static func == (lhs: Article, rhs: Article) -> Bool {
@@ -27,9 +28,15 @@ extension Article {
             title: "Lorem Ipsum Dolor Sit Amet \(number)",
             summary: "Consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore.",
             body: loremIpsum,
-            tint: tint
+            tint: tint,
+            image: sampleImages[(number - 1) % sampleImages.count]
         )
     }
+
+    /// The images in the asset catalog, shared out across the feed in turn.
+    private static let sampleImages: [ImageResource] = [
+        .pic1, .pic2, .pic3, .pic4, .pic5, .pic6, .pic7
+    ]
 
     private static let loremIpsum = """
     Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.

@@ -80,7 +80,7 @@ struct ArticleBackdrop: Equatable {
         )
     }
 
-    /// Samples a SwiftUI illustration, such as a placeholder hero.
+    /// Samples a SwiftUI view, such as the article's hero image as it is shown.
     @MainActor
     init?(rendering illustration: some View) {
         let renderer = ImageRenderer(

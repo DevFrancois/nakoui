@@ -11,8 +11,8 @@ struct ArticleView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                // Same placeholder as the feed, so the zoom reads as it growing into place.
-                ArticleHeroPlaceholder(tint: article.tint)
+                // Same image as the feed, so the zoom reads as it growing into place.
+                ArticleHeroImage(image: article.image)
                     .aspectRatio(1, contentMode: .fit)
                     .clipShape(.rect(cornerRadius: ArticleMetrics.heroCornerRadius))
                     // Keeps the square from filling wide windows.
@@ -51,9 +51,9 @@ struct ArticleView: View {
         .onAppear(perform: sampleHero)
     }
 
-    /// Takes the backdrop's colors from the hero illustration.
+    /// Takes the backdrop's colors from the hero image, as it is shown.
     private func sampleHero() {
-        backdrop = ArticleBackdrop(rendering: ArticleHeroPlaceholder(tint: article.tint)) ?? .neutral
+        backdrop = ArticleBackdrop(rendering: ArticleHeroImage(image: article.image)) ?? .neutral
     }
 }
 
