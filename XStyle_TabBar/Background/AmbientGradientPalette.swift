@@ -1,34 +1,28 @@
 import Foundation
 
-/// Four colors for the soft light at the top of the screen.
-/// Values come from ZoomInUIKit's `GridGradientPalette`.
+/// A tab's one color, as it shows at the very top of the screen in each
+/// appearance before it fades into the page.
 struct AmbientGradientPalette: Equatable {
-    let colors: [SIMD3<Float>]
+    let light: SIMD3<Float>
+    let dark: SIMD3<Float>
 
-    init(hexColors: [UInt32]) {
-        precondition(hexColors.count == 4, "A gradient palette requires four colors.")
-        colors = hexColors.map(Self.rgb)
+    init(light: SIMD3<Float>, dark: SIMD3<Float>) {
+        self.light = light
+        self.dark = dark
     }
 
-    /// The page colors the light fades into; they match the `PageBackground` asset.
-    static let lightBackground = rgb(0xF7F5FC)
-    static let darkBackground = SIMD3<Float>(repeating: 0)
+    init(light: UInt32, dark: UInt32) {
+        self.init(light: Self.rgb(light), dark: Self.rgb(dark))
+    }
 
-    static let lavenderHealth = AmbientGradientPalette(hexColors: [
-        0xD9CEFF, 0xEFCDFA, 0xAFD8FF, 0xB1F2E3
-    ])
-    static let roseDawn = AmbientGradientPalette(hexColors: [
-        0xF4C6DC, 0xFFD8C2, 0xE1CCFA, 0xC7DDFF
-    ])
-    static let peachBloom = AmbientGradientPalette(hexColors: [
-        0xFFD5BD, 0xF4C5D9, 0xDED0FA, 0xFFF0CD
-    ])
-    static let meadowLight = AmbientGradientPalette(hexColors: [
-        0xBDEBD0, 0xD4F0C3, 0xBBE4EA, 0xD6D6FA
-    ])
-    static let lagoonMist = AmbientGradientPalette(hexColors: [
-        0xBFE6F2, 0xC9D8FF, 0xBDEFE6, 0xE6D4FA
-    ])
+    // Light tones are ZoomInUIKit's pastels at half strength over the page.
+    // Dark tones share the OKLCH lightness and chroma of the lavender, a deep
+    // muted violet, so no tab glows brighter than another.
+    static let lavenderHealth = AmbientGradientPalette(light: 0xE8E2FE, dark: 0x3D3449)
+    static let roseDawn = AmbientGradientPalette(light: 0xF6DEEC, dark: 0x48313C)
+    static let peachBloom = AmbientGradientPalette(light: 0xFBE5DC, dark: 0x493327)
+    static let meadowLight = AmbientGradientPalette(light: 0xDAF0E6, dark: 0x273F32)
+    static let lagoonMist = AmbientGradientPalette(light: 0xDBEEF7, dark: 0x213E46)
 
     nonisolated private static func rgb(_ hex: UInt32) -> SIMD3<Float> {
         SIMD3(

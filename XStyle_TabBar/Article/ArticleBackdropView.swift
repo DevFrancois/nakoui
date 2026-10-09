@@ -7,7 +7,7 @@ struct ArticleBackdropView: View {
 
     var body: some View {
         AmbientGradientSurface(
-            frame: AmbientGradientFrame(colors: backdrop.topLights, bloom: 0),
+            topLights: backdrop.topLights,
             background: backdrop.base,
             verticalCoverage: ArticleMetrics.backdropCoverage,
             bottomLights: backdrop.bottomLights,
