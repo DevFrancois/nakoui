@@ -11,6 +11,9 @@ struct FeedPage: View {
     let zoomNamespace: Namespace.ID
 
     @State private var presentedDestination: ForYouDestination?
+    /// Lives here, outside the lazy stack, so scrolling never resets it.
+    @State private var taskList = ForYouTaskList()
+    @State private var isShowingTasks = false
 
     private static let postCount = 40
 
@@ -24,6 +27,10 @@ struct FeedPage: View {
                 } else {
                     LazyVStack(spacing: 0) {
                         if tab == .bookmarks {
+                            if !taskList.stacked.isEmpty {
+                                TaskStack(tasks: taskList.stacked, onOpen: showTasks, onDismiss: dismissStackedTask)
+                            }
+
                             WhatsNewRow(tint: tab.tint) { presentedDestination = .whatsNew }
 
                             VStack(spacing: 12) {
@@ -60,6 +67,34 @@ struct FeedPage: View {
         // A tap on a card, not the sheet's dismissal.
         .sensoryFeedback(trigger: presentedDestination) { _, newValue in
             newValue == nil ? nil : .impact(flexibility: .soft)
+        }
+        .sheet(isPresented: $isShowingTasks, onDismiss: revealTaskChanges) {
+            TaskListSheet(taskList: taskList)
+        }
+        .sensoryFeedback(trigger: isShowingTasks) { _, isShowing in
+            isShowing ? .impact(flexibility: .soft) : nil
+        }
+        // Here rather than on the stack, which is gone once its last card is.
+        .sensoryFeedback(trigger: taskList.stacked.count) { oldCount, newCount in
+            newCount < oldCount ? .impact(weight: .light) : nil
+        }
+    }
+
+    private func showTasks() {
+        isShowingTasks = true
+    }
+
+    private func dismissStackedTask(_ task: ForYouTask) {
+        withAnimation(.smooth) {
+            taskList.dismiss(task)
+            taskList.updateStack()
+        }
+    }
+
+    /// Runs once the sheet has closed, so the stack's update plays in view.
+    private func revealTaskChanges() {
+        withAnimation(.smooth) {
+            taskList.updateStack()
         }
     }
 
