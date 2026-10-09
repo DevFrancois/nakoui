@@ -41,8 +41,10 @@ enum SidebarRoute: String, Hashable, CaseIterable {
     }
 }
 
-struct SideBar: View {
+struct SideBar<Footer: View>: View {
     let onSelect: (SidebarRoute) -> Void
+    /// Pinned to the menu's bottom edge, below the scrolling routes.
+    @ViewBuilder let footer: Footer
 
     var body: some View {
         ScrollView(.vertical) {
@@ -69,6 +71,9 @@ struct SideBar: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(15)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            footer
         }
         .accessibilityIdentifier("sidebar.menu")
     }
@@ -150,5 +155,11 @@ struct SideBar: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(route.accessibilityID)
+    }
+}
+
+extension SideBar where Footer == EmptyView {
+    init(onSelect: @escaping (SidebarRoute) -> Void) {
+        self.init(onSelect: onSelect) {}
     }
 }

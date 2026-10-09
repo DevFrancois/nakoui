@@ -9,7 +9,10 @@ enum AppTab: String, TopMenuTab {
     case quizz = "Quizz"
 
     var title: String {
-        rawValue
+        switch self {
+        case .bookmarks: "For you"
+        default: rawValue
+        }
     }
 
     var symbol: String {

@@ -27,6 +27,8 @@ struct ContentView: View {
     @State private var logoCollapse = LogoCollapse()
     /// The safe-area top without the menu, which pages add the menu to.
     @State private var statusBarInset: CGFloat = 0
+    /// Shared by the For you page and the side menu's debug reset.
+    @State private var taskList = ForYouTaskList()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @AccessibilityFocusState private var isMenuButtonFocused: Bool
@@ -43,8 +45,12 @@ struct ContentView: View {
             isExpanded: $isSidebarExpanded,
             onDismissed: sidebarDidDismiss
         ) { _ in
-            SideBar(onSelect: selectSidebarRoute)
-                .disabled(revealingRoute != nil)
+            SideBar(onSelect: selectSidebarRoute) {
+                #if DEBUG
+                ResetTasksDebugButton(action: resetTasks)
+                #endif
+            }
+            .disabled(revealingRoute != nil)
         } content: { _ in
             NavigationStack(path: $navigationPath) {
                 // Inside the stack, so articles, quizzes and sidebar pages
@@ -54,6 +60,7 @@ struct ContentView: View {
                         HomePager(
                             pager: pager,
                             logoCollapse: logoCollapse,
+                            taskList: taskList,
                             topInset: statusBarInset + TopMenuMetrics.expandedHeight,
                             zoomNamespace: zoomNamespace,
                             onUpdate: openPendingSidebar
@@ -180,6 +187,17 @@ struct ContentView: View {
             isMenuButtonFocused = true
         }
     }
+
+    #if DEBUG
+    /// Brings the For you tasks back and closes the menu, so the stack is
+    /// seen refilling.
+    private func resetTasks() {
+        withAnimation(TaskMetrics.stackAnimation) {
+            taskList.reset()
+            isSidebarExpanded = false
+        }
+    }
+    #endif
 
     private func openMenu() {
         pendingSidebarOpen = true

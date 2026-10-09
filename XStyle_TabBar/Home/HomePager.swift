@@ -5,6 +5,7 @@ import SwiftUI
 struct HomePager: View {
     @Bindable var pager: PagerState
     let logoCollapse: LogoCollapse
+    let taskList: ForYouTaskList
     /// Where page content starts, below the status bar and the menu.
     let topInset: CGFloat
     let zoomNamespace: Namespace.ID
@@ -24,7 +25,7 @@ struct HomePager: View {
                     } ?? true
                     let offsetFactor = pager.tapTransition?.offsetFactor ?? 0
 
-                    FeedPage(tab: tab, topInset: topInset, zoomNamespace: zoomNamespace)
+                    FeedPage(tab: tab, topInset: topInset, zoomNamespace: zoomNamespace, taskList: taskList)
                         .onScrollGeometryChange(for: PageScrollPosition.self) { geometry in
                             PageScrollPosition(geometry)
                         } action: { oldPosition, newPosition in
