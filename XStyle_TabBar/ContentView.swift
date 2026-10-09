@@ -13,6 +13,8 @@ struct ContentView: View {
     @State private var pagerGeometry = PagerGeometry()
     @State private var scrollPhase: ScrollPhase = .idle
     @State private var selectedTab: AppTab = .bookmarks
+    /// The bottom tab bar's selection.
+    @State private var rootTab: RootTab = .home
     @State private var tapTransition: TabTransition?
     @State private var pendingTab: AppTab?
     /// Holds sidebar routes and articles, so either can be pushed.
@@ -48,61 +50,91 @@ struct ContentView: View {
                 .disabled(revealingRoute != nil)
         } content: { _ in
             NavigationStack(path: $navigationPath) {
-                historyContent
-                    .safeAreaBar(edge: .top, spacing: 0) {
-                        TopMenuBar(
-                            title: mainTitle,
-                            selection: chipSelection,
-                            selectedTab: lockedTab ?? selectedTab,
-                            isSelectionLocked: lockedTab != nil,
-                            isLogoVisible: isLogoVisible,
-                            onSelect: selectTab
-                        ) {
-                            Button(action: openMenu) {
-                                Label("Open menu", systemImage: "line.3.horizontal")
-                                    .labelStyle(.iconOnly)
-                                    .frame(width: TopMenuMetrics.minimumTapSize, height: TopMenuMetrics.minimumTapSize)
-                                    .contentShape(.rect)
+                // Inside the stack, so articles, quizzes and sidebar pages
+                // cover the tab bar when pushed.
+                TabView(selection: $rootTab) {
+                    Tab("Home", systemImage: "house", value: RootTab.home) {
+                        historyContent
+                            .safeAreaBar(edge: .top, spacing: 0) {
+                                TopMenuBar(
+                                    title: mainTitle,
+                                    selection: chipSelection,
+                                    selectedTab: lockedTab ?? selectedTab,
+                                    isSelectionLocked: lockedTab != nil,
+                                    isLogoVisible: isLogoVisible,
+                                    onSelect: selectTab
+                                ) {
+                                    Button(action: openMenu) {
+                                        Label("Open menu", systemImage: "line.3.horizontal")
+                                            .labelStyle(.iconOnly)
+                                            .frame(width: TopMenuMetrics.minimumTapSize, height: TopMenuMetrics.minimumTapSize)
+                                            .contentShape(.rect)
+                                    }
+                                    .accessibilityIdentifier("navigation.openMenu")
+                                    .accessibilityFocused($isMenuButtonFocused)
+                                } trailing: {
+                                    Button(action: search) {
+                                        Label("Search", systemImage: "magnifyingglass")
+                                            .labelStyle(.iconOnly)
+                                            .frame(width: TopMenuMetrics.minimumTapSize, height: TopMenuMetrics.minimumTapSize)
+                                            .contentShape(.rect)
+                                    }
+                                }
                             }
-                            .accessibilityIdentifier("navigation.openMenu")
-                            .accessibilityFocused($isMenuButtonFocused)
-                        } trailing: {
-                            Button(action: search) {
-                                Label("Search", systemImage: "magnifyingglass")
-                                    .labelStyle(.iconOnly)
-                                    .frame(width: TopMenuMetrics.minimumTapSize, height: TopMenuMetrics.minimumTapSize)
-                                    .contentShape(.rect)
+                            .background {
+                                AmbientGradientBackground(palettes: gradientPalettes, progress: gradientProgress)
                             }
-                        }
+                            // VoiceOver needs the menu button, so the logo row stays put.
+                            .onChange(of: voiceOverEnabled) { _, isEnabled in
+                                if isEnabled {
+                                    isLogoVisible = true
+                                }
+                            }
                     }
-                    .background {
-                        AmbientGradientBackground(palettes: gradientPalettes, progress: gradientProgress)
+
+                    Tab("Notifications", systemImage: "bell", value: RootTab.notifications) {
+                        RootTabPlaceholder(
+                            title: "Notifications",
+                            systemImage: "bell",
+                            description: "Likes, replies and quiz results will show up here."
+                        )
                     }
-                    // VoiceOver needs the menu button, so the logo row stays put.
-                    .onChange(of: voiceOverEnabled) { _, isEnabled in
-                        if isEnabled {
-                            isLogoVisible = true
-                        }
+
+                    Tab("Profile", systemImage: "person", value: RootTab.profile) {
+                        RootTabPlaceholder(
+                            title: "Profile",
+                            systemImage: "person",
+                            description: "Your pets, bookmarks and best scores will live here."
+                        )
                     }
-                    .navigationTitle(mainTitle)
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbarVisibility(.hidden, for: .navigationBar)
-                    .navigationDestination(for: SidebarRoute.self) { route in
-                        Text("Hello World")
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(.background)
-                            .navigationTitle(route.title)
-                            .navigationBarTitleDisplayMode(.inline)
-                            .toolbarVisibility(.visible, for: .navigationBar)
-                            .accessibilityIdentifier("destination.\(route.rawValue)")
-                            .onAppear { revealSidebarRoute(route) }
+
+                    Tab("Search", systemImage: "magnifyingglass", value: RootTab.search, role: .search) {
+                        RootTabPlaceholder(
+                            title: "Search",
+                            systemImage: "magnifyingglass",
+                            description: "Search breeds, articles and quizzes."
+                        )
                     }
-                    .navigationDestination(for: Article.self) { article in
-                        ArticleView(article: article, namespace: zoomNamespace)
-                    }
-                    .navigationDestination(for: QuizKind.self) { kind in
-                        QuizDestination(kind: kind, namespace: zoomNamespace)
-                    }
+                }
+                .navigationTitle(mainTitle)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarVisibility(.hidden, for: .navigationBar)
+                .navigationDestination(for: SidebarRoute.self) { route in
+                    Text("Hello World")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(.background)
+                        .navigationTitle(route.title)
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarVisibility(.visible, for: .navigationBar)
+                        .accessibilityIdentifier("destination.\(route.rawValue)")
+                        .onAppear { revealSidebarRoute(route) }
+                }
+                .navigationDestination(for: Article.self) { article in
+                    ArticleView(article: article, namespace: zoomNamespace)
+                }
+                .navigationDestination(for: QuizKind.self) { kind in
+                    QuizDestination(kind: kind, namespace: zoomNamespace)
+                }
             }
             .opacity(isRouteContentVisible ? 1 : 0)
             .onGeometryChange(for: CGFloat.self) { proxy in
@@ -193,7 +225,8 @@ struct ContentView: View {
     private var canOpenSidebarFromAnywhere: Bool {
         // Used for touches outside the pager (the top menu). Touches on the
         // pager are judged against the live scroll view by the gesture itself.
-        pagerGeometry.width > 0 && pagerGeometry.offset <= 0.5
+        // Other tabs have no pager to wait for.
+        rootTab != .home || (pagerGeometry.width > 0 && pagerGeometry.offset <= 0.5)
     }
 
     private var canBeginSidebarOpening: Bool {
@@ -245,8 +278,10 @@ struct ContentView: View {
         openPendingSidebar()
     }
 
-    /// Search isn't built yet.
-    private func search() {}
+    /// The top menu's search button opens the Search tab.
+    private func search() {
+        rootTab = .search
+    }
 
     private func selectTab(_ tab: AppTab) {
         guard !pendingSidebarOpen else { return }
