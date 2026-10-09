@@ -42,6 +42,9 @@ struct CategoryChipStrip<Tab: TopMenuTab>: View {
             .coordinateSpace(.named(Self.contentSpace))
         }
         .scrollIndicators(.hidden)
+        // Interactive glass grows a pressed chip past the row's insets; the
+        // row spans the screen, so nothing else shows outside it.
+        .scrollClipDisabled()
         .scrollEdgeEffectHidden(true)
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .scrollPosition($position)
