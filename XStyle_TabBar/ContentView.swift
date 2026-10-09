@@ -40,7 +40,8 @@ struct ContentView: View {
 
     var body: some View {
         CustomSideMenu(
-            isEnabled: navigationPath.isEmpty && revealingRoute == nil,
+            // Home only: the other tabs, and anything pushed, have no side menu.
+            isEnabled: rootTab == .home && navigationPath.isEmpty && revealingRoute == nil,
             canBeginOpening: canBeginSidebarOpening,
             canOpenFromAnywhere: canOpenSidebarFromAnywhere,
             isExpanded: $isSidebarExpanded,
@@ -53,7 +54,7 @@ struct ContentView: View {
                 // Inside the stack, so articles, quizzes and sidebar pages
                 // cover the tab bar when pushed.
                 TabView(selection: $rootTab) {
-                    Tab("Home", systemImage: "house", value: RootTab.home) {
+                    Tab(value: RootTab.home) {
                         historyContent
                             .safeAreaBar(edge: .top, spacing: 0) {
                                 TopMenuBar(
@@ -64,21 +65,11 @@ struct ContentView: View {
                                     isLogoVisible: isLogoVisible,
                                     onSelect: selectTab
                                 ) {
-                                    Button(action: openMenu) {
-                                        Label("Open menu", systemImage: "line.3.horizontal")
-                                            .labelStyle(.iconOnly)
-                                            .frame(width: TopMenuMetrics.minimumTapSize, height: TopMenuMetrics.minimumTapSize)
-                                            .contentShape(.rect)
-                                    }
-                                    .accessibilityIdentifier("navigation.openMenu")
-                                    .accessibilityFocused($isMenuButtonFocused)
+                                    TopMenuIconButton(title: "Open menu", systemImage: "line.3.horizontal", action: openMenu)
+                                        .accessibilityIdentifier("navigation.openMenu")
+                                        .accessibilityFocused($isMenuButtonFocused)
                                 } trailing: {
-                                    Button(action: search) {
-                                        Label("Search", systemImage: "magnifyingglass")
-                                            .labelStyle(.iconOnly)
-                                            .frame(width: TopMenuMetrics.minimumTapSize, height: TopMenuMetrics.minimumTapSize)
-                                            .contentShape(.rect)
-                                    }
+                                    TopMenuIconButton(title: "Search", systemImage: "magnifyingglass", action: search)
                                 }
                             }
                             .background {
@@ -90,32 +81,25 @@ struct ContentView: View {
                                     isLogoVisible = true
                                 }
                             }
+                    } label: {
+                        Label(RootTab.home.title, systemImage: RootTab.home.symbol)
                     }
 
-                    Tab("Notifications", systemImage: "bell", value: RootTab.notifications) {
-                        RootTabPlaceholder(
-                            title: "Notifications",
-                            systemImage: "bell",
-                            description: "Likes, replies and quiz results will show up here."
-                        )
+                    ForEach(RootTab.placeholderTabs, id: \.self) { tab in
+                        Tab(value: tab) {
+                            RootTabPlaceholder(tab: tab)
+                        } label: {
+                            Label(tab.title, systemImage: tab.symbol)
+                        }
                     }
 
-                    Tab("Profile", systemImage: "person", value: RootTab.profile) {
-                        RootTabPlaceholder(
-                            title: "Profile",
-                            systemImage: "person",
-                            description: "Your pets, bookmarks and best scores will live here."
-                        )
-                    }
-
-                    Tab("Search", systemImage: "magnifyingglass", value: RootTab.search, role: .search) {
-                        RootTabPlaceholder(
-                            title: "Search",
-                            systemImage: "magnifyingglass",
-                            description: "Search breeds, articles and quizzes."
-                        )
+                    Tab(value: RootTab.search, role: .search) {
+                        RootTabPlaceholder(tab: .search)
+                    } label: {
+                        Label(RootTab.search.title, systemImage: RootTab.search.symbol)
                     }
                 }
+                .onChange(of: rootTab, rootTabDidChange)
                 .navigationTitle(mainTitle)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarVisibility(.hidden, for: .navigationBar)
@@ -225,8 +209,7 @@ struct ContentView: View {
     private var canOpenSidebarFromAnywhere: Bool {
         // Used for touches outside the pager (the top menu). Touches on the
         // pager are judged against the live scroll view by the gesture itself.
-        // Other tabs have no pager to wait for.
-        rootTab != .home || (pagerGeometry.width > 0 && pagerGeometry.offset <= 0.5)
+        pagerGeometry.width > 0 && pagerGeometry.offset <= 0.5
     }
 
     private var canBeginSidebarOpening: Bool {
@@ -236,7 +219,7 @@ struct ContentView: View {
     }
 
     private func openPendingSidebar() {
-        guard pendingSidebarOpen, navigationPath.isEmpty, revealingRoute == nil,
+        guard pendingSidebarOpen, rootTab == .home, navigationPath.isEmpty, revealingRoute == nil,
               scrollPhase == .idle, tapTransition == nil, pendingTab == nil else { return }
         pendingSidebarOpen = false
         isSidebarExpanded = true
@@ -281,6 +264,14 @@ struct ContentView: View {
     /// The top menu's search button opens the Search tab.
     private func search() {
         rootTab = .search
+    }
+
+    /// A menu tap still waiting for the pager to settle is dropped on leaving
+    /// Home, so it can't open the menu later or keep blocking chip taps.
+    private func rootTabDidChange() {
+        if rootTab != .home {
+            pendingSidebarOpen = false
+        }
     }
 
     private func selectTab(_ tab: AppTab) {
