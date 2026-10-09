@@ -75,12 +75,6 @@ struct ContentView: View {
                             .background {
                                 AmbientGradientBackground(palettes: gradientPalettes, progress: gradientProgress)
                             }
-                            // VoiceOver needs the menu button, so the logo row stays put.
-                            .onChange(of: voiceOverEnabled) { _, isEnabled in
-                                if isEnabled {
-                                    isLogoVisible = true
-                                }
-                            }
                     } label: {
                         Label(RootTab.home.title, systemImage: RootTab.home.symbol)
                     }
@@ -100,6 +94,7 @@ struct ContentView: View {
                     }
                 }
                 .onChange(of: rootTab, rootTabDidChange)
+                .onChange(of: voiceOverEnabled, voiceOverDidChange)
                 .navigationTitle(mainTitle)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarVisibility(.hidden, for: .navigationBar)
@@ -271,6 +266,13 @@ struct ContentView: View {
     private func rootTabDidChange() {
         if rootTab != .home {
             pendingSidebarOpen = false
+        }
+    }
+
+    /// VoiceOver needs the menu button, so the logo row stays put while it runs.
+    private func voiceOverDidChange() {
+        if voiceOverEnabled {
+            isLogoVisible = true
         }
     }
 
