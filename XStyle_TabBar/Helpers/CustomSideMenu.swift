@@ -125,7 +125,9 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
         .contentShape(.rect)
         .gesture(
             CustomSideMenuGesture(
-                isEnabled: isEnabled && settlingTarget == nil,
+                // A pan may interrupt a settle: .began takes over from it, and
+                // the spring's long removal tail would otherwise drop drags.
+                isEnabled: isEnabled,
                 canBeginOpening: canBeginOpening,
                 canOpenFromAnywhere: canOpenFromAnywhere,
                 edgeActivationWidth: edgeActivationWidth,
@@ -147,7 +149,9 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
     private var width: CGFloat { max(sideBarWidth, 1) }
 
     private var isModal: Bool {
-        isExpanded || progress > 0 || dragStart != nil || settlingTarget != nil
+        // Closing hands control back at once; waiting for the spring's long
+        // removal tail would block the content right after it reappears.
+        isExpanded || progress > 0 || dragStart != nil || settlingTarget == true
     }
 
     private var backgroundShape: some Shape {
