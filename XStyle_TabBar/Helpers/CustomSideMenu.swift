@@ -38,8 +38,9 @@ private final class SideMenuPanGestureRecognizer: UIPanGestureRecognizer {
 struct CustomSideMenu<MenuContent: View, Content: View>: View {
     var isEnabled: Bool
     var canBeginOpening: Bool
-    /// Applies to touches outside horizontal scroll views. Over one, an opening
-    /// swipe is accepted anywhere while that scroll view's first page dominates.
+    /// Applies to touches outside horizontal scroll views, and over a free-scrolling
+    /// one resting at its leading edge. Over a paging one, an opening swipe is
+    /// accepted anywhere while its first page dominates.
     var canOpenFromAnywhere: Bool
     var sideBarWidth: CGFloat
     var edgeActivationWidth: CGFloat
@@ -332,12 +333,19 @@ private struct CustomSideMenuGesture: UIGestureRecognizerRepresentable {
             // a frame behind, so a swipe right after landing on the first page
             // would otherwise be refused and rubber-band the scroll view instead.
             let offset = scrollView.contentOffset.x + scrollView.adjustedContentInset.left
-            // While the first page dominates, including while a swipe back to it
-            // is still gliding in or rubber-banding, a rightward drag means the
-            // menu. The pager is snapped onto that page once the menu pan begins.
-            if offset <= scrollView.bounds.width * 0.5 {
-                pagerToSnap = abs(offset) > 0.5 ? scrollView : nil
-                return true
+            if scrollView.isPagingEnabled {
+                // While the first page dominates, including while a swipe back to
+                // it is still gliding in or rubber-banding, a rightward drag means
+                // the menu. The pager is snapped onto that page once the pan begins.
+                if offset <= scrollView.bounds.width * 0.5 {
+                    pagerToSnap = abs(offset) > 0.5 ? scrollView : nil
+                    return true
+                }
+            } else if offset <= 0.5 {
+                // A free-scrolling row (the category chips) at its leading edge
+                // cannot use a rightward drag; treat it like the content beneath
+                // and never move it.
+                return startsAtEdge || parent.canOpenFromAnywhere
             }
             return startsAtEdge && !scrollView.isDragging && !scrollView.isDecelerating
         }
@@ -354,12 +362,13 @@ private struct CustomSideMenuGesture: UIGestureRecognizerRepresentable {
             _ gestureRecognizer: UIGestureRecognizer,
             shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
         ) -> Bool {
+            // Only horizontal scroll views compete with the menu. Vertical ones
+            // must start at once instead of waiting out the decision distance.
             guard parent.isEnabled,
                   let scrollView = otherGestureRecognizer.view as? UIScrollView,
-                  otherGestureRecognizer === scrollView.panGestureRecognizer else { return false }
-            if scrollView.contentSize.width > scrollView.bounds.width {
-                horizontalScrollView = scrollView
-            }
+                  otherGestureRecognizer === scrollView.panGestureRecognizer,
+                  scrollView.contentSize.width > scrollView.bounds.width + 0.5 else { return false }
+            horizontalScrollView = scrollView
             // The scroll pan waits only until shouldBegin accepts or rejects this drag.
             return true
         }

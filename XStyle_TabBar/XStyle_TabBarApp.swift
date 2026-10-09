@@ -2,7 +2,7 @@
 //  XStyle_TabBarApp.swift
 //  XStyle_TabBar
 //
-//  Created by Balaji Venkatesh on 28/07/26.
+//  Created by Francois Chaillou on 28/07/26.
 //
 
 import SwiftUI
