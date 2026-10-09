@@ -37,11 +37,13 @@ private final class SideMenuPanGestureRecognizer: UIPanGestureRecognizer {
 
 struct CustomSideMenu<MenuContent: View, Content: View>: View {
     var isEnabled: Bool
-    var canBeginOpening: Bool
+    /// Asked as a touch begins.
+    var canBeginOpening: () -> Bool
     /// Applies to touches outside horizontal scroll views, and over a free-scrolling
     /// one resting at its leading edge. Over a paging one, an opening swipe is
-    /// accepted anywhere while its first page dominates.
-    var canOpenFromAnywhere: Bool
+    /// accepted anywhere while its first page dominates. Asked as a touch
+    /// begins, so the answer can follow a scroll without redrawing anything.
+    var canOpenFromAnywhere: () -> Bool
     var sideBarWidth: CGFloat
     var edgeActivationWidth: CGFloat
     @Binding var isExpanded: Bool
@@ -60,8 +62,8 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
 
     init(
         isEnabled: Bool = true,
-        canBeginOpening: Bool = true,
-        canOpenFromAnywhere: Bool = false,
+        canBeginOpening: @escaping () -> Bool = { true },
+        canOpenFromAnywhere: @escaping () -> Bool = { false },
         sideBarWidth: CGFloat = 280,
         edgeActivationWidth: CGFloat = 24,
         isExpanded: Binding<Bool>,
@@ -261,8 +263,8 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
 
 private struct CustomSideMenuGesture: UIGestureRecognizerRepresentable {
     var isEnabled: Bool
-    var canBeginOpening: Bool
-    var canOpenFromAnywhere: Bool
+    var canBeginOpening: () -> Bool
+    var canOpenFromAnywhere: () -> Bool
     var edgeActivationWidth: CGFloat
     var isExpanded: Bool
     var handle: (UIGestureRecognizer.State, CGPoint, CGPoint) -> Void
@@ -328,12 +330,12 @@ private struct CustomSideMenuGesture: UIGestureRecognizerRepresentable {
             guard abs(direction.x) > abs(direction.y) * 0.7 else { return false }
 
             if parent.isExpanded { return direction.x < 0 }
-            guard parent.canBeginOpening, direction.x > 0 else { return false }
+            guard parent.canBeginOpening(), direction.x > 0 else { return false }
 
             let startX = converter.localLocation.x - direction.x
             let startsAtEdge = startX >= 0 && startX <= parent.edgeActivationWidth
             guard let scrollView = horizontalScrollView else {
-                return startsAtEdge || parent.canOpenFromAnywhere
+                return startsAtEdge || parent.canOpenFromAnywhere()
             }
 
             // Read UIKit's live scroll state: SwiftUI's copy of the pager can lag
@@ -352,7 +354,7 @@ private struct CustomSideMenuGesture: UIGestureRecognizerRepresentable {
                 // A free-scrolling row (the category chips) at its leading edge
                 // cannot use a rightward drag; treat it like the content beneath
                 // and never move it.
-                return startsAtEdge || parent.canOpenFromAnywhere
+                return startsAtEdge || parent.canOpenFromAnywhere()
             }
             return startsAtEdge && !scrollView.isDragging && !scrollView.isDecelerating
         }
