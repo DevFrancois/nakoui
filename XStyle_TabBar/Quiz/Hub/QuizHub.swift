@@ -17,14 +17,19 @@ struct QuizHub: View {
                     .foregroundStyle(.secondary)
             }
 
-            ForEach(QuizKind.allCases) { kind in
-                NavigationLink(value: kind) {
-                    QuizCard(kind: kind)
-                        .matchedTransitionSource(id: kind, in: namespace) { source in
-                            source.clipShape(.rect(cornerRadius: QuizMetrics.cardCornerRadius))
+            // One container renders the cards' glass together.
+            GlassEffectContainer(spacing: QuizMetrics.sectionSpacing) {
+                VStack(spacing: QuizMetrics.sectionSpacing) {
+                    ForEach(QuizKind.allCases) { kind in
+                        NavigationLink(value: kind) {
+                            QuizCard(kind: kind)
+                                .matchedTransitionSource(id: kind, in: namespace) { source in
+                                    source.clipShape(.rect(cornerRadius: QuizMetrics.cardCornerRadius))
+                                }
                         }
+                        .buttonStyle(QuizCardButtonStyle())
+                    }
                 }
-                .buttonStyle(PassthroughButtonStyle())
             }
         }
         .padding()

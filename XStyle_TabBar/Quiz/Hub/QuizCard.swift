@@ -1,7 +1,9 @@
 import SwiftUI
 
 /// A quiz on the hub: its symbol, name, pitch, length and best score, on
-/// interactive glass that answers the touch.
+/// glass. Not interactive glass: the hub sits in the Home pager, so most
+/// touches on a card are swipes, and interactive glass would run its touch
+/// effect through every swipe and every bounce past the last page.
 struct QuizCard: View {
     let kind: QuizKind
 
@@ -41,7 +43,7 @@ struct QuizCard: View {
         }
         .padding()
         .contentShape(.rect(cornerRadius: QuizMetrics.cardCornerRadius))
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: QuizMetrics.cardCornerRadius))
+        .glassEffect(.regular, in: .rect(cornerRadius: QuizMetrics.cardCornerRadius))
         .accessibilityElement(children: .combine)
     }
 }
