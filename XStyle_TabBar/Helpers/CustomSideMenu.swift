@@ -44,7 +44,11 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
     /// accepted anywhere while its first page dominates. Asked as a touch
     /// begins, so the answer can follow a scroll without redrawing anything.
     var canOpenFromAnywhere: () -> Bool
-    var sideBarWidth: CGFloat
+    /// The menu's share of the screen's width, kept within the limits below,
+    /// so it scales across phones but stays a sidebar on wide screens.
+    var widthFraction: CGFloat
+    var minimumWidth: CGFloat
+    var maximumWidth: CGFloat
     var edgeActivationWidth: CGFloat
     @Binding var isExpanded: Bool
     var onDismissed: () -> Void
@@ -52,6 +56,7 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
     @ViewBuilder var content: (_ progress: CGFloat) -> Content
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @State private var progress: CGFloat
     @State private var xOffset: CGFloat
     @State private var dragStart: DragStart?
@@ -59,12 +64,16 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
     @State private var transitionID = 0
     @State private var hasReportedClosed: Bool
     @State private var haptics = false
+    /// The screen's width, which the menu's width follows.
+    @State private var containerWidth: CGFloat = 0
 
     init(
         isEnabled: Bool = true,
         canBeginOpening: @escaping () -> Bool = { true },
         canOpenFromAnywhere: @escaping () -> Bool = { false },
-        sideBarWidth: CGFloat = 280,
+        widthFraction: CGFloat = 0.8,
+        minimumWidth: CGFloat = 260,
+        maximumWidth: CGFloat = 320,
         edgeActivationWidth: CGFloat = 24,
         isExpanded: Binding<Bool>,
         onDismissed: @escaping () -> Void = {},
@@ -74,14 +83,17 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
         self.isEnabled = isEnabled
         self.canBeginOpening = canBeginOpening
         self.canOpenFromAnywhere = canOpenFromAnywhere
-        self.sideBarWidth = sideBarWidth
+        self.widthFraction = widthFraction
+        self.minimumWidth = minimumWidth
+        self.maximumWidth = maximumWidth
         self.edgeActivationWidth = edgeActivationWidth
         self._isExpanded = isExpanded
         self.onDismissed = onDismissed
         self.menuContent = menuContent
         self.content = content
         self._progress = State(initialValue: isExpanded.wrappedValue ? 1 : 0)
-        self._xOffset = State(initialValue: isExpanded.wrappedValue ? max(sideBarWidth, 1) : 0)
+        // Corrected once the screen's width is known.
+        self._xOffset = State(initialValue: isExpanded.wrappedValue ? max(maximumWidth, 1) : 0)
         self._hasReportedClosed = State(initialValue: !isExpanded.wrappedValue)
     }
 
@@ -96,6 +108,10 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
                 .accessibilityHidden(!isExpanded)
 
             content(progress)
+                // Drained of color while the menu shows, so the menu holds
+                // the color: washed lighter in light mode, darker in dark mode.
+                .saturation(Double(1 - 0.85 * progress))
+                .brightness(Double((colorScheme == .dark ? -0.15 : 0.15) * progress))
                 .containerRelativeFrame(.horizontal)
                 .frame(maxHeight: .infinity)
                 .allowsHitTesting(!isModal)
@@ -106,12 +122,11 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
                         .ignoresSafeArea()
                 }
                 .overlay {
-                    backgroundShape
-                        .fill(.fill.tertiary)
+                    // Closes the menu on a tap anywhere on the content.
+                    Color.clear
                         .ignoresSafeArea()
                         .contentShape(.rect)
                         .onTapGesture { settle(expanded: false) }
-                        .opacity(progress)
                         .allowsHitTesting(isModal)
                         .accessibilityHidden(true)
                 }
@@ -126,6 +141,11 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
                 .offset(x: xOffset)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { newWidth in
+            containerWidthDidChange(to: newWidth)
+        }
         .contentShape(.rect)
         .gesture(
             CustomSideMenuGesture(
@@ -150,7 +170,23 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
         }
     }
 
-    private var width: CGFloat { max(sideBarWidth, 1) }
+    /// The menu's width: a share of the screen, within its limits. Also how
+    /// far the content slides, and the drag distance that decides a release.
+    private var width: CGFloat {
+        guard containerWidth > 0 else { return max(maximumWidth, 1) }
+        return max(min(max(containerWidth * widthFraction, minimumWidth), maximumWidth), 1)
+    }
+
+    /// Keeps an open menu's content against the menu's new edge when the
+    /// screen's width changes, as on rotation or unfolding an iPhone Duo.
+    private func containerWidthDidChange(to newWidth: CGFloat) {
+        guard containerWidth != newWidth else { return }
+        containerWidth = newWidth
+        guard dragStart == nil, isExpanded, progress == 1 else { return }
+        withoutAnimation {
+            xOffset = width
+        }
+    }
 
     /// Light catching the content's rounded edge while the menu shows,
     /// brightest at the top corner, like the rim of a glass pane. Outside the
