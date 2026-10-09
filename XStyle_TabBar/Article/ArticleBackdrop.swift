@@ -1,10 +1,12 @@
 import SwiftUI
 
 /// Colors for the article page, taken from its image: four lights across the
-/// top, left to right like the image's top half, fading into a base taken from
-/// its bottom half. A tone makes them dark or light.
+/// top of the page from the image's top half, four across the bottom from its
+/// bottom half, both left to right, fading into a base from the whole image.
+/// A tone makes them dark or light.
 struct ArticleBackdrop: Equatable {
-    let lights: [SIMD3<Float>]
+    let topLights: [SIMD3<Float>]
+    let bottomLights: [SIMD3<Float>]
     let base: SIMD3<Float>
 
     /// Side of the square the image is shrunk to before averaging.
@@ -45,16 +47,21 @@ struct ArticleBackdrop: Equatable {
 
         let half = size / 2
         let bandWidth = size / 4
-        lights = (0..<4).map { band in
-            Self.toned(
-                average(rows: 0..<half, columns: band * bandWidth..<(band + 1) * bandWidth),
-                brightness: tone.lightBrightness,
-                saturationScale: tone.lightSaturationScale,
-                maximumSaturation: tone.maximumLightSaturation
-            )
+        func lights(rows: Range<Int>) -> [SIMD3<Float>] {
+            (0..<4).map { band in
+                Self.toned(
+                    average(rows: rows, columns: band * bandWidth..<(band + 1) * bandWidth),
+                    brightness: tone.lightBrightness,
+                    saturationScale: tone.lightSaturationScale,
+                    maximumSaturation: tone.maximumLightSaturation
+                )
+            }
         }
+
+        topLights = lights(rows: 0..<half)
+        bottomLights = lights(rows: half..<size)
         base = Self.toned(
-            average(rows: half..<size, columns: 0..<size),
+            average(rows: 0..<size, columns: 0..<size),
             brightness: tone.baseBrightness,
             saturationScale: tone.baseSaturationScale,
             maximumSaturation: tone.maximumBaseSaturation
