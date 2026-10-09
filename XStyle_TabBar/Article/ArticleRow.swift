@@ -23,6 +23,12 @@ struct ArticleRow: View {
 
                     ArticleHeroImage(image: article.image)
                         .frame(height: ArticleMetrics.thumbnailHeight)
+                        .overlay(alignment: .topTrailing) {
+                            if article.images.count > 1 {
+                                ArticleImageCountBadge(count: article.images.count)
+                                    .padding(ArticleMetrics.galleryIndicatorPadding)
+                            }
+                        }
                         .clipShape(.rect(cornerRadius: ArticleMetrics.thumbnailCornerRadius))
                         .matchedTransitionSource(id: article.id, in: namespace) { source in
                             source.clipShape(.rect(cornerRadius: ArticleMetrics.thumbnailCornerRadius))

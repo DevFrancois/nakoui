@@ -12,6 +12,35 @@ struct ArticleBackdrop: Equatable {
     /// Side of the square the image is shrunk to before averaging.
     private static let sampleSize = 32
 
+    private init(topLights: [SIMD3<Float>], bottomLights: [SIMD3<Float>], base: SIMD3<Float>) {
+        self.topLights = topLights
+        self.bottomLights = bottomLights
+        self.base = base
+    }
+
+    /// The backdrop for a gallery at a fractional page, blending each page's
+    /// colors into the next with the same easing as the home pager.
+    static func blending(_ backdrops: [ArticleBackdrop], at position: CGFloat) -> ArticleBackdrop? {
+        guard !backdrops.isEmpty else { return nil }
+        let clamped = min(max(position.isNaN ? 0 : position, 0), CGFloat(backdrops.count - 1))
+        let lower = Int(clamped)
+        let fraction = Float(clamped - CGFloat(lower))
+        guard fraction > 0, lower + 1 < backdrops.count else { return backdrops[lower] }
+
+        // Quintic smootherstep has zero velocity and acceleration at page edges.
+        let amount = fraction * fraction * fraction * (fraction * (6 * fraction - 15) + 10)
+        let from = backdrops[lower]
+        let to = backdrops[lower + 1]
+        func mix(_ start: [SIMD3<Float>], _ end: [SIMD3<Float>]) -> [SIMD3<Float>] {
+            zip(start, end).map { $0 + ($1 - $0) * amount }
+        }
+        return ArticleBackdrop(
+            topLights: mix(from.topLights, to.topLights),
+            bottomLights: mix(from.bottomLights, to.bottomLights),
+            base: from.base + (to.base - from.base) * amount
+        )
+    }
+
     /// Samples any image, such as an article's cover once it has loaded.
     init?(sampling image: CGImage, tone: Tone) {
         let size = Self.sampleSize

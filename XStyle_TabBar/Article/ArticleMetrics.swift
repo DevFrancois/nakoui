@@ -12,6 +12,10 @@ enum ArticleMetrics {
     /// How far up the page the bottom lights reach. Shorter than the top, so the
     /// middle of the page, where the text starts, stays close to the base.
     static let backdropBottomCoverage = 1.0
+    static let galleryDotSize = 7.0
+    static let galleryCurrentDotWidth = 20.0
+    static let galleryDotSpacing = 6.0
+    static let galleryIndicatorPadding = 8.0
     /// Matches a navigation bar button, and Apple's minimum tap size.
     static let barButtonSize = 44.0
 }

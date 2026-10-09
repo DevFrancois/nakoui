@@ -8,7 +8,15 @@ struct Article: Identifiable, Hashable {
     /// Placeholder copy, intentionally not localized.
     let body: String
     let tint: Color
+    /// The cover: shown in the feed and first in the article.
     let image: ImageResource
+    /// Shown after the cover in the article's gallery.
+    let additionalImages: [ImageResource]
+
+    /// Every image, cover first.
+    var images: [ImageResource] {
+        [image] + additionalImages
+    }
 
     // Identity alone decides equality, so navigation compares articles by ID.
     static func == (lhs: Article, rhs: Article) -> Bool {
@@ -23,13 +31,20 @@ struct Article: Identifiable, Hashable {
 extension Article {
     /// A stand-in article for a feed row, until real content exists.
     static func placeholder(number: Int, tint: Color) -> Article {
-        Article(
+        // Every third article, from the second, holds a gallery of the next images in turn.
+        let imageCount = number % 3 == 2 ? 3 : 1
+        let images = (0..<imageCount).map { offset in
+            sampleImages[(number - 1 + offset) % sampleImages.count]
+        }
+
+        return Article(
             id: "article-\(number)",
             title: "Lorem Ipsum Dolor Sit Amet \(number)",
             summary: "Consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore.",
             body: loremIpsum,
             tint: tint,
-            image: sampleImages[(number - 1) % sampleImages.count]
+            image: images[0],
+            additionalImages: Array(images.dropFirst())
         )
     }
 
