@@ -9,10 +9,11 @@ struct FeedPage: View {
     let topInset: CGFloat
     /// Shared with the article and quiz destinations for the zoom transitions.
     let zoomNamespace: Namespace.ID
+    /// The For you tasks. Owned by `ContentView`, so the side menu can reach
+    /// them too.
+    let taskList: ForYouTaskList
 
     @State private var presentedDestination: ForYouDestination?
-    /// Lives here, outside the lazy stack, so scrolling never resets it.
-    @State private var taskList = ForYouTaskList()
     @State private var isShowingTasks = false
 
     private static let postCount = 40
@@ -85,7 +86,7 @@ struct FeedPage: View {
     }
 
     private func dismissStackedTask(_ task: ForYouTask) {
-        withAnimation(.smooth) {
+        withAnimation(TaskMetrics.stackAnimation) {
             taskList.dismiss(task)
             taskList.updateStack()
         }
@@ -93,7 +94,7 @@ struct FeedPage: View {
 
     /// Runs once the sheet has closed, so the stack's update plays in view.
     private func revealTaskChanges() {
-        withAnimation(.smooth) {
+        withAnimation(TaskMetrics.stackAnimation) {
             taskList.updateStack()
         }
     }

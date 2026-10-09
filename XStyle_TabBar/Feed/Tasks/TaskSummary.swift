@@ -7,14 +7,14 @@ struct TaskSummary<Footer: View>: View {
     @ViewBuilder let footer: Footer
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
+        HStack(alignment: .top, spacing: TaskMetrics.summarySpacing) {
             Image(systemName: task.symbol)
                 .font(.largeTitle)
                 .foregroundStyle(task.tint)
-                .frame(width: TopMenuMetrics.minimumTapSize)
+                .frame(width: TaskMetrics.iconWidth)
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: TaskMetrics.textSpacing) {
                 Text(task.title)
                     .font(.headline)
 

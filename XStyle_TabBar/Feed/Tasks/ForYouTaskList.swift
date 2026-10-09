@@ -33,6 +33,15 @@ final class ForYouTaskList {
         stacked = remaining
     }
 
+    #if DEBUG
+    /// Brings every task back, for testing the stack again. Compiled into
+    /// debug builds only.
+    func reset(to tasks: [ForYouTask] = ForYouTask.samples) {
+        remaining = tasks
+        stacked = tasks
+    }
+    #endif
+
     private func remove(_ task: ForYouTask) -> Bool {
         guard let index = remaining.firstIndex(where: { $0.id == task.id }) else { return false }
         remaining.remove(at: index)

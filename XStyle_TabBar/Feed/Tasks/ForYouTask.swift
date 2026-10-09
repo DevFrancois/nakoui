@@ -5,13 +5,13 @@ import SwiftUI
 struct ForYouTask: Identifiable {
     let id: String
     /// The small uppercase heading above the card's divider.
-    let category: String
-    let title: String
-    let message: String
+    let category: LocalizedStringResource
+    let title: LocalizedStringResource
+    let message: LocalizedStringResource
     let symbol: String
     let tint: Color
     /// The sheet's button that completes the task.
-    let actionTitle: String
+    let actionTitle: LocalizedStringResource
 }
 
 extension ForYouTask {
