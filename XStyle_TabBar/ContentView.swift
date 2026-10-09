@@ -15,7 +15,8 @@ struct ContentView: View {
     @State private var selectedTab: AppTab = .bookmarks
     @State private var tapTransition: TabTransition?
     @State private var pendingTab: AppTab?
-    @State private var navigationPath: [SidebarRoute] = []
+    /// Holds sidebar routes and articles, so either can be pushed.
+    @State private var navigationPath = NavigationPath()
     @State private var isSidebarExpanded = false
     @State private var pendingSidebarOpen = false
     @State private var revealingRoute: SidebarRoute?
@@ -31,6 +32,7 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @AccessibilityFocusState private var isMenuButtonFocused: Bool
+    @Namespace private var articleNamespace
     private let mainTitle = "Nako"
 
     var body: some View {
@@ -94,6 +96,9 @@ struct ContentView: View {
                             .accessibilityIdentifier("destination.\(route.rawValue)")
                             .onAppear { revealSidebarRoute(route) }
                     }
+                    .navigationDestination(for: Article.self) { article in
+                        ArticleView(article: article, namespace: articleNamespace)
+                    }
             }
             .opacity(isRouteContentVisible ? 1 : 0)
             .onGeometryChange(for: CGFloat.self) { proxy in
@@ -114,7 +119,11 @@ struct ContentView: View {
                     } ?? true
                     let offsetFactor = tapTransition?.offsetFactor ?? 0
 
-                    FeedPage(tab: tab, topInset: statusBarInset + TopMenuMetrics.expandedHeight)
+                    FeedPage(
+                        tab: tab,
+                        topInset: statusBarInset + TopMenuMetrics.expandedHeight,
+                        articleNamespace: articleNamespace
+                    )
                         .onScrollGeometryChange(for: CGFloat.self) { geometry in
                             geometry.contentOffset.y + geometry.contentInsets.top
                         } action: { oldOffset, newOffset in
@@ -203,7 +212,7 @@ struct ContentView: View {
         withoutAnimation {
             revealingRoute = route
             isRouteContentVisible = false
-            navigationPath = [route]
+            navigationPath = NavigationPath([route])
         }
     }
 
