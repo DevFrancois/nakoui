@@ -9,37 +9,38 @@ struct ArticleView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading) {
-                // Same placeholder as the card, so the zoom lands on it.
+            VStack(alignment: .leading, spacing: 16) {
+                // Same placeholder as the feed, so the zoom reads as it growing into place.
                 ArticleHeroPlaceholder(tint: article.tint)
-                    .containerRelativeFrame(.vertical) { length, _ in
-                        length * ArticleMetrics.heroHeightFraction
-                    }
+                    .aspectRatio(1, contentMode: .fit)
+                    .clipShape(.rect(cornerRadius: ArticleMetrics.heroCornerRadius))
+                    // Keeps the square from filling wide windows.
+                    .frame(maxWidth: ArticleMetrics.heroMaxWidth)
+                    .frame(maxWidth: .infinity)
 
-                VStack(alignment: .leading, spacing: 16) {
-                    Text(article.title)
-                        .font(.largeTitle)
-                        .bold()
+                Text(article.title)
+                    .font(.largeTitle)
+                    .bold()
 
-                    Text(article.summary)
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
+                Text(article.summary)
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
 
-                    ArticleActionBar(isLiked: $isLiked, isBookmarked: $isBookmarked)
+                ArticleActionBar(isLiked: $isLiked, isBookmarked: $isBookmarked)
 
-                    Divider()
+                Divider()
 
-                    Text(article.body)
-                        .font(.body)
-                }
-                .padding()
+                Text(article.body)
+                    .font(.body)
             }
+            .padding()
         }
-        // Let the hero run under the status bar and the glass buttons.
-        .ignoresSafeArea(edges: .top)
-        .background(.background)
-        // Part of the page, not the navigation bar, so they follow the zoom.
-        .overlay(alignment: .top) {
+        // The home screen's shader, lit with this article's colors.
+        .background {
+            AmbientGradientBackground(palettes: [article.palette], progress: 0)
+        }
+        // Part of the page, not the navigation bar, so the buttons follow the zoom.
+        .safeAreaBar(edge: .top) {
             ArticleTopBar(article: article)
         }
         .toolbarVisibility(.hidden, for: .navigationBar)
@@ -51,6 +52,6 @@ struct ArticleView: View {
     @Previewable @Namespace var namespace
 
     NavigationStack {
-        ArticleView(article: .placeholder(number: 1, tint: .green), namespace: namespace)
+        ArticleView(article: .placeholder(number: 1, tint: .green, palette: .meadowLight), namespace: namespace)
     }
 }

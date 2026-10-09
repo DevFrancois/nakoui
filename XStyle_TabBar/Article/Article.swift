@@ -8,6 +8,8 @@ struct Article: Identifiable, Hashable {
     /// Placeholder copy, intentionally not localized.
     let body: String
     let tint: Color
+    /// Colors of the ambient light behind the article page.
+    let palette: AmbientGradientPalette
 
     // Identity alone decides equality, so navigation compares articles by ID.
     static func == (lhs: Article, rhs: Article) -> Bool {
@@ -21,13 +23,14 @@ struct Article: Identifiable, Hashable {
 
 extension Article {
     /// A stand-in article for a feed row, until real content exists.
-    static func placeholder(number: Int, tint: Color) -> Article {
+    static func placeholder(number: Int, tint: Color, palette: AmbientGradientPalette) -> Article {
         Article(
             id: "article-\(number)",
             title: "Lorem Ipsum Dolor Sit Amet \(number)",
             summary: "Consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore.",
             body: loremIpsum,
-            tint: tint
+            tint: tint,
+            palette: palette
         )
     }
 
