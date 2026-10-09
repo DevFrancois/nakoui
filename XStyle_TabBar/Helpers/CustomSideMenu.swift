@@ -155,8 +155,15 @@ struct CustomSideMenu<MenuContent: View, Content: View>: View {
         isExpanded || progress > 0 || dragStart != nil || settlingTarget == true
     }
 
-    private var backgroundShape: some Shape {
-        ConcentricRectangle(corners: .concentric, isUniform: true)
+    /// Fully closed and settled, so the content covers the whole screen.
+    private var isAtRest: Bool {
+        hasReportedClosed
+    }
+
+    private var backgroundShape: AnyShape {
+        // Round the content only while the menu shows. At rest the display's
+        // own corners round it, and a mask would cut them out of screenshots.
+        isAtRest ? AnyShape(Rectangle()) : AnyShape(ConcentricRectangle(corners: .concentric, isUniform: true))
     }
 
     private func handlePan(
