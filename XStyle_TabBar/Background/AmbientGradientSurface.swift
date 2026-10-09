@@ -29,15 +29,23 @@ struct AmbientGradientSurface: View {
 
     private var shader: Shader {
         let height = max(Float(size.height), 1)
-        // Uniform work happens once per frame rather than once per fragment.
         // Compress only Y, anchored at each edge, so the lights cover part of the height.
+        let inverseSize = Shader.Argument.float2(1 / max(Float(size.width), 1), 1 / height / Float(verticalCoverage))
+        let bottomInverseHeight = Shader.Argument.float(1 / height / Float(bottomCoverage))
+        // Each light's distance from its edge, and how fast the lights fade
+        // with distance and build up where they overlap.
+        let centerY = Shader.Argument.float4(-0.015, 0.13, -0.05, -0.03)
+        let falloffScale = Shader.Argument.float(-1.8)
+        let coverageScale = Shader.Argument.float(1.5)
+
+        // Uniform work happens once per frame rather than once per fragment.
         return ShaderFunction(library: .default, name: "ambientLightingEdges")(
-            .float2(1 / max(Float(size.width), 1), 1 / height / Float(verticalCoverage)),
-            .float(1 / height / Float(bottomCoverage)),
+            inverseSize,
+            bottomInverseHeight,
             .float(height),
-            .float4(-0.015, 0.13, -0.05, -0.03),
-            .float(-1.8),
-            .float(1.5),
+            centerY,
+            falloffScale,
+            coverageScale,
             argument(topLights[0]),
             argument(topLights[1]),
             argument(topLights[2]),

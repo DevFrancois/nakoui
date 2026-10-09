@@ -7,6 +7,12 @@ struct AmbientGradientFrame: Equatable {
     let palette: AmbientGradientPalette
     let bloom: Float
 
+    /// How far down the wash reaches, as a fraction of the height. Mid-swipe,
+    /// it reaches a little further.
+    var reach: CGFloat {
+        1 + CGFloat(min(max(bloom, 0), 1)) * 0.12
+    }
+
     static func sample(
         palettes: [AmbientGradientPalette],
         progress: CGFloat,

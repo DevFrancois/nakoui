@@ -19,15 +19,11 @@ struct AmbientGradientBackground: View {
 
     var body: some View {
         let frame = AmbientGradientFrame.sample(palettes: palettes, progress: progress, reduceMotion: reduceMotion)
-        let tone = colorScheme == .dark ? frame.palette.dark : frame.palette.light
-        let color = Color(.sRGB, red: Double(tone.x), green: Double(tone.y), blue: Double(tone.z))
-        // Mid-swipe, the wash reaches a little further down.
-        let reach = 1 + CGFloat(min(max(frame.bloom, 0), 1)) * 0.12
 
         LinearGradient(
-            stops: Self.falloff.map { Gradient.Stop(color: color.opacity($0.opacity), location: $0.location) },
+            gradient: wash(frame.palette),
             startPoint: .top,
-            endPoint: UnitPoint(x: 0.5, y: reach)
+            endPoint: UnitPoint(x: 0.5, y: frame.reach)
         )
         .background(Color(.pageBackground))
         .ignoresSafeArea()
@@ -36,5 +32,12 @@ struct AmbientGradientBackground: View {
         // The pager supplies every frame. SwiftUI must not interpolate on its
         // own, or keep rendering after paging settles.
         .transaction { $0.animation = nil }
+    }
+
+    /// The palette's color in the current appearance, fading down the screen.
+    private func wash(_ palette: AmbientGradientPalette) -> Gradient {
+        let tone = colorScheme == .dark ? palette.dark : palette.light
+        let color = Color(.sRGB, red: Double(tone.x), green: Double(tone.y), blue: Double(tone.z))
+        return Gradient(stops: Self.falloff.map { Gradient.Stop(color: color.opacity($0.opacity), location: $0.location) })
     }
 }
