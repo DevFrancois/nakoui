@@ -19,6 +19,11 @@ final class ScannerModel {
     private(set) var zoom: CameraZoom?
     /// The zoom the camera is at, or heading to.
     private(set) var zoomFactor = 1.0
+    /// Whether the camera has a torch, for the flashlight button. False
+    /// until the camera first starts.
+    private(set) var hasTorch: Bool
+    /// Whether the torch is on, or about to be.
+    private(set) var isTorchOn = false
     /// Read when timing the result sheet; the view keeps it current.
     @ObservationIgnored var reduceMotion = false
 
@@ -29,11 +34,15 @@ final class ScannerModel {
     @ObservationIgnored private var screenSize = CGSize.zero
     @ObservationIgnored private var displayScale: CGFloat = 3
     @ObservationIgnored private var revealTask: Task<Void, Never>?
+    /// The latest torch switch. Each waits for the one before, so quick taps
+    /// land in order.
+    @ObservationIgnored private var torchTask: Task<Void, Never>?
 
-    init(state: ScannerState = .idle, scannedCode: ScannedCode? = nil, zoom: CameraZoom? = nil) {
+    init(state: ScannerState = .idle, scannedCode: ScannedCode? = nil, zoom: CameraZoom? = nil, hasTorch: Bool = false) {
         self.state = state
         self.scannedCode = scannedCode
         self.zoom = zoom
+        self.hasTorch = hasTorch
         zoomFactor = zoom?.recommended ?? 1
     }
 
@@ -75,6 +84,7 @@ final class ScannerModel {
             zoom = cameraZoom
             zoomFactor = cameraZoom.recommended
         }
+        hasTorch = await capture.hasTorch
         state = .scanning
         await capture.setScreen(size: screenSize, viewfinder: viewfinder, displayScale: displayScale)
         if reveal == nil && scannedCode == nil {
@@ -87,6 +97,8 @@ final class ScannerModel {
         }
         if await capture.stop(token) {
             state = .idle
+            // Stopping turned the torch off.
+            isTorchOn = false
         }
     }
 
@@ -114,6 +126,22 @@ final class ScannerModel {
         guard let zoom else { return }
         zoomFactor = zoom.range.clamp(factor)
         capture?.setZoom(zoomFactor, animated: animated)
+    }
+
+    /// Turns the flashlight on or off. The button changes at once; if the
+    /// torch can't turn on, it goes back to off.
+    func toggleTorch() {
+        let isOn = !isTorchOn
+        isTorchOn = isOn
+        let previous = torchTask
+        torchTask = Task {
+            await previous?.value
+            guard let capture else { return }
+            let didTurnOn = await capture.setTorch(isOn)
+            if isOn && !didTurnOn && isTorchOn {
+                isTorchOn = false
+            }
+        }
     }
 
     /// Call once the result sheet is gone: the reveal fades and scanning

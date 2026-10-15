@@ -23,6 +23,9 @@ actor BarcodeCaptureService {
     /// What the user can zoom through, and where scanning starts. Set with
     /// the camera on the first start; nil if it couldn't be configured.
     private(set) var zoom: CameraZoom?
+    /// Whether the camera has a torch to light codes with. Set with the
+    /// camera on the first start.
+    private(set) var hasTorch = false
 
     nonisolated var unownedExecutor: UnownedSerialExecutor {
         sessionQueue.asUnownedSerialExecutor()
@@ -60,6 +63,7 @@ actor BarcodeCaptureService {
         isRunActive = false
         adjustmentTask?.cancel()
         adjustmentTask = nil
+        _ = setTorch(false)
         if session.isRunning {
             session.stopRunning()
         }
@@ -103,6 +107,20 @@ actor BarcodeCaptureService {
             device.videoZoomFactor = factor
         }
         device.unlockForConfiguration()
+    }
+
+    /// Turns the torch on or off; it only turns on during a run.
+    /// - Returns: Whether the torch is on. It can't turn on while the
+    ///   system holds it back, such as when the phone is too hot.
+    func setTorch(_ isOn: Bool) -> Bool {
+        guard let device, hasTorch, (try? device.lockForConfiguration()) != nil else { return false }
+        defer { device.unlockForConfiguration() }
+        guard isOn else {
+            device.torchMode = .off
+            return false
+        }
+        guard isRunActive, device.isTorchAvailable else { return false }
+        return (try? device.setTorchModeOn(level: AVCaptureDevice.maxAvailableTorchLevel)) != nil
     }
 
     private func configure() throws {
@@ -154,6 +172,7 @@ actor BarcodeCaptureService {
             device.videoZoomFactor = zoom.recommended
             device.unlockForConfiguration()
             self.zoom = zoom
+            hasTorch = device.hasTorch && device.isTorchModeSupported(.on)
         }
         self.device = device
         recoveryTask = Task { await recoverFromRuntimeErrors() }

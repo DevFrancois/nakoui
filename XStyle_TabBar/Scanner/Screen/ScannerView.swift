@@ -57,12 +57,19 @@ struct ScannerView: View {
             // Each item pads its own bottom, so with neither showing the bar
             // adds no inset.
             VStack(spacing: 0) {
-                if model.zoom != nil, model.state == .scanning {
-                    ScannerZoomControl(model: model)
-                        .padding(.bottom)
-                        .opacity(canZoom ? 1 : 0)
-                        .disabled(!canZoom)
-                        .animation(.easeOut(duration: 0.15), value: canZoom)
+                if model.state == .scanning, model.zoom != nil || model.hasTorch {
+                    GlassEffectContainer(spacing: 12) {
+                        HStack(spacing: 12) {
+                            ScannerZoomControl(model: model)
+                            if model.hasTorch {
+                                ScannerTorchButton(model: model)
+                            }
+                        }
+                    }
+                    .padding(.bottom)
+                    .opacity(isAiming ? 1 : 0)
+                    .disabled(!isAiming)
+                    .animation(.easeOut(duration: 0.15), value: isAiming)
                 }
 
                 #if targetEnvironment(simulator)
@@ -85,9 +92,14 @@ struct ScannerView: View {
         }
     }
 
-    /// Zoom is offered while aiming, not while a found code is revealed.
+    /// The camera controls show while aiming, not while a found code is
+    /// revealed.
+    private var isAiming: Bool {
+        model.state == .scanning && model.reveal == nil
+    }
+
     private var canZoom: Bool {
-        model.zoom != nil && model.state == .scanning && model.reveal == nil
+        isAiming && model.zoom != nil
     }
 
     /// Scales the zoom from where the pinch started, like the Camera app.
@@ -105,7 +117,7 @@ struct ScannerView: View {
 // state stays put. Simulate Scan plays the whole reveal in live previews.
 
 #Preview("Scanning") {
-    ScannerView(model: ScannerModel(state: .scanning, zoom: CameraZoom(range: 1...5, recommended: 2.6)), isActive: false)
+    ScannerView(model: ScannerModel(state: .scanning, zoom: CameraZoom(range: 1...5, recommended: 2.6), hasTorch: true), isActive: false)
 }
 
 #Preview("Result") {
