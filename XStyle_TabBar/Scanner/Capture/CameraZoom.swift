@@ -3,19 +3,19 @@ import Foundation
 /// The camera's zoom: the range the user can pinch through, and the zoom
 /// scanning starts at.
 nonisolated struct CameraZoom: Equatable, Sendable {
-    var range: ClosedRange<Double>
+    let range: ClosedRange<Double>
     /// Where scanning starts: sharp on small codes (see `BarcodeZoom`).
-    var recommended: Double
-
+    let recommended: Double
     /// The zoom buttons: the widest zoom and the recommended one, or 2× on
     /// cameras that start unzoomed.
-    var presets: [Double] {
-        let second = recommended > range.lowerBound + 0.1 ? recommended : clamped(2)
-        return second > range.lowerBound ? [range.lowerBound, second] : [range.lowerBound]
-    }
+    let presets: [Double]
 
-    func clamped(_ factor: Double) -> Double {
-        min(max(factor, range.lowerBound), range.upperBound)
+    /// - Parameter recommended: Kept within `range`.
+    init(range: ClosedRange<Double>, recommended: Double) {
+        self.range = range
+        self.recommended = range.clamp(recommended)
+        let second = self.recommended > range.lowerBound + 0.1 ? self.recommended : range.clamp(2)
+        presets = second > range.lowerBound ? [range.lowerBound, second] : [range.lowerBound]
     }
 
     /// The preset `factor` falls under: the highest at or below it, allowing

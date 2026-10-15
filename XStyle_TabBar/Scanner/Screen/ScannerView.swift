@@ -8,8 +8,9 @@ struct ScannerView: View {
     let isActive: Bool
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// The zoom a pinch started from; nil between pinches.
-    @State private var pinchStartZoom: Double?
+    /// The zoom a pinch started from; nil between pinches, including ones
+    /// cut short, such as by a code being found.
+    @GestureState private var pinchStartZoom: Double?
 
     var body: some View {
         ZStack {
@@ -53,14 +54,15 @@ struct ScannerView: View {
             }
         }
         .safeAreaBar(edge: .bottom) {
-            VStack(spacing: 16) {
-                if let zoom = model.zoom, model.state == .scanning {
-                    ScannerZoomControl(zoom: zoom, factor: model.zoomFactor) { factor in
-                        model.setZoom(factor, animated: true)
-                    }
-                    .opacity(canZoom ? 1 : 0)
-                    .disabled(!canZoom)
-                    .animation(.easeOut(duration: 0.15), value: canZoom)
+            // Each item pads its own bottom, so with neither showing the bar
+            // adds no inset.
+            VStack(spacing: 0) {
+                if model.zoom != nil, model.state == .scanning {
+                    ScannerZoomControl(model: model)
+                        .padding(.bottom)
+                        .opacity(canZoom ? 1 : 0)
+                        .disabled(!canZoom)
+                        .animation(.easeOut(duration: 0.15), value: canZoom)
                 }
 
                 #if targetEnvironment(simulator)
@@ -68,7 +70,6 @@ struct ScannerView: View {
                     .disabled(model.reveal != nil)
                 #endif
             }
-            .padding(.bottom)
             .environment(\.colorScheme, .dark)
         }
         .sheet(item: $model.scannedCode, onDismiss: model.resultDidClose, content: ScannedCodeSheet.init)
@@ -92,13 +93,10 @@ struct ScannerView: View {
     /// Scales the zoom from where the pinch started, like the Camera app.
     private var pinch: some Gesture {
         MagnifyGesture()
-            .onChanged { value in
-                let start = pinchStartZoom ?? model.zoomFactor
-                pinchStartZoom = start
-                model.setZoom(start * value.magnification, animated: false)
-            }
-            .onEnded { _ in
-                pinchStartZoom = nil
+            .updating($pinchStartZoom) { value, start, _ in
+                let base = start ?? model.zoomFactor
+                start = base
+                model.setZoom(base * value.magnification, animated: false)
             }
     }
 }

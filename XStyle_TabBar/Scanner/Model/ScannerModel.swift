@@ -112,7 +112,7 @@ final class ScannerModel {
     /// easing there for the zoom buttons.
     func setZoom(_ factor: Double, animated: Bool) {
         guard let zoom else { return }
-        zoomFactor = zoom.clamped(factor)
+        zoomFactor = zoom.range.clamp(factor)
         capture?.setZoom(zoomFactor, animated: animated)
     }
 

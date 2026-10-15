@@ -2,17 +2,21 @@ import SwiftUI
 
 /// Camera-style zoom buttons: the widest zoom and the one scanning starts at.
 /// The button the current zoom falls under shows it, so a pinch reads out
-/// here too.
+/// here too. Reads the zoom itself, so a pinch redraws only this.
 struct ScannerZoomControl: View {
-    let zoom: CameraZoom
-    let factor: Double
-    let select: (Double) -> Void
+    let model: ScannerModel
 
     var body: some View {
+        if let zoom = model.zoom {
+            buttons(zoom: zoom, factor: model.zoomFactor)
+        }
+    }
+
+    private func buttons(zoom: CameraZoom, factor: Double) -> some View {
         let presets = zoom.presets
         let activeIndex = zoom.presetIndex(for: factor)
 
-        HStack(spacing: 4) {
+        return HStack(spacing: 4) {
             ForEach(presets.indices, id: \.self) { index in
                 let isActive = index == activeIndex
 
@@ -38,11 +42,16 @@ struct ScannerZoomControl: View {
         .accessibilityValue("\(Self.format(factor)) times")
         .accessibilityAdjustableAction { direction in
             switch direction {
-            case .increment: select(zoom.clamped(factor.rounded(.down) + 1))
-            case .decrement: select(zoom.clamped(factor.rounded(.up) - 1))
+            case .increment: select(factor.rounded(.down) + 1)
+            case .decrement: select(factor.rounded(.up) - 1)
             @unknown default: break
             }
         }
+    }
+
+    /// Eases to `factor`; the model keeps it within the camera's range.
+    private func select(_ factor: Double) {
+        model.setZoom(factor, animated: true)
     }
 
     private static func format(_ factor: Double) -> String {
@@ -51,10 +60,7 @@ struct ScannerZoomControl: View {
 }
 
 #Preview {
-    @Previewable @State var factor = 2.6
-    let zoom = CameraZoom(range: 1...5, recommended: 2.6)
-
-    ScannerZoomControl(zoom: zoom, factor: factor) { factor = $0 }
+    ScannerZoomControl(model: ScannerModel(state: .scanning, zoom: CameraZoom(range: 1...5, recommended: 2.6)))
         .padding()
         .background(ScannerBackdropPlaceholder())
         .environment(\.colorScheme, .dark)

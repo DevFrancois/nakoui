@@ -89,8 +89,7 @@ nonisolated enum CameraTuning {
             fill: ScannerMetrics.viewfinderWidthFraction * ScannerMetrics.minimumCodeViewfinderFill,
             maximum: min(maximum, ScannerMetrics.maximumAutoZoom)
         )
-        let rounded = (recommended * 10).rounded() / 10
-        return CameraZoom(range: minimum...maximum, recommended: min(max(rounded, minimum), maximum))
+        return CameraZoom(range: minimum...maximum, recommended: (recommended * 10).rounded() / 10)
     }
 
     /// Lengthens the exposure cap a step when the camera is out of ISO and

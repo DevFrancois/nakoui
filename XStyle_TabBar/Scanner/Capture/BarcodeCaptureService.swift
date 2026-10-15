@@ -96,7 +96,7 @@ actor BarcodeCaptureService {
 
     private func applyZoom(_ factor: Double, animated: Bool) {
         guard let device, (try? device.lockForConfiguration()) != nil else { return }
-        let factor = min(max(CGFloat(factor), device.minAvailableVideoZoomFactor), device.maxAvailableVideoZoomFactor)
+        let factor = (device.minAvailableVideoZoomFactor...device.maxAvailableVideoZoomFactor).clamp(CGFloat(factor))
         if animated {
             device.ramp(toVideoZoomFactor: factor, withRate: ScannerMetrics.zoomRampRate)
         } else {
