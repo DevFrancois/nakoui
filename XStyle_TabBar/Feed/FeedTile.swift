@@ -28,10 +28,7 @@ struct FeedTile: View {
             .contentShape(.rect(cornerRadius: size.cornerRadius))
         }
         .buttonStyle(PassthroughButtonStyle())
-        // The colour is a fill, not a glass tint: the snapshot iOS takes for
-        // the app switcher drops glass rendering, tint included.
-        .background(tint.opacity(0.25), in: .rect(cornerRadius: size.cornerRadius))
-        .glassEffect(.regular, in: .rect(cornerRadius: size.cornerRadius))
+        .modifier(FeedGlass(cornerRadius: size.cornerRadius, tint: tint, tintOpacity: 0.25))
     }
 }
 

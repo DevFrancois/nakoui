@@ -17,13 +17,7 @@ struct ResetTasksDebugButton: View {
 
                     Spacer()
 
-                    Text("Debug")
-                        .font(.caption.bold())
-                        .textCase(.uppercase)
-                        .foregroundStyle(.orange)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.orange.quaternary, in: .capsule)
+                    DebugBadge()
                 }
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, minHeight: TopMenuMetrics.minimumTapSize, alignment: .leading)

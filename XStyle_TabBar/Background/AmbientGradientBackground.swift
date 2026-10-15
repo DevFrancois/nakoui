@@ -16,6 +16,15 @@ struct AmbientGradientBackground: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    /// Debug dials, set from the side menu; at their defaults the wash is
+    /// unchanged. Release builds have no dials, so they ignore stored values.
+    #if DEBUG
+    @AppStorage(AmbientGradientTuning.intensityKey) private var intensity = AmbientGradientTuning.defaultIntensity
+    @AppStorage(AmbientGradientTuning.depthKey) private var depth = AmbientGradientTuning.defaultDepth
+    #else
+    private let intensity = AmbientGradientTuning.defaultIntensity
+    private let depth = AmbientGradientTuning.defaultDepth
+    #endif
 
     var body: some View {
         let frame = AmbientGradientFrame.sample(palettes: palettes, progress: progress, reduceMotion: reduceMotion)
@@ -23,7 +32,7 @@ struct AmbientGradientBackground: View {
         LinearGradient(
             gradient: wash(frame.palette),
             startPoint: .top,
-            endPoint: UnitPoint(x: 0.5, y: frame.reach)
+            endPoint: UnitPoint(x: 0.5, y: frame.reach * depth)
         )
         .background(Color(.pageBackground))
         .ignoresSafeArea()
@@ -38,6 +47,8 @@ struct AmbientGradientBackground: View {
     private func wash(_ palette: AmbientGradientPalette) -> Gradient {
         let tone = colorScheme == .dark ? palette.dark : palette.light
         let color = Color(.sRGB, red: Double(tone.x), green: Double(tone.y), blue: Double(tone.z))
-        return Gradient(stops: Self.falloff.map { Gradient.Stop(color: color.opacity($0.opacity), location: $0.location) })
+        return Gradient(stops: Self.falloff.map {
+            Gradient.Stop(color: color.opacity(min($0.opacity * intensity, 1)), location: $0.location)
+        })
     }
 }

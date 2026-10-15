@@ -9,9 +9,16 @@ enum SidebarRoute: String, Hashable, CaseIterable {
     case spaces
     case settings
     case helpCenter
+    // Temporary: the History designs to compare, opened from the menu's
+    // History section rather than listed as rows.
+    case history1, history2, history3, history4, history5
+    case history6, history7, history8, history9, history10
 
     var title: String {
-        switch self {
+        if let historyStyle {
+            return "History · \(historyStyle.title)"
+        }
+        return switch self {
         case .video: "Video"
         case .bookmarks: "Bookmarks"
         case .communities: "Communities"
@@ -20,6 +27,7 @@ enum SidebarRoute: String, Hashable, CaseIterable {
         case .spaces: "Spaces"
         case .settings: "Settings"
         case .helpCenter: "Help Center"
+        default: "History"
         }
     }
 
@@ -33,6 +41,7 @@ enum SidebarRoute: String, Hashable, CaseIterable {
         case .spaces: "mic"
         case .settings: "gearshape"
         case .helpCenter: "questionmark.circle"
+        default: "clock.arrow.circlepath"
         }
     }
 
@@ -62,8 +71,11 @@ struct SideBar<QuickActions: View, Footer: View>: View {
                     .padding(.horizontal, -15)
 
                 VStack(alignment: .leading, spacing: 14) {
-                    ForEach(SidebarRoute.allCases, id: \.self) { route in
+                    ForEach(SidebarRoute.menuRoutes, id: \.self) { route in
                         if route == .settings {
+                            HistoryLabMenuSection(onSelect: onSelect)
+                                .padding(.top, 4)
+
                             Divider()
                                 .background(.white.tertiary)
                                 .padding(.vertical, 8)

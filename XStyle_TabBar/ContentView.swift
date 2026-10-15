@@ -29,6 +29,10 @@ struct ContentView: View {
     @State private var statusBarInset: CGFloat = 0
     /// Shared by the For you page and the side menu's debug reset.
     @State private var taskList = ForYouTaskList()
+    #if DEBUG
+    /// Whether the side menu's glass and background dials are open.
+    @State private var isDebugTuningShown = false
+    #endif
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @AccessibilityFocusState private var isMenuButtonFocused: Bool
@@ -49,7 +53,30 @@ struct ContentView: View {
                 SideMenuQuickActions(onOpen: openQuickAction)
             } footer: {
                 #if DEBUG
-                ResetTasksDebugButton(action: resetTasks)
+                VStack(spacing: 0) {
+                    // Collapsed by default: the footer is pinned, so open
+                    // panels would crowd out the routes on small screens.
+                    if isDebugTuningShown {
+                        FeedGlassDebugControls()
+                        GradientDebugControls()
+                    }
+
+                    Divider()
+
+                    Button {
+                        withAnimation { isDebugTuningShown.toggle() }
+                    } label: {
+                        Label(isDebugTuningShown ? "Hide Tuning" : "Show Tuning", systemImage: "slider.horizontal.3")
+                            .font(.callout.bold())
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: TopMenuMetrics.minimumTapSize, alignment: .leading)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 15)
+
+                    ResetTasksDebugButton(action: resetTasks)
+                }
                 #endif
             }
             .disabled(revealingRoute != nil)
@@ -112,7 +139,13 @@ struct ContentView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarVisibility(.hidden, for: .navigationBar)
                 .navigationDestination(for: SidebarRoute.self) { route in
-                    Text("Hello World")
+                    Group {
+                        if let historyStyle = route.historyStyle {
+                            HistoryLab(style: historyStyle)
+                        } else {
+                            Text("Hello World")
+                        }
+                    }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(.background)
                         .navigationTitle(route.title)
