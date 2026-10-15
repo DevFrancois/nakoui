@@ -16,3 +16,8 @@ xcuserdata/
 
 # Swift Package Manager build output
 .build/
+
+# Locally installed agent skills and Claude Code worktrees
+.claude/skills/
+.claude/worktrees/
+skills-lock.json
