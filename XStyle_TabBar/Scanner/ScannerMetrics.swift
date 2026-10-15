@@ -43,6 +43,12 @@ nonisolated enum ScannerMetrics {
     static let maximumZoom = 5.0
     /// How fast the zoom buttons ease the zoom, in doublings per second.
     static let zoomRampRate: Float = 4
+    /// Height of the controls under the viewfinder: the zoom buttons' capsule
+    /// and the flashlight button.
+    static let cameraControlSize = 46.0
+    /// The zoom buttons' inset inside their capsule.
+    static let zoomButtonInset = 4.0
+    static let zoomButtonSize = cameraControlSize - 2 * zoomButtonInset
 
     /// The viewfinder's frame in a full-screen `bounds`. The on-screen frame
     /// and the camera's scan region both come from here, so they match.

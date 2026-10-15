@@ -26,14 +26,14 @@ struct ScannerZoomControl: View {
                     Text(isActive ? "\(Self.format(factor))×" : Self.format(presets[index]))
                         .font(.footnote.bold().monospacedDigit())
                         .foregroundStyle(isActive ? .yellow : .white)
-                        .frame(width: 38, height: 38)
+                        .frame(width: ScannerMetrics.zoomButtonSize, height: ScannerMetrics.zoomButtonSize)
                         .background(.black.opacity(isActive ? 0.45 : 0.25), in: .circle)
                         .scaleEffect(isActive ? 1 : 0.8)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(4)
+        .padding(ScannerMetrics.zoomButtonInset)
         .glassEffect(.regular, in: .capsule)
         .animation(.snappy, value: activeIndex)
         .sensoryFeedback(.selection, trigger: activeIndex)

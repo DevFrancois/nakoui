@@ -106,7 +106,7 @@ struct ScannerView: View {
     private var pinch: some Gesture {
         MagnifyGesture()
             .updating($pinchStartZoom) { value, start, _ in
-                let base = start ?? model.zoomFactor
+                let base = start ?? model.liveZoomFactor
                 start = base
                 model.setZoom(base * value.magnification, animated: false)
             }

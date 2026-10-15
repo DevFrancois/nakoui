@@ -21,7 +21,7 @@ actor BarcodeCaptureService {
     private var adjustmentTask: Task<Void, Never>?
     private var recoveryTask: Task<Void, Never>?
     /// What the user can zoom through, and where scanning starts. Set with
-    /// the camera on the first start; nil if it couldn't be configured.
+    /// the camera on the first start.
     private(set) var zoom: CameraZoom?
     /// Whether the camera has a torch to light codes with. Set with the
     /// camera on the first start.
@@ -109,6 +109,25 @@ actor BarcodeCaptureService {
         device.unlockForConfiguration()
     }
 
+    /// Whether the torch is lit, now and each time that changes, including
+    /// when the system turns it off: when the phone is too hot, the session
+    /// is interrupted, or Control Center's flashlight takes over. Ends when
+    /// the consuming task is cancelled.
+    func torchActivity() -> AsyncStream<Bool> {
+        let (stream, continuation) = AsyncStream.makeStream(of: Bool.self, bufferingPolicy: .bufferingNewest(1))
+        guard let device, hasTorch else {
+            continuation.finish()
+            return stream
+        }
+        nonisolated(unsafe) let observation = device.observe(\.isTorchActive, options: [.initial, .new]) { device, _ in
+            continuation.yield(device.isTorchActive)
+        }
+        continuation.onTermination = { _ in
+            observation.invalidate()
+        }
+        return stream
+    }
+
     /// Turns the torch on or off; it only turns on during a run.
     /// - Returns: Whether the torch is on. It can't turn on while the
     ///   system holds it back, such as when the phone is too hot.
@@ -168,12 +187,13 @@ actor BarcodeCaptureService {
         // Scanning still works on the camera's defaults if this one fails.
         if (try? device.lockForConfiguration()) != nil {
             CameraTuning.apply(format, to: device)
-            let zoom = CameraTuning.zoom(for: device)
-            device.videoZoomFactor = zoom.recommended
+            device.videoZoomFactor = CameraTuning.zoom(for: device).recommended
             device.unlockForConfiguration()
-            self.zoom = zoom
-            hasTorch = device.hasTorch && device.isTorchModeSupported(.on)
         }
+        // Read without the lock, so the controls show even if it failed; the
+        // model applies the starting zoom again on the first run.
+        zoom = CameraTuning.zoom(for: device)
+        hasTorch = device.hasTorch && device.isTorchModeSupported(.on)
         self.device = device
         recoveryTask = Task { await recoverFromRuntimeErrors() }
     }

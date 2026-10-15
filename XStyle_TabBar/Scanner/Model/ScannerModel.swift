@@ -22,7 +22,7 @@ final class ScannerModel {
     /// Whether the camera has a torch, for the flashlight button. False
     /// until the camera first starts.
     private(set) var hasTorch: Bool
-    /// Whether the torch is on, or about to be.
+    /// Whether the torch is on, or about to be after a tap.
     private(set) var isTorchOn = false
     /// Read when timing the result sheet; the view keeps it current.
     @ObservationIgnored var reduceMotion = false
@@ -37,6 +37,13 @@ final class ScannerModel {
     /// The latest torch switch. Each waits for the one before, so quick taps
     /// land in order.
     @ObservationIgnored private var torchTask: Task<Void, Never>?
+    /// Counts torch taps, and those the camera has acted on, so only the
+    /// latest decides the button, and the device's own changes wait for it.
+    @ObservationIgnored private var torchRequest = 0
+    @ObservationIgnored private var completedTorchRequest = 0
+    /// The last button ease: where it began, and when. A pinch during it
+    /// starts from where the camera has reached, not from its target.
+    @ObservationIgnored private var zoomRamp: (from: Double, start: Date)?
 
     init(state: ScannerState = .idle, scannedCode: ScannedCode? = nil, zoom: CameraZoom? = nil, hasTorch: Bool = false) {
         self.state = state
@@ -80,11 +87,19 @@ final class ScannerModel {
         }
         session = capture.session
         // The camera keeps its zoom between runs, so only the first sets it.
+        // The camera was set to it already, unless that failed.
         if zoom == nil, let cameraZoom = await capture.zoom {
             zoom = cameraZoom
-            zoomFactor = cameraZoom.recommended
+            setZoom(cameraZoom.recommended, animated: false)
         }
         hasTorch = await capture.hasTorch
+        let torchActivity = await capture.torchActivity()
+        let torchTracking = Task {
+            for await isActive in torchActivity {
+                torchDidChange(isActive)
+            }
+        }
+        defer { torchTracking.cancel() }
         state = .scanning
         await capture.setScreen(size: screenSize, viewfinder: viewfinder, displayScale: displayScale)
         if reveal == nil && scannedCode == nil {
@@ -124,24 +139,46 @@ final class ScannerModel {
     /// easing there for the zoom buttons.
     func setZoom(_ factor: Double, animated: Bool) {
         guard let zoom else { return }
+        zoomRamp = animated ? (liveZoomFactor, .now) : nil
         zoomFactor = zoom.range.clamp(factor)
         capture?.setZoom(zoomFactor, animated: animated)
     }
 
-    /// Turns the flashlight on or off. The button changes at once; if the
-    /// torch can't turn on, it goes back to off.
+    /// Where the camera's zoom is now: partway to `zoomFactor` while a button
+    /// eases it there at `ScannerMetrics.zoomRampRate` doublings a second.
+    var liveZoomFactor: Double {
+        guard let zoomRamp else { return zoomFactor }
+        let elapsed = Date.now.timeIntervalSince(zoomRamp.start)
+        let change = pow(2, Double(ScannerMetrics.zoomRampRate) * elapsed)
+        return zoomFactor > zoomRamp.from
+            ? min(zoomRamp.from * change, zoomFactor)
+            : max(zoomRamp.from / change, zoomFactor)
+    }
+
+    /// Turns the flashlight on or off. The button changes at once, then
+    /// shows what the camera did, such as staying off when it can't light.
     func toggleTorch() {
         let isOn = !isTorchOn
         isTorchOn = isOn
+        torchRequest += 1
+        let request = torchRequest
         let previous = torchTask
         torchTask = Task {
             await previous?.value
-            guard let capture else { return }
-            let didTurnOn = await capture.setTorch(isOn)
-            if isOn && !didTurnOn && isTorchOn {
-                isTorchOn = false
+            let isActive = await capture?.setTorch(isOn) ?? isOn
+            completedTorchRequest = request
+            // A later tap is still on its way and has its own say.
+            if request == torchRequest {
+                isTorchOn = isActive
             }
         }
+    }
+
+    /// The device lit or dimmed the torch, possibly on its own. Waits while
+    /// taps are on their way, so their changes don't flicker the button.
+    private func torchDidChange(_ isActive: Bool) {
+        guard completedTorchRequest == torchRequest else { return }
+        isTorchOn = isActive
     }
 
     /// Call once the result sheet is gone: the reveal fades and scanning
