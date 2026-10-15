@@ -8,6 +8,8 @@ struct ScannerView: View {
     let isActive: Bool
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The zoom a pinch started from; nil between pinches.
+    @State private var pinchStartZoom: Double?
 
     var body: some View {
         ZStack {
@@ -31,6 +33,8 @@ struct ScannerView: View {
                     ScannerViewfinder(isRevealing: model.reveal != nil)
                 }
             }
+            .contentShape(.rect)
+            .gesture(pinch, isEnabled: canZoom)
             .ignoresSafeArea()
             .environment(\.colorScheme, .dark)
 
@@ -48,13 +52,25 @@ struct ScannerView: View {
                 ScanRevealView(reveal: reveal)
             }
         }
-        #if targetEnvironment(simulator)
         .safeAreaBar(edge: .bottom) {
-            ScannerSimulateButton(action: model.simulateScan)
-                .disabled(model.reveal != nil)
-                .environment(\.colorScheme, .dark)
+            VStack(spacing: 16) {
+                if let zoom = model.zoom, model.state == .scanning {
+                    ScannerZoomControl(zoom: zoom, factor: model.zoomFactor) { factor in
+                        model.setZoom(factor, animated: true)
+                    }
+                    .opacity(canZoom ? 1 : 0)
+                    .disabled(!canZoom)
+                    .animation(.easeOut(duration: 0.15), value: canZoom)
+                }
+
+                #if targetEnvironment(simulator)
+                ScannerSimulateButton(action: model.simulateScan)
+                    .disabled(model.reveal != nil)
+                #endif
+            }
+            .padding(.bottom)
+            .environment(\.colorScheme, .dark)
         }
-        #endif
         .sheet(item: $model.scannedCode, onDismiss: model.resultDidClose, content: ScannedCodeSheet.init)
         .sensoryFeedback(.success, trigger: model.reveal?.code) { _, newCode in
             newCode != nil
@@ -67,13 +83,31 @@ struct ScannerView: View {
             await model.run()
         }
     }
+
+    /// Zoom is offered while aiming, not while a found code is revealed.
+    private var canZoom: Bool {
+        model.zoom != nil && model.state == .scanning && model.reveal == nil
+    }
+
+    /// Scales the zoom from where the pinch started, like the Camera app.
+    private var pinch: some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                let start = pinchStartZoom ?? model.zoomFactor
+                pinchStartZoom = start
+                model.setZoom(start * value.magnification, animated: false)
+            }
+            .onEnded { _ in
+                pinchStartZoom = nil
+            }
+    }
 }
 
 // Previews pass `isActive: false`, so the camera never starts and the preset
 // state stays put. Simulate Scan plays the whole reveal in live previews.
 
 #Preview("Scanning") {
-    ScannerView(model: ScannerModel(state: .scanning), isActive: false)
+    ScannerView(model: ScannerModel(state: .scanning, zoom: CameraZoom(range: 1...5, recommended: 2.6)), isActive: false)
 }
 
 #Preview("Result") {

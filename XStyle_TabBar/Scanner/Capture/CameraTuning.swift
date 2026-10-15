@@ -71,21 +71,26 @@ nonisolated enum CameraTuning {
         }
     }
 
-    /// Zooms so the smallest product barcode is sharp at the closest focus
-    /// distance (see `BarcodeZoom`).
-    static func applyZoom(to device: AVCaptureDevice) {
+    /// The zoom range for the active format, starting where the smallest
+    /// product barcode is sharp at the closest focus distance (see
+    /// `BarcodeZoom`), rounded to the tenth the zoom buttons show.
+    static func zoom(for device: AVCaptureDevice) -> CameraZoom {
         let format = device.activeFormat
         let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
         let shortSide = Double(min(dimensions.width, dimensions.height))
         let longSide = Double(max(dimensions.width, dimensions.height))
-        device.videoZoomFactor = BarcodeZoom.recommendedFactor(
+        let minimum = Double(device.minAvailableVideoZoomFactor)
+        let maximum = max(minimum, min(Double(device.maxAvailableVideoZoomFactor), ScannerMetrics.maximumZoom))
+        let recommended = BarcodeZoom.recommendedFactor(
             minimumFocusDistance: Double(device.minimumFocusDistance),
             fieldOfView: Double(format.videoFieldOfView),
             formatAspect: longSide > 0 ? shortSide / longSide : 0,
             codeWidth: ScannerMetrics.minimumCodeWidth,
             fill: ScannerMetrics.viewfinderWidthFraction * ScannerMetrics.minimumCodeViewfinderFill,
-            maximum: min(Double(device.maxAvailableVideoZoomFactor), ScannerMetrics.maximumAutoZoom)
+            maximum: min(maximum, ScannerMetrics.maximumAutoZoom)
         )
+        let rounded = (recommended * 10).rounded() / 10
+        return CameraZoom(range: minimum...maximum, recommended: min(max(rounded, minimum), maximum))
     }
 
     /// Lengthens the exposure cap a step when the camera is out of ISO and

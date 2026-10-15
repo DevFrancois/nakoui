@@ -10,7 +10,6 @@ struct ScannerSimulateButton: View {
         Button("Simulate Scan", systemImage: "barcode.viewfinder", action: action)
             .buttonStyle(.glass)
             .controlSize(.large)
-            .padding(.bottom)
     }
 }
 

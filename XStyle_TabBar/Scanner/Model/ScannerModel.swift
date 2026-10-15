@@ -14,6 +14,11 @@ final class ScannerModel {
     /// The live session, for the preview layer. Nil until the camera first
     /// starts, and always in previews and the Simulator.
     private(set) var session: AVCaptureSession?
+    /// The camera's zoom range, for the zoom control. Nil until the camera
+    /// first starts.
+    private(set) var zoom: CameraZoom?
+    /// The zoom the camera is at, or heading to.
+    private(set) var zoomFactor = 1.0
     /// Read when timing the result sheet; the view keeps it current.
     @ObservationIgnored var reduceMotion = false
 
@@ -25,9 +30,11 @@ final class ScannerModel {
     @ObservationIgnored private var displayScale: CGFloat = 3
     @ObservationIgnored private var revealTask: Task<Void, Never>?
 
-    init(state: ScannerState = .idle, scannedCode: ScannedCode? = nil) {
+    init(state: ScannerState = .idle, scannedCode: ScannedCode? = nil, zoom: CameraZoom? = nil) {
         self.state = state
         self.scannedCode = scannedCode
+        self.zoom = zoom
+        zoomFactor = zoom?.recommended ?? 1
     }
 
     private var viewfinder: CGRect {
@@ -63,6 +70,11 @@ final class ScannerModel {
             return
         }
         session = capture.session
+        // The camera keeps its zoom between runs, so only the first sets it.
+        if zoom == nil, let cameraZoom = await capture.zoom {
+            zoom = cameraZoom
+            zoomFactor = cameraZoom.recommended
+        }
         state = .scanning
         await capture.setScreen(size: screenSize, viewfinder: viewfinder, displayScale: displayScale)
         if reveal == nil && scannedCode == nil {
@@ -94,6 +106,14 @@ final class ScannerModel {
                 await analyzer.setScreen(size: size, viewfinder: viewfinder, displayScale: displayScale)
             }
         }
+    }
+
+    /// Zooms the camera, within its range: straight there for pinch steps,
+    /// easing there for the zoom buttons.
+    func setZoom(_ factor: Double, animated: Bool) {
+        guard let zoom else { return }
+        zoomFactor = zoom.clamped(factor)
+        capture?.setZoom(zoomFactor, animated: animated)
     }
 
     /// Call once the result sheet is gone: the reveal fades and scanning

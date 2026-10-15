@@ -20,6 +20,9 @@ actor BarcodeCaptureService {
     private var isRunActive = false
     private var adjustmentTask: Task<Void, Never>?
     private var recoveryTask: Task<Void, Never>?
+    /// What the user can zoom through, and where scanning starts. Set with
+    /// the camera on the first start; nil if it couldn't be configured.
+    private(set) var zoom: CameraZoom?
 
     nonisolated var unownedExecutor: UnownedSerialExecutor {
         sessionQueue.asUnownedSerialExecutor()
@@ -82,6 +85,26 @@ actor BarcodeCaptureService {
         device.unlockForConfiguration()
     }
 
+    /// Zooms to `factor`, within the camera's range, easing there when
+    /// `animated`. Pinch steps come in fast, so they go onto the session queue
+    /// in call order instead of through tasks, which may run in any order.
+    nonisolated func setZoom(_ factor: Double, animated: Bool) {
+        sessionQueue.async {
+            self.assumeIsolated { $0.applyZoom(factor, animated: animated) }
+        }
+    }
+
+    private func applyZoom(_ factor: Double, animated: Bool) {
+        guard let device, (try? device.lockForConfiguration()) != nil else { return }
+        let factor = min(max(CGFloat(factor), device.minAvailableVideoZoomFactor), device.maxAvailableVideoZoomFactor)
+        if animated {
+            device.ramp(toVideoZoomFactor: factor, withRate: ScannerMetrics.zoomRampRate)
+        } else {
+            device.videoZoomFactor = factor
+        }
+        device.unlockForConfiguration()
+    }
+
     private func configure() throws {
         // A failed attempt leaves nothing on the session, so a retry starts clean.
         guard let device = Self.backCamera else { throw BarcodeCaptureError.noCamera }
@@ -127,8 +150,10 @@ actor BarcodeCaptureService {
         // Scanning still works on the camera's defaults if this one fails.
         if (try? device.lockForConfiguration()) != nil {
             CameraTuning.apply(format, to: device)
-            CameraTuning.applyZoom(to: device)
+            let zoom = CameraTuning.zoom(for: device)
+            device.videoZoomFactor = zoom.recommended
             device.unlockForConfiguration()
+            self.zoom = zoom
         }
         self.device = device
         recoveryTask = Task { await recoverFromRuntimeErrors() }

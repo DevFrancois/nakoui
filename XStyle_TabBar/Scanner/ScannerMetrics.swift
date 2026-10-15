@@ -39,6 +39,10 @@ nonisolated enum ScannerMetrics {
     static let minimumCodeViewfinderFill = 0.6
     /// Auto zoom never goes past this, so aiming stays easy.
     static let maximumAutoZoom = 3.0
+    /// The user can pinch to here: further in, the camera only enlarges blur.
+    static let maximumZoom = 5.0
+    /// How fast the zoom buttons ease the zoom, in doublings per second.
+    static let zoomRampRate: Float = 4
 
     /// The viewfinder's frame in a full-screen `bounds`. The on-screen frame
     /// and the camera's scan region both come from here, so they match.
