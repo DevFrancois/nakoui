@@ -17,9 +17,10 @@ struct HomePageBackground: View {
                 AmbientGradientBackground(palettes: [tab.palette], progress: 0)
             }
         }
-        // A wash must stop at its own page boundary, even while the
-        // underlying gradient extends into the safe area.
+        // Clip to each page's width, but extend the clipped surface behind
+        // the top menu and tab bar so the wash has no vertical seam.
         .clipped()
+        .ignoresSafeArea(.container, edges: .vertical)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

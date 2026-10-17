@@ -70,9 +70,8 @@ struct HomePager: View {
         }
         // Pages keep their vertical indicators.
         .scrollIndicators(.hidden, axes: .horizontal)
-        // The top menu's safe-area bar extends this scroll view's edge effect,
-        // not the nested pages', so the soft edge under the menu lives here.
-        .scrollEdgeEffectStyle(.soft, for: .top)
+        // Keep content clear beneath the top menu's safe-area bar.
+        .scrollEdgeEffectHidden(true, for: .top)
         .scrollTargetBehavior(HomePagingBehavior(
             gestureID: pager.gestureID,
             pageCount: AppTab.allCases.count,

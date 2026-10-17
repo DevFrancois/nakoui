@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// One tab's scrolling page: placeholder posts, or the quiz hub for the Quizz
-/// tab. It scrolls beneath the top menu, under the pager's soft edge.
+/// tab. It scrolls beneath the top menu.
 struct FeedPage: View {
     let tab: AppTab
     /// Shared with article destinations for their zoom transitions.
