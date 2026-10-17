@@ -4,6 +4,7 @@ import UIKit
 @testable import XStyle_TabBar
 
 @MainActor
+@Suite(.serialized)
 struct HomePagerLayoutTests {
     @Test("The same pager resizes its pages when a wide display folds and reopens")
     func foldingResizesRenderedPagesWithoutReplacingTheirScrollViews() async throws {
@@ -64,6 +65,64 @@ struct HomePagerLayoutTests {
             // Check that the existing scroll position survives without
             // requiring an identical pixel offset after that refinement.
             #expect(videoPage.contentOffset.y + videoPage.adjustedContentInset.top > 200)
+        }
+    }
+
+    @Test("Animated distant taps and the latest queued tap keep working after repeated folds")
+    func animatedDistantTapsAfterRepeatedFolds() async throws {
+        let scene = try #require(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let window = UIWindow(windowScene: scene)
+        let container = UIViewController()
+        window.rootViewController = container
+        window.isHidden = false
+        defer { window.isHidden = true }
+
+        let pager = PagerState()
+        let host = UIHostingController(rootView: PagerLayoutFixture(pager: pager))
+        container.addChild(host)
+        container.view.addSubview(host.view)
+        host.didMove(toParent: container)
+        host.additionalSafeAreaInsets.right = 64
+
+        for width: CGFloat in [736, 466, 736, 466] {
+            host.view.frame = CGRect(x: 0, y: 0, width: width, height: 700)
+            host.view.setNeedsLayout()
+            host.view.layoutIfNeeded()
+            try #require(await eventually {
+                abs(pager.viewportWidth - width) < 0.5 && pager.isAtRest
+                    && scrollViews(in: host.view).count == AppTab.allCases.count + 1
+            })
+            let horizontal = try #require(scrollViews(in: host.view).first)
+            #expect(abs(horizontal.contentSize.width - width * CGFloat(AppTab.allCases.count)) < 0.5)
+            #expect(pager.selectedTab == .bookmarks)
+
+            // These are real SwiftUI ScrollPosition animations, with their
+            // native geometry and phase callbacks driving PagerState.
+            pager.setReduceMotion(false)
+            pager.select(.quizz)
+            #expect(pager.tapTransition?.destination == .quizz)
+            try #require(await eventually {
+                let offset = horizontal.contentOffset.x + horizontal.adjustedContentInset.left
+                return pager.phase == .animating && offset > 1 && offset < 4 * width - 1
+            }, "The distant jump must animate through the rendered scroll view at width \(width)")
+
+            pager.select(.articles)
+            pager.select(.likes)
+            #expect(pager.pendingTab == .likes)
+            try #require(await eventually { pager.selectedTab == .likes && pager.isAtRest },
+                         "The latest queued tap must complete after resizing to \(width)")
+            #expect(pager.highlightedTab == .likes)
+            #expect(pager.tapTransition == nil)
+            #expect(pager.pendingTab == nil)
+            #expect(abs(horizontal.contentOffset.x + horizontal.adjustedContentInset.left - 3 * width) < 0.5)
+
+            // A second distant transition proves the completed queue did not
+            // leave hit testing or the pager's state locked.
+            pager.select(.bookmarks)
+            try #require(await eventually { pager.selectedTab == .bookmarks && pager.isAtRest })
+            #expect(pager.highlightedTab == .bookmarks)
+            #expect(pager.tapTransition == nil)
+            #expect(abs(horizontal.contentOffset.x + horizontal.adjustedContentInset.left) < 0.5)
         }
     }
 
