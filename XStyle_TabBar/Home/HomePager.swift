@@ -37,13 +37,7 @@ struct HomePager: View {
                     } ?? true
                     let offsetFactor = pager.tapTransition?.offsetFactor ?? 0
 
-                    FeedPage(
-                        tab: tab, zoomNamespace: zoomNamespace, taskList: taskList,
-                        settledWidth: min(
-                            max(0, width - horizontalInsets.leading - horizontalInsets.trailing),
-                            FeedLayoutMetrics.maxContentWidth
-                        )
-                    )
+                    FeedPage(tab: tab, zoomNamespace: zoomNamespace, taskList: taskList)
                         .modifier(HomePageMargins(
                             tab: tab, pager: pager, width: width, viewportInsets: horizontalInsets
                         ))

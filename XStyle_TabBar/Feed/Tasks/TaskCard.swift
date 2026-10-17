@@ -10,8 +10,6 @@ struct TaskCard<Content: View>: View {
     /// hide their content and dim their surface the deeper they are, and both
     /// ease back as a card moves forward.
     var depth = 0
-    /// Resting card width, independent of its surface's width during paging.
-    var settledWidth: CGFloat? = nil
     /// Makes the whole card a button, apart from its dismiss button. The
     /// heading and content then let taps through to it, so they shouldn't
     /// hold controls of their own.
@@ -25,13 +23,13 @@ struct TaskCard<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                SettledWidthLayout(width: settledWidth.map {
-                    $0 - FeedLayoutMetrics.horizontalPadding - 8 - 8 - TopMenuMetrics.minimumTapSize
-                }) {
+            HStack {
+                // Fills the space beside the dismiss button.
+                SettledWidth {
                     Text(task.category)
                         .font(.subheadline)
-                        // A step up from regular, short of bold.
+                        // A step up from regular, short of bold, to match the
+                        // reference design.
                         .fontWeight(.medium)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -41,7 +39,7 @@ struct TaskCard<Content: View>: View {
 
                 TaskDismissButton(taskTitle: task.title, action: onDismiss)
             }
-            .padding(.leading, FeedLayoutMetrics.horizontalPadding)
+            .padding(.leading)
             .padding(.trailing, 8)
             .padding(.vertical, 4)
 

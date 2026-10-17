@@ -5,33 +5,21 @@ import SwiftUI
 struct ArticleRow: View {
     let article: Article
     let namespace: Namespace.ID
-    var settledWidth: CGFloat? = nil
-
-    private static let avatarWidth: CGFloat = 44
-    private static let avatarSpacing: CGFloat = 8
 
     var body: some View {
-        let textWidth = settledWidth.map {
-            max(0, $0 - 2 * FeedLayoutMetrics.horizontalPadding - Self.avatarWidth - Self.avatarSpacing)
-        }
-
         NavigationLink(value: article) {
-            HStack(alignment: .top, spacing: Self.avatarSpacing) {
+            HStack(alignment: .top) {
                 Circle()
                     .fill(article.tint.tertiary)
-                    .frame(width: Self.avatarWidth, height: Self.avatarWidth)
+                    .frame(width: 44, height: 44)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    SettledWidthLayout(width: textWidth) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(article.title)
-                                .font(.headline)
+                    Text(article.title)
+                        .font(.headline)
 
-                            Text(article.summary)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-                    }
+                    Text(article.summary)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
 
                     ArticleHeroImage(image: article.image)
                         .frame(height: ArticleMetrics.thumbnailHeight)
@@ -47,7 +35,7 @@ struct ArticleRow: View {
                         }
                 }
             }
-            .padding(FeedLayoutMetrics.horizontalPadding)
+            .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect)
         }

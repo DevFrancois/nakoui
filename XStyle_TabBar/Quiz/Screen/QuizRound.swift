@@ -4,7 +4,7 @@ import SwiftUI
 /// changes. Both remain visible in the scroll view at every window size.
 struct QuizRound<Prompt: View, Answers: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ScaledMetric(relativeTo: .body) private var minimumColumnWidth = 280.0
+    @ScaledMetric(relativeTo: .body) private var minimumColumnWidth = QuizRoundLayout.baseMinimumColumnWidth
 
     @ViewBuilder let prompt: Prompt
     @ViewBuilder let answers: Answers
@@ -23,9 +23,13 @@ struct QuizRound<Prompt: View, Answers: View>: View {
 /// A readable pair of columns when both fit; otherwise a centered stack.
 /// Measuring the proposal directly avoids a geometry/state feedback cycle.
 struct QuizRoundLayout: Layout {
+    /// The minimum column width at the default text size.
+    static let baseMinimumColumnWidth: CGFloat = 280
+    static let defaultSpacing: CGFloat = 24
+
     var minimumColumnWidth: CGFloat
     var stacksVertically: Bool
-    var spacing: CGFloat = 24
+    var spacing = Self.defaultSpacing
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = min(proposal.width ?? QuizMetrics.contentMaxWidth, QuizMetrics.expandedContentMaxWidth)

@@ -26,23 +26,30 @@ struct QuizAdaptiveLayoutTests {
             host.view.setNeedsLayout()
             host.view.layoutIfNeeded()
 
-            let expectedWidth = width >= 584 ? (width - 24) / 2 : min(width, 600)
+            // The quiz lays out in the space the device's rail leaves free.
+            let safeArea = host.view.bounds.inset(by: host.view.safeAreaInsets)
+            let spacing = QuizRoundLayout.defaultSpacing
+            let roundWidth = min(safeArea.width, QuizMetrics.expandedContentMaxWidth)
+            let usesColumns = roundWidth >= QuizRoundLayout.baseMinimumColumnWidth * 2 + spacing
+            let expectedWidth = usesColumns
+                ? (roundWidth - spacing) / 2
+                : min(roundWidth, QuizMetrics.contentMaxWidth)
             try #require(await eventually {
                 guard let prompt = record.frames["prompt"], let answers = record.frames["answers"] else { return false }
-                return abs(prompt.width - expectedWidth) < 0.5 && abs(answers.width - expectedWidth) < 0.5
+                return prompt.width == expectedWidth && answers.width == expectedWidth
                     && record.taskStarts["prompt"] == 1 && record.taskStarts["answers"] == 1
-            })
+            }, "Width \(width), safe area \(safeArea): expected columns \(expectedWidth) wide, got \(record.frames)")
 
             let prompt = try #require(record.frames["prompt"])
             let answers = try #require(record.frames["answers"])
-            if width >= 584 {
-                #expect(abs(prompt.minY - answers.minY) < 0.5)
-                #expect(abs(answers.minX - prompt.maxX - 24) < 0.5)
+            if usesColumns {
+                #expect(prompt.minY == answers.minY)
+                #expect(answers.minX - prompt.maxX == spacing)
             } else {
-                #expect(abs(prompt.minX - answers.minX) < 0.5)
-                #expect(abs(answers.minY - prompt.maxY - 24) < 0.5)
+                #expect(prompt.minX == answers.minX)
+                #expect(answers.minY - prompt.maxY == spacing)
             }
-            #expect(prompt.minX >= -0.5 && answers.maxX <= width + 0.5)
+            #expect(prompt.minX >= safeArea.minX && answers.maxX <= safeArea.maxX)
             #expect(record.identities["prompt"]?.count == 1)
             #expect(record.identities["answers"]?.count == 1)
             #expect(record.taskStarts["prompt"] == 1)
@@ -67,14 +74,17 @@ struct QuizAdaptiveLayoutTests {
         host.view.frame = CGRect(x: 0, y: 0, width: 900, height: 700)
         host.view.layoutIfNeeded()
 
+        // Centered in the space the device's rail leaves free.
+        let safeArea = host.view.bounds.inset(by: host.view.safeAreaInsets)
+        let expectedWidth = min(safeArea.width, QuizMetrics.contentMaxWidth)
         try #require(await eventually {
             guard let prompt = record.frames["prompt"], let answers = record.frames["answers"] else { return false }
-            return abs(prompt.width - 600) < 0.5 && answers.minY > prompt.maxY
-        })
+            return prompt.width == expectedWidth && answers.minY > prompt.maxY
+        }, "Safe area \(safeArea): expected a column \(expectedWidth) wide, got \(record.frames)")
         let prompt = try #require(record.frames["prompt"])
         let answers = try #require(record.frames["answers"])
-        #expect(abs(prompt.midX - 450) < 0.5)
-        #expect(abs(answers.midX - 450) < 0.5)
+        #expect(prompt.midX == safeArea.midX)
+        #expect(answers.midX == safeArea.midX)
     }
 
     private func eventually(_ condition: () -> Bool) async -> Bool {
@@ -103,7 +113,6 @@ private struct QuizLayoutFixture: View {
             } answers: {
                 QuizLayoutProbe(name: "answers", height: 240, record: record)
             }
-            .coordinateSpace(name: "quizRound")
         }
     }
 }
@@ -119,7 +128,8 @@ private struct QuizLayoutProbe: View {
             .frame(maxWidth: .infinity)
             .frame(height: height)
             .onGeometryChange(for: CGRect.self) { proxy in
-                proxy.frame(in: .named("quizRound"))
+                // The host fills the window, so these are the host's coordinates.
+                proxy.frame(in: .global)
             } action: { frame in
                 record.frames[name] = frame
             }

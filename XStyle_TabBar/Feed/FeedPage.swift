@@ -9,13 +9,17 @@ struct FeedPage: View {
     /// The For you tasks. Owned by `ContentView`, so the side menu can reach
     /// them too.
     let taskList: ForYouTaskList
-    /// Changes with the actual viewport, never with horizontal paging progress.
-    var settledWidth: CGFloat? = nil
 
+    @Environment(\.holdsSettledWidth) private var holdsWidth
     @State private var presentedDestination: ForYouDestination?
     @State private var isShowingTasks = false
+    /// Whether the readable column stops short of the page's edges.
+    @State private var columnIsNarrower = false
+    /// The same, as last measured at rest.
+    @State private var restingColumnIsNarrower = false
 
     private static let postCount = 40
+    private static let pageSpace = "FeedPage.page"
 
     var body: some View {
         // One vertical scroll view per page: the pager reads its offset to
@@ -23,29 +27,29 @@ struct FeedPage: View {
         ScrollView(.vertical) {
             Group {
                 if tab == .quizz {
-                    QuizHub(settledWidth: settledWidth)
+                    QuizHub()
                 } else {
-                    // This bounded feed needs exact row positions during the
-                    // width morph. Lazy estimates shift visible rows whenever
-                    // the rail changes the proposed width.
+                    // Rows need exact positions whenever the proposed width
+                    // changes, whether For you narrows beside the rail or the
+                    // safe area changes. Lazy estimates shift visible rows.
                     VStack(spacing: 0) {
                         if tab == .bookmarks {
                             // Always present, so the last card lifts away like
                             // the others instead of fading out with the stack.
-                            TaskStack(tasks: taskList.stacked, settledWidth: settledWidth, onOpen: showTasks, onDismiss: dismissStackedTask)
+                            TaskStack(tasks: taskList.stacked, onOpen: showTasks, onDismiss: dismissStackedTask)
 
-                            WhatsNewRow(tint: tab.tint, settledWidth: settledWidth) { presentedDestination = .whatsNew }
+                            WhatsNewRow(tint: tab.tint) { presentedDestination = .whatsNew }
 
-                            ForYouTileGrid(settledWidth: settledWidth) { destination in
+                            ForYouTileGrid { destination in
                                 presentedDestination = destination
                             }
                         }
 
                         ForEach(1...Self.postCount, id: \.self) { number in
                             if tab == .articles {
-                                ArticleRow(article: .placeholder(number: number, tint: tab.tint), namespace: zoomNamespace, settledWidth: settledWidth)
+                                ArticleRow(article: .placeholder(number: number, tint: tab.tint), namespace: zoomNamespace)
                             } else {
-                                FeedRow(tab: tab, number: number, settledWidth: settledWidth)
+                                FeedRow(tab: tab, number: number)
                             }
                         }
                     }
@@ -53,8 +57,19 @@ struct FeedPage: View {
             }
             .padding(.top, TopMenuMetrics.contentTopPadding)
             .frame(maxWidth: FeedLayoutMetrics.maxContentWidth)
+            .onGeometryChange(for: Bool.self) { geometry in
+                geometry.frame(in: .named(Self.pageSpace)).minX > 0
+            } action: { isNarrower in
+                columnIsNarrower = isNarrower
+                if !holdsWidth { restingColumnIsNarrower = isNarrower }
+            }
             .frame(maxWidth: .infinity)
+            .coordinateSpace(.named(Self.pageSpace))
         }
+        .onChange(of: holdsWidth) {
+            if !holdsWidth { restingColumnIsNarrower = columnIsNarrower }
+        }
+        .preference(key: FeedColumnIsNarrowerKey.self, value: restingColumnIsNarrower)
         .sheet(item: $presentedDestination, content: ForYouDetailSheet.init)
         // A tap on a card, not the sheet's dismissal.
         .sensoryFeedback(trigger: presentedDestination) { _, newValue in
@@ -87,5 +102,14 @@ struct FeedPage: View {
         withAnimation(TaskMetrics.stackAnimation) {
             taskList.updateStack()
         }
+    }
+}
+
+/// Whether a page's readable column, at rest, stops short of the page's edges.
+struct FeedColumnIsNarrowerKey: PreferenceKey {
+    static let defaultValue = false
+
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
     }
 }

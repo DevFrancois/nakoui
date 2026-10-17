@@ -5,14 +5,13 @@ import SwiftUI
 /// target.
 struct WhatsNewRow: View {
     let tint: Color
-    var settledWidth: CGFloat? = nil
     let action: () -> Void
 
     private static let cornerRadius: CGFloat = 32
 
     var body: some View {
         Button(action: action) {
-            SettledWidthLayout(width: settledWidth.map { $0 - 2 * FeedLayoutMetrics.horizontalPadding }) {
+            SettledWidth {
                 Text("What's New")
                     .font(.title.bold())
                     .padding(.horizontal, 24)
@@ -24,7 +23,7 @@ struct WhatsNewRow: View {
         .buttonStyle(PassthroughButtonStyle())
         .modifier(FeedGlass(cornerRadius: Self.cornerRadius, tint: tint, tintOpacity: 0.2))
         .accessibilityIdentifier("bookmarks.whatsNew")
-        .padding(.horizontal, FeedLayoutMetrics.horizontalPadding)
+        .padding(.horizontal)
         .padding(.vertical, 8)
     }
 }

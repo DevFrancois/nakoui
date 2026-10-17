@@ -7,7 +7,6 @@ import SwiftUI
 /// blurring and fading, while the ones behind grow forward.
 struct TaskStack: View {
     let tasks: [ForYouTask]
-    var settledWidth: CGFloat? = nil
     let onOpen: () -> Void
     let onDismiss: (ForYouTask) -> Void
 
@@ -18,12 +17,8 @@ struct TaskStack: View {
             ForEach(tasks.prefix(TaskMetrics.visibleStackCount).enumerated(), id: \.element.id) { index, task in
                 let isFront = index == 0
 
-                TaskCard(
-                    task: task, depth: index,
-                    settledWidth: settledWidth.map { $0 - 2 * FeedLayoutMetrics.horizontalPadding },
-                    onOpen: onOpen, onDismiss: { onDismiss(task) }
-                ) {
-                    SettledWidthLayout(width: settledWidth.map { $0 - 2 * FeedLayoutMetrics.horizontalPadding }) {
+                TaskCard(task: task, depth: index, onOpen: onOpen, onDismiss: { onDismiss(task) }) {
+                    SettledWidth {
                         TaskSummary(task: task)
                             .padding()
                     }
@@ -42,7 +37,7 @@ struct TaskStack: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tasks")
-        .padding(.horizontal, FeedLayoutMetrics.horizontalPadding)
+        .padding(.horizontal)
         // Empty once the last card has gone, so nothing is left behind.
         .padding(.vertical, tasks.isEmpty ? 0 : 8)
     }

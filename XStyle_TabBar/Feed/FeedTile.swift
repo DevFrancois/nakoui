@@ -8,15 +8,16 @@ struct FeedTile: View {
     let title: LocalizedStringResource
     let tint: Color
     var size: FeedTileSize = .regular
-    var settledWidth: CGFloat? = nil
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            SettledWidthLayout(width: settledWidth) {
+            SettledWidth {
                 ZStack(alignment: .bottomLeading) {
-                    // The settled width supplies the preferred height. The
-                    // surface can widen without moving its bottom label.
+                    // The artwork supplies the preferred proportions; text can
+                    // still make the card taller when it needs more room. At
+                    // rest width, so the surface can widen without moving its
+                    // bottom label.
                     Color.clear
                         .aspectRatio(size.aspectRatio, contentMode: .fit)
 
@@ -33,7 +34,6 @@ struct FeedTile: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .frame(maxWidth: .infinity)
             .contentShape(.rect(cornerRadius: size.cornerRadius))
         }
         .buttonStyle(PassthroughButtonStyle())

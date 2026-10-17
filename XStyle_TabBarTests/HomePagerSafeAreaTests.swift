@@ -280,13 +280,13 @@ struct HomePagerSafeAreaTests {
             if pager.selectedTab == .bookmarks && pager.isAtRest { break }
         }
         try #require(offsets.count > 10, "The test must sample a real animation")
-        #expect(offsets.allSatisfy { abs($0 - initialOffset) < 0.5 },
+        #expect(offsets.allSatisfy { $0 == initialOffset },
                 "Horizontal paging must not alter vertical contentOffset. \(observations.joined(separator: "; "))")
-        #expect(insets.allSatisfy { abs($0 - initialInset) < 0.5 },
+        #expect(insets.allSatisfy { $0 == initialInset },
                 "Horizontal paging must not alter the top adjusted inset. \(observations.joined(separator: "; "))")
-        #expect(origins.allSatisfy { abs($0 - initialOrigin) < 0.5 },
+        #expect(origins.allSatisfy { $0 == initialOrigin },
                 "The native content origin must stay vertically fixed below the real safeAreaBar. \(observations.joined(separator: "; "))")
-        #expect(contentHeights.allSatisfy { abs($0 - initialContentHeight) < 0.5 },
+        #expect(contentHeights.allSatisfy { $0 == initialContentHeight },
                 "Width-only surface motion must not repeatedly change the content height or its scroll range. \(observations.joined(separator: "; "))")
         #expect(pager.selectedTab == .bookmarks && pager.isAtRest)
     }

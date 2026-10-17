@@ -4,23 +4,15 @@ import SwiftUI
 struct FeedRow: View {
     let tab: AppTab
     let number: Int
-    var settledWidth: CGFloat? = nil
-
-    private static let avatarWidth: CGFloat = 44
-    private static let avatarSpacing: CGFloat = 8
 
     var body: some View {
-        let textWidth = settledWidth.map {
-            max(0, $0 - 2 * FeedLayoutMetrics.horizontalPadding - Self.avatarWidth - Self.avatarSpacing)
-        }
-
-        HStack(alignment: .top, spacing: Self.avatarSpacing) {
+        HStack(alignment: .top) {
             Circle()
                 .fill(tab.tint.tertiary)
-                .frame(width: Self.avatarWidth, height: Self.avatarWidth)
+                .frame(width: 44, height: 44)
 
             VStack(alignment: .leading, spacing: 8) {
-                SettledWidthLayout(width: textWidth) {
+                SettledWidth {
                     Text("\(tab.title) post \(number)")
                         .font(.headline)
                 }
@@ -35,7 +27,7 @@ struct FeedRow: View {
                 }
             }
         }
-        .padding(FeedLayoutMetrics.horizontalPadding)
+        .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .bottom) {
             Divider()
