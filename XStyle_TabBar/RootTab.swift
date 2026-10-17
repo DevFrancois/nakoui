@@ -35,7 +35,6 @@ enum RootTab: Hashable, CaseIterable {
         }
     }
 
-    /// Tabs that only show a placeholder for now, in tab bar order. Search is
-    /// left out: its role places it apart, at the end of the bar.
+    /// Tabs that only show a placeholder for now. Search is declared separately.
     static let placeholderTabs: [RootTab] = [.profile]
 }
