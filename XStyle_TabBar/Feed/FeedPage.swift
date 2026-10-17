@@ -23,7 +23,10 @@ struct FeedPage: View {
                 if tab == .quizz {
                     QuizHub()
                 } else {
-                    LazyVStack(spacing: 0) {
+                    // Rows keep exact positions when a safe-area change alters
+                    // the proposed width. Lazy height estimates shift the
+                    // visible post.
+                    VStack(spacing: 0) {
                         if tab == .bookmarks {
                             // Always present, so the last card lifts away like
                             // the others instead of fading out with the stack.

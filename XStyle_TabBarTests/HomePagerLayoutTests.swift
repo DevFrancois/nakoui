@@ -292,6 +292,161 @@ struct HomePagerLayoutTests {
         }
     }
 
+    @Test("Every page keeps its resting width and rail inset during tap transitions", arguments: [RailEdge.leading, .trailing])
+    func tapTransitionsKeepRestingWidths(_ edge: RailEdge) async throws {
+        let scene = try #require(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let window = UIWindow(windowScene: scene)
+        let container = UIViewController()
+        window.rootViewController = container
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let pager = PagerState()
+        let host = UIHostingController(rootView: PagerLayoutFixture(pager: pager, animationDuration: 0.6))
+        container.addChild(host)
+        container.view.addSubview(host.view)
+        host.didMove(toParent: container)
+        host.view.frame = CGRect(x: 0, y: 0, width: 466, height: 700)
+        host.additionalSafeAreaInsets = UIEdgeInsets(
+            top: 0, left: edge == .leading ? 84 : 0, bottom: 0, right: edge == .trailing ? 84 : 0
+        )
+        host.view.layoutIfNeeded()
+
+        try #require(try await eventually {
+            scrollViews(in: host.view).count == AppTab.allCases.count + 1
+                && pager.viewportWidth == host.view.bounds.width
+        })
+        let horizontal = try #require(scrollViews(in: host.view).first)
+        let pages = scrollViews(in: horizontal).filter { $0 !== horizontal }.sorted {
+            $0.convert($0.bounds, to: horizontal).minX < $1.convert($1.bounds, to: horizontal).minX
+        }
+        let insets = host.view.safeAreaInsets
+        let restingWidth = host.view.bounds.inset(by: insets).width
+        func isResting(_ page: UIScrollView) -> Bool {
+            page.contentSize.width == restingWidth
+                && page.adjustedContentInset.left == insets.left
+                && page.adjustedContentInset.right == insets.right
+        }
+        try #require(try await eventually { pages.allSatisfy(isResting) })
+        pager.setReduceMotion(false)
+
+        // A distant departure covers compressed travel, then ordinary pages
+        // at both ends, then a return to For you.
+        for destination in [AppTab.quizz, .videos, .bookmarks] {
+            pager.select(destination)
+            var movingOffsets: [CGFloat] = []
+            var incorrect: [String] = []
+            for _ in 0..<300 {
+                try await Task.sleep(for: .milliseconds(5))
+                let offset = horizontal.contentOffset.x + horizontal.adjustedContentInset.left
+                if pager.tapTransition != nil {
+                    if movingOffsets.last != offset {
+                        movingOffsets.append(offset)
+                    }
+                    for (index, page) in pages.enumerated() where !isResting(page) {
+                        incorrect.append("page \(index) at offset \(offset): width \(page.contentSize.width), inset \(page.adjustedContentInset)")
+                    }
+                }
+                if pager.selectedTab == destination && pager.isAtRest { break }
+            }
+            #expect(movingOffsets.count >= 2, "The test must observe multiple rendered positions during the tap")
+            #expect(incorrect.isEmpty, "No page may change its width or rail inset while paging. \(incorrect.joined(separator: "; "))")
+            try #require(try await eventually { pager.selectedTab == destination && pager.isAtRest })
+            #expect(pages.allSatisfy(isResting))
+        }
+    }
+
+    @Test("The real Home header keeps vertical content still throughout horizontal tap animations", arguments: [CGFloat(0), 320])
+    func realHomeChromeDoesNotMoveVerticalContentDuringPaging(_ startingOffset: CGFloat) async throws {
+        let scene = try #require(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let window = UIWindow(windowScene: scene)
+        let container = UIViewController()
+        window.rootViewController = container
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let pager = PagerState()
+        let host = UIHostingController(rootView: HomeChromePagerFixture(pager: pager))
+        container.addChild(host)
+        container.view.addSubview(host.view)
+        host.didMove(toParent: container)
+        host.view.frame = CGRect(x: 0, y: 0, width: 466, height: 678)
+        host.additionalSafeAreaInsets.right = 84
+        host.view.layoutIfNeeded()
+        let pagerContentWidth = host.view.bounds.width * CGFloat(AppTab.allCases.count)
+        try #require(try await eventually {
+            pager.viewportWidth == host.view.bounds.width
+                && scrollViews(in: host.view).contains { $0.contentSize.width == pagerContentWidth }
+        })
+        let horizontal = try #require(scrollViews(in: host.view).first { $0.contentSize.width == pagerContentWidth })
+        let pages = scrollViews(in: horizontal).filter { $0 !== horizontal }.sorted {
+            $0.convert($0.bounds, to: horizontal).minX < $1.convert($1.bounds, to: horizontal).minX
+        }
+        try #require(pages.count == AppTab.allCases.count)
+        let incoming = pages[AppTab.bookmarks.index]
+        try #require(try await eventually { incoming.contentSize.height > incoming.bounds.height })
+
+        incoming.setContentOffset(
+            CGPoint(x: incoming.contentOffset.x, y: startingOffset - incoming.adjustedContentInset.top),
+            animated: false
+        )
+        try #require(try await eventually {
+            incoming.contentOffset.y + incoming.adjustedContentInset.top == startingOffset
+        }, "The page must begin at the requested vertical scroll position")
+
+        pager.setReduceMotion(true)
+        pager.select(.videos)
+        try #require(try await eventually { pager.selectedTab == .videos && pager.isAtRest })
+        let initialInset = incoming.adjustedContentInset.top
+        let initialOffset = incoming.contentOffset.y
+        let initialOrigin = incoming.convert(CGPoint.zero, to: host.view).y
+        let initialContentHeight = incoming.contentSize.height
+        #expect(initialOffset + initialInset == startingOffset)
+        pager.setReduceMotion(false)
+        pager.select(.bookmarks)
+
+        var horizontalOffsets: Set<CGFloat> = []
+        var offsets: [CGFloat] = []
+        var insets: [CGFloat] = []
+        var origins: [CGFloat] = []
+        var contentHeights: [CGFloat] = []
+        var observations: [String] = []
+        // Keeps sampling after the pager settles, through the logo row's
+        // own animation.
+        var samplesAfterRest = 0
+        for _ in 0..<400 where samplesAfterRest < 60 {
+            try await Task.sleep(for: .milliseconds(5))
+            let x = horizontal.contentOffset.x + horizontal.adjustedContentInset.left
+            let offset = incoming.contentOffset.y
+            let inset = incoming.adjustedContentInset.top
+            let origin = incoming.convert(CGPoint.zero, to: host.view).y
+            let contentHeight = incoming.contentSize.height
+            horizontalOffsets.insert(x)
+            offsets.append(offset)
+            insets.append(inset)
+            origins.append(origin)
+            contentHeights.append(contentHeight)
+            let observation = "x=\(x), y=\(offset), inset=\(inset), origin=\(origin), height=\(contentHeight)"
+            if observations.last != observation {
+                observations.append(observation)
+            }
+            if pager.selectedTab == .bookmarks && pager.isAtRest { samplesAfterRest += 1 }
+        }
+        try #require(horizontalOffsets.count >= 2, "The test must sample a real animation")
+        #expect(offsets.allSatisfy { $0 == initialOffset },
+                "Horizontal paging must not alter vertical contentOffset. \(observations.joined(separator: "; "))")
+        #expect(insets.allSatisfy { $0 == initialInset },
+                "Horizontal paging must not alter the top adjusted inset. \(observations.joined(separator: "; "))")
+        #expect(origins.allSatisfy { $0 == initialOrigin },
+                "The native content origin must stay vertically fixed below the real safeAreaBar. \(observations.joined(separator: "; "))")
+        #expect(contentHeights.allSatisfy { $0 == initialContentHeight },
+                "Horizontal paging must not change the content height or its scroll range. \(observations.joined(separator: "; "))")
+        #expect(pager.selectedTab == .bookmarks && pager.isAtRest)
+    }
+
+    enum RailEdge: String, Sendable {
+        case leading
+        case trailing
+    }
+
     private func view(withIdentifier identifier: String, in root: UIView) -> UIView? {
         if root.accessibilityIdentifier == identifier { return root }
         for child in root.subviews {
@@ -318,6 +473,8 @@ struct HomePagerLayoutTests {
 
 private struct PagerLayoutFixture: View {
     let pager: PagerState
+    /// Slows animated transitions so a test can sample them.
+    var animationDuration: Double? = nil
     private let logoCollapse = LogoCollapse()
     private let taskList = ForYouTaskList()
     @Namespace private var zoomNamespace
@@ -330,6 +487,11 @@ private struct PagerLayoutFixture: View {
             zoomNamespace: zoomNamespace,
             onUpdate: {}
         )
+        .transaction { transaction in
+            if transaction.animation != nil, let animationDuration {
+                transaction.animation = .linear(duration: animationDuration)
+            }
+        }
     }
 }
 
@@ -392,6 +554,32 @@ private struct FeedScrollLayoutFixture: View {
         .safeAreaBar(edge: .top, spacing: 0) {
             LayoutMarker()
                 .frame(height: TopMenuMetrics.expandedHeight)
+        }
+    }
+}
+
+private struct HomeChromePagerFixture: View {
+    let pager: PagerState
+    private let logoCollapse = LogoCollapse()
+    private let taskList = ForYouTaskList()
+    private let scanner = ScannerModel()
+    @State private var rootTab: RootTab = .home
+    @Namespace private var zoomNamespace
+
+    var body: some View {
+        NavigationStack {
+            RootTabContent(selection: $rootTab, scanner: scanner) {
+                HomeRootView(
+                    title: "Nako", pager: pager, logoCollapse: logoCollapse,
+                    taskList: taskList, zoomNamespace: zoomNamespace,
+                    onSelect: pager.select, onUpdate: {}
+                ) {
+                    EmptyView()
+                }
+            }
+            .navigationTitle("Nako")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarVisibility(.hidden, for: .navigationBar)
         }
     }
 }
