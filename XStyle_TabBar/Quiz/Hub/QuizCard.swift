@@ -8,41 +8,43 @@ struct QuizCard: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let kind: QuizKind
+    var settledWidth: CGFloat? = nil
 
     var body: some View {
         let layout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: QuizMetrics.sectionSpacing))
             : AnyLayout(HStackLayout(alignment: .top, spacing: QuizMetrics.sectionSpacing))
 
-        layout {
-            Image(systemName: kind.symbol)
-                .font(.title2)
-                .foregroundStyle(kind.tint)
-                .frame(width: QuizMetrics.iconSize, height: QuizMetrics.iconSize)
-                .background(kind.tint.quaternary, in: .circle)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(kind.title)
-                    .font(.headline)
-
-                Text(kind.subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+        SettledWidthLayout(width: settledWidth.map { max(0, $0 - 2 * FeedLayoutMetrics.horizontalPadding) }) {
+            layout {
+                Image(systemName: kind.symbol)
+                    .font(.title2)
+                    .foregroundStyle(kind.tint)
+                    .frame(width: QuizMetrics.iconSize, height: QuizMetrics.iconSize)
+                    .background(kind.tint.quaternary, in: .circle)
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("^[\(kind.questionCount) question](inflect: true)")
-                        .font(.footnote)
+                    Text(kind.title)
+                        .font(.headline)
+
+                    Text(kind.subtitle)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
 
-                    QuizBestScoreBadge(kind: kind)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("^[\(kind.questionCount) question](inflect: true)")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+
+                        QuizBestScoreBadge(kind: kind)
+                    }
                 }
             }
-
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
-        .padding()
+        .padding(FeedLayoutMetrics.horizontalPadding)
         .contentShape(.rect(cornerRadius: QuizMetrics.cardCornerRadius))
         .glassEffect(.regular, in: .rect(cornerRadius: QuizMetrics.cardCornerRadius))
         .accessibilityElement(children: .combine)

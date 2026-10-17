@@ -9,6 +9,8 @@ struct FeedPage: View {
     /// The For you tasks. Owned by `ContentView`, so the side menu can reach
     /// them too.
     let taskList: ForYouTaskList
+    /// Changes with the actual viewport, never with horizontal paging progress.
+    var settledWidth: CGFloat? = nil
 
     @State private var presentedDestination: ForYouDestination?
     @State private var isShowingTasks = false
@@ -21,33 +23,36 @@ struct FeedPage: View {
         ScrollView(.vertical) {
             Group {
                 if tab == .quizz {
-                    QuizHub()
+                    QuizHub(settledWidth: settledWidth)
                 } else {
-                    LazyVStack(spacing: 0) {
+                    // This bounded feed needs exact row positions during the
+                    // width morph. Lazy estimates shift visible rows whenever
+                    // the rail changes the proposed width.
+                    VStack(spacing: 0) {
                         if tab == .bookmarks {
                             // Always present, so the last card lifts away like
                             // the others instead of fading out with the stack.
-                            TaskStack(tasks: taskList.stacked, onOpen: showTasks, onDismiss: dismissStackedTask)
+                            TaskStack(tasks: taskList.stacked, settledWidth: settledWidth, onOpen: showTasks, onDismiss: dismissStackedTask)
 
-                            WhatsNewRow(tint: tab.tint) { presentedDestination = .whatsNew }
+                            WhatsNewRow(tint: tab.tint, settledWidth: settledWidth) { presentedDestination = .whatsNew }
 
-                            ForYouTileGrid { destination in
+                            ForYouTileGrid(settledWidth: settledWidth) { destination in
                                 presentedDestination = destination
                             }
                         }
 
                         ForEach(1...Self.postCount, id: \.self) { number in
                             if tab == .articles {
-                                ArticleRow(article: .placeholder(number: number, tint: tab.tint), namespace: zoomNamespace)
+                                ArticleRow(article: .placeholder(number: number, tint: tab.tint), namespace: zoomNamespace, settledWidth: settledWidth)
                             } else {
-                                FeedRow(tab: tab, number: number)
+                                FeedRow(tab: tab, number: number, settledWidth: settledWidth)
                             }
                         }
                     }
                 }
             }
             .padding(.top, TopMenuMetrics.contentTopPadding)
-            .frame(maxWidth: 720)
+            .frame(maxWidth: FeedLayoutMetrics.maxContentWidth)
             .frame(maxWidth: .infinity)
         }
         .sheet(item: $presentedDestination, content: ForYouDetailSheet.init)

@@ -4,16 +4,26 @@ import SwiftUI
 struct FeedRow: View {
     let tab: AppTab
     let number: Int
+    var settledWidth: CGFloat? = nil
+
+    private static let avatarWidth: CGFloat = 44
+    private static let avatarSpacing: CGFloat = 8
 
     var body: some View {
-        HStack(alignment: .top) {
+        let textWidth = settledWidth.map {
+            max(0, $0 - 2 * FeedLayoutMetrics.horizontalPadding - Self.avatarWidth - Self.avatarSpacing)
+        }
+
+        HStack(alignment: .top, spacing: Self.avatarSpacing) {
             Circle()
                 .fill(tab.tint.tertiary)
-                .frame(width: 44, height: 44)
+                .frame(width: Self.avatarWidth, height: Self.avatarWidth)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("\(tab.title) post \(number)")
-                    .font(.headline)
+                SettledWidthLayout(width: textWidth) {
+                    Text("\(tab.title) post \(number)")
+                        .font(.headline)
+                }
 
                 ForEach(lineWidths.indices, id: \.self) { line in
                     GeometryReader { geometry in
@@ -25,7 +35,7 @@ struct FeedRow: View {
                 }
             }
         }
-        .padding()
+        .padding(FeedLayoutMetrics.horizontalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .bottom) {
             Divider()

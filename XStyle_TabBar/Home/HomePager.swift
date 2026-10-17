@@ -37,10 +37,16 @@ struct HomePager: View {
                     } ?? true
                     let offsetFactor = pager.tapTransition?.offsetFactor ?? 0
 
-                    FeedPage(tab: tab, zoomNamespace: zoomNamespace, taskList: taskList)
-                        .contentMargins(.leading, horizontalInsets.leading, for: .scrollContent)
-                        .contentMargins(.trailing, horizontalInsets.trailing, for: .scrollContent)
-                        .contentMargins(.trailing, horizontalInsets.trailing, for: .scrollIndicators)
+                    FeedPage(
+                        tab: tab, zoomNamespace: zoomNamespace, taskList: taskList,
+                        settledWidth: min(
+                            max(0, width - horizontalInsets.leading - horizontalInsets.trailing),
+                            FeedLayoutMetrics.maxContentWidth
+                        )
+                    )
+                        .modifier(HomePageMargins(
+                            tab: tab, pager: pager, width: width, viewportInsets: horizontalInsets
+                        ))
                         .onScrollGeometryChange(for: PageScrollPosition.self) { geometry in
                             PageScrollPosition(geometry)
                         } action: { oldPosition, newPosition in

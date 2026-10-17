@@ -8,28 +8,32 @@ struct FeedTile: View {
     let title: LocalizedStringResource
     let tint: Color
     var size: FeedTileSize = .regular
+    var settledWidth: CGFloat? = nil
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            ZStack(alignment: .bottomLeading) {
-                // The artwork supplies the preferred proportions; text can
-                // still make the card taller when it needs more room.
-                Color.clear
-                    .aspectRatio(size.aspectRatio, contentMode: .fit)
+            SettledWidthLayout(width: settledWidth) {
+                ZStack(alignment: .bottomLeading) {
+                    // The settled width supplies the preferred height. The
+                    // surface can widen without moving its bottom label.
+                    Color.clear
+                        .aspectRatio(size.aspectRatio, contentMode: .fit)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(caption)
-                        .font(size.captionFont)
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(caption)
+                            .font(size.captionFont)
+                            .foregroundStyle(.secondary)
 
-                    Text(title)
-                        .font(size.titleFont)
+                        Text(title)
+                            .font(size.titleFont)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(size.padding)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(size.padding)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(maxWidth: .infinity)
             .contentShape(.rect(cornerRadius: size.cornerRadius))
         }
         .buttonStyle(PassthroughButtonStyle())
