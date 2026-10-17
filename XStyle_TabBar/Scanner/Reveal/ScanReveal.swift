@@ -6,10 +6,8 @@ import Foundation
 /// clock.
 nonisolated struct ScanReveal: Sendable {
     let code: ScannedCode
-    /// Where the brackets start: the viewfinder, in full-screen view points.
-    let viewfinder: Quad
-    /// The code in the live frames, while the camera still runs.
-    var liveQuad: Quad
+    /// The code in the live source image, while the camera still runs.
+    var geometry: ScanFrameGeometry
     let startDate: Date
     /// The frozen frame, once the camera has stopped.
     private(set) var frozen: FrozenScan?
@@ -17,16 +15,15 @@ nonisolated struct ScanReveal: Sendable {
     private(set) var freezeDate: Date?
     private(set) var closeDate: Date?
 
-    init(code: ScannedCode, viewfinder: Quad, liveQuad: Quad, startDate: Date = .now) {
+    init(code: ScannedCode, geometry: ScanFrameGeometry, startDate: Date = .now) {
         self.code = code
-        self.viewfinder = viewfinder
-        self.liveQuad = liveQuad
+        self.geometry = geometry
         self.startDate = startDate
     }
 
     mutating func freeze(_ frozen: FrozenScan, at date: Date = .now) {
         self.frozen = frozen
-        let card = frozen.layout.card
+        let card = RevealLayout(viewSize: frozen.geometry.imageSize, codeQuad: frozen.geometry.imageQuad).card
         bloom = BloomPlan(aspect: card.width / max(card.height, 1))
         freezeDate = date
     }

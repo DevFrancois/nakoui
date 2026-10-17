@@ -40,6 +40,8 @@ struct ArticleView: View {
                     .font(.body)
             }
             .padding()
+            .frame(maxWidth: ArticleMetrics.contentMaxWidth)
+            .frame(maxWidth: .infinity)
         }
         .background {
             if let backdrop = ArticleBackdrop.blending(backdrops, at: galleryPosition) {
@@ -50,11 +52,14 @@ struct ArticleView: View {
                     .ignoresSafeArea()
             }
         }
-        // Part of the page, not the navigation bar, so the buttons follow the zoom.
-        .safeAreaBar(edge: .top) {
-            ArticleTopBar(article: article)
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        // The system places Back and Share in the current navigation bar,
+        // including Duo's vertical toolbar.
+        .toolbar {
+            ArticleToolbar(article: article)
         }
-        .toolbarVisibility(.hidden, for: .navigationBar)
+        .toolbarVisibility(.visible, for: .navigationBar)
         .navigationTransition(.zoom(sourceID: article.id, in: namespace))
         // The backdrop is toned to match the appearance, so text keeps its contrast.
         .onChange(of: colorScheme, initial: true) {

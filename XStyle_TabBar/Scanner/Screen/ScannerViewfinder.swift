@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// The aiming frame: the camera dimmed around a clear window, corner brackets,
-/// and a hint below. The window comes from `ScannerMetrics.viewfinderRect(in:)`,
+/// The aiming frame: a clear window with corner brackets and dimming around
+/// it. The window comes from `ScannerMetrics.viewfinderRect(in:)`,
 /// the same rect the camera scans. While a code is revealed the reveal draws
-/// the brackets, and the dimming and hint fade away.
+/// the brackets, and the dimming fades away.
 struct ScannerViewfinder: View {
     var isRevealing = false
 
@@ -21,20 +21,6 @@ struct ScannerViewfinder: View {
                 .animation(isRevealing ? nil : .easeOut(duration: 0.3), value: isRevealing)
                 .accessibilityHidden(true)
 
-            // Full screen, like the shapes, so the hint can sit under the window.
-            GeometryReader { proxy in
-                let window = ScannerMetrics.viewfinderRect(in: CGRect(origin: .zero, size: proxy.size))
-
-                Label("Point at a product barcode", systemImage: "barcode.viewfinder")
-                    .font(.subheadline)
-                    .padding(.horizontal)
-                    .padding(.vertical, 10)
-                    .glassEffect(in: .capsule)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, window.maxY + ScannerMetrics.hintSpacing)
-                    .opacity(isRevealing ? 0 : 1)
-                    .animation(.easeOut(duration: 0.15), value: isRevealing)
-            }
         }
         .ignoresSafeArea()
     }

@@ -1,9 +1,8 @@
 import CoreGraphics
 
-/// How far up, and how small, the logo row's items travel when it collapses.
+/// How small the logo row's items become as they fade during collapse.
 struct LogoFlight: Equatable {
-    var travel: CGFloat
     var scale: CGFloat
 
-    static let none = LogoFlight(travel: 0, scale: 1)
+    static let none = LogoFlight(scale: 1)
 }

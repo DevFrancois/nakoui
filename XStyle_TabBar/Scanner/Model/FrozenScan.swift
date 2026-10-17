@@ -12,8 +12,7 @@ nonisolated struct FrozenScan: @unchecked Sendable {
     /// points of transparent border so warped edges stay smooth.
     let patch: CGImage
     let patchPadding: CGFloat
-    /// The code in this frame, in full-screen view points.
-    let quad: Quad
-    /// Where the code goes from here.
-    let layout: RevealLayout
+    /// The code in the upright image, projected into the current viewport
+    /// when it is drawn rather than retaining the viewport at freeze time.
+    let geometry: ScanFrameGeometry
 }

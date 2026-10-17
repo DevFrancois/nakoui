@@ -3,8 +3,6 @@ import SwiftUI
 /// Guess a number with a glass slider, lock it in, then see your guess
 /// beside the real answer on a scale. Close enough counts.
 struct EstimateQuizView: View {
-    let namespace: Namespace.ID
-
     @State private var session = QuizSession(questionCount: QuizKind.estimate.questionCount)
     @State private var guess = 0.0
     @Namespace private var glassNamespace
@@ -14,7 +12,7 @@ struct EstimateQuizView: View {
     }
 
     var body: some View {
-        QuizScreen(kind: .estimate, session: session, namespace: namespace) {
+        QuizScreen(kind: .estimate, session: session) {
             VStack(spacing: QuizMetrics.sectionSpacing) {
                 QuizQuestionCard(prompt: question.prompt)
                     .id(question.id)
@@ -68,9 +66,7 @@ struct EstimateQuizView: View {
 }
 
 #Preview {
-    @Previewable @Namespace var namespace
-
     NavigationStack {
-        EstimateQuizView(namespace: namespace)
+        QuizDestination(kind: .estimate)
     }
 }

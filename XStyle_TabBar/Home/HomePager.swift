@@ -6,8 +6,6 @@ struct HomePager: View {
     @Bindable var pager: PagerState
     let logoCollapse: LogoCollapse
     let taskList: ForYouTaskList
-    /// Where page content starts, below the status bar and the menu.
-    let topInset: CGFloat
     let zoomNamespace: Namespace.ID
     /// Called whenever the pager's state moves on, so a side menu waiting
     /// for it to come to rest can open.
@@ -39,7 +37,7 @@ struct HomePager: View {
                     } ?? true
                     let offsetFactor = pager.tapTransition?.offsetFactor ?? 0
 
-                    FeedPage(tab: tab, topInset: topInset, zoomNamespace: zoomNamespace, taskList: taskList)
+                    FeedPage(tab: tab, zoomNamespace: zoomNamespace, taskList: taskList)
                         .contentMargins(.leading, horizontalInsets.leading, for: .scrollContent)
                         .contentMargins(.trailing, horizontalInsets.trailing, for: .scrollContent)
                         .contentMargins(.trailing, horizontalInsets.trailing, for: .scrollIndicators)

@@ -1,17 +1,14 @@
 import SwiftUI
 
-/// The frame every quiz shares: its ambient light, a glass top bar with
-/// progress and score, the zoom from its card, and the results once the
-/// round is over.
+/// The frame every quiz shares: its ambient light, a glass status header with
+/// progress and score, and the results once the round is over.
 struct QuizScreen<Content: View>: View {
     let kind: QuizKind
     let session: QuizSession
-    let namespace: Namespace.ID
     @ViewBuilder let content: Content
 
     var body: some View {
-        // Scrolls so large text and short windows, such as iPhone Duo's
-        // outer display, still reach every control.
+        // Scrolls so large text and short windows still reach every control.
         ScrollView {
             Group {
                 if session.isFinished {
@@ -33,11 +30,10 @@ struct QuizScreen<Content: View>: View {
         .background {
             AmbientGradientBackground(palettes: [kind.palette], progress: 0)
         }
-        // Part of the page, not the navigation bar, so it follows the zoom.
         .safeAreaBar(edge: .top) {
-            QuizTopBar(kind: kind, session: session)
+            QuizStatusHeader(kind: kind, session: session)
+                .frame(maxWidth: QuizMetrics.contentMaxWidth)
+                .frame(maxWidth: .infinity)
         }
-        .toolbarVisibility(.hidden, for: .navigationBar)
-        .navigationTransition(.zoom(sourceID: kind, in: namespace))
     }
 }

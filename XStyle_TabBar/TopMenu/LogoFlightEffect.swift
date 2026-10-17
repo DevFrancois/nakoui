@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Flies a logo-row item toward the device pill as the row collapses: it
-/// shrinks to the pill's size and fades, while rising exactly as far as the
+/// Shrinks and fades a logo-row item as the row collapses, rising as far as the
 /// content has scrolled, so it stays under the finger. With Reduce Motion it
 /// rises and fades without shrinking.
 struct LogoFlightEffect: ViewModifier {

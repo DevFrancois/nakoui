@@ -3,18 +3,24 @@ import SwiftUI
 /// Opens the quiz view for a format, pushed from the Quizz tab.
 struct QuizDestination: View {
     let kind: QuizKind
-    let namespace: Namespace.ID
 
     var body: some View {
-        switch kind {
-        case .classic:
-            ClassicQuizView(namespace: namespace)
-        case .dogOrCat:
-            DogOrCatQuizView(namespace: namespace)
-        case .lightning:
-            LightningQuizView(namespace: namespace)
-        case .estimate:
-            EstimateQuizView(namespace: namespace)
+        // The stack's native push keeps navigation space and quiz content
+        // moving together; zoom applied the navigation inset after arrival.
+        Group {
+            switch kind {
+            case .classic:
+                ClassicQuizView()
+            case .dogOrCat:
+                DogOrCatQuizView()
+            case .lightning:
+                LightningQuizView()
+            case .estimate:
+                EstimateQuizView()
+            }
         }
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarVisibility(.visible, for: .navigationBar)
     }
 }

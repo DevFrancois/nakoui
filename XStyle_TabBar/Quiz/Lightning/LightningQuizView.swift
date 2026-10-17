@@ -4,8 +4,6 @@ import SwiftUI
 /// builds with every right answer, and the round moves on by itself. With
 /// VoiceOver on, there's no clock and a Next button instead.
 struct LightningQuizView: View {
-    let namespace: Namespace.ID
-
     @State private var session = QuizSession(questionCount: QuizKind.lightning.questionCount)
     @State private var choice: Bool?
     @State private var questionStart = Date.now
@@ -19,7 +17,7 @@ struct LightningQuizView: View {
     }
 
     var body: some View {
-        QuizScreen(kind: .lightning, session: session, namespace: namespace) {
+        QuizScreen(kind: .lightning, session: session) {
             VStack(spacing: QuizMetrics.sectionSpacing) {
                 HStack {
                     CountdownRing(
@@ -116,9 +114,7 @@ struct LightningQuizView: View {
 }
 
 #Preview {
-    @Previewable @Namespace var namespace
-
     NavigationStack {
-        LightningQuizView(namespace: namespace)
+        QuizDestination(kind: .lightning)
     }
 }

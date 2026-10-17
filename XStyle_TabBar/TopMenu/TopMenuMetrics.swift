@@ -38,16 +38,12 @@ enum TopMenuMetrics {
     static let lightPlatter = Color.white
     static let darkPlatter = Color(white: 0.30)
 
-    // MARK: Device pill
+    // MARK: Logo collapse
 
-    static let pillWidth: CGFloat = 126
-    static let pillMaximumWidthFraction: CGFloat = 0.34
-    static let pillHeightWithIsland: CGFloat = 36
-    static let pillHeightWithoutIsland: CGFloat = 28
-    /// Safe-area tops at least this tall belong to Dynamic Island devices.
-    static let islandSafeAreaTop: CGFloat = 50
-    static let pillMinimumTop: CGFloat = 6
-    /// Padding around the wordmark's text when sizing it into the pill.
+    static let collapseTargetMaxWidth: CGFloat = 126
+    static let collapseTargetWidthFraction: CGFloat = 0.34
+    static let collapseTargetHeightFraction: CGFloat = 0.7
+    /// Padding around the wordmark's text when sizing its collapsed form.
     static let wordmarkFramePadding = CGSize(width: 24, height: 4)
 
     // MARK: Animations

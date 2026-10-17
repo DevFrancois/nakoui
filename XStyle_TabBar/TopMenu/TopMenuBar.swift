@@ -2,7 +2,7 @@ import SwiftUI
 
 /// ZoomInUIKit's top menu: a logo row over a row of glass chips, laid over
 /// scrolling content. As the logo row collapses, in step with the scroll,
-/// the chips slide up into its place and its items fly into the device pill.
+/// the chips slide up into its place and the logo shrinks and fades.
 struct TopMenuBar<Tab: TopMenuTab, Leading: View, Trailing: View>: View {
     let title: String
     /// Fractional index of the highlighted chip.
@@ -16,53 +16,37 @@ struct TopMenuBar<Tab: TopMenuTab, Leading: View, Trailing: View>: View {
     @ViewBuilder let leading: Leading
     @ViewBuilder let trailing: Trailing
 
-    @State private var safeAreaTop: CGFloat = 0
-    @State private var width: CGFloat = 0
     @State private var wordmarkSize = CGSize.zero
 
     var body: some View {
-        ZStack(alignment: .top) {
-            CategoryChipStrip(
-                selection: selection,
-                selectedTab: selectedTab,
-                isSelectionLocked: isSelectionLocked,
-                onSelect: onSelect
-            )
-            .padding(.top, TopMenuMetrics.logoRowHeight)
-            .offset(y: -logoCollapse.distance)
+        GeometryReader { geometry in
+            ZStack(alignment: .top) {
+                CategoryChipStrip(
+                    selection: selection,
+                    selectedTab: selectedTab,
+                    isSelectionLocked: isSelectionLocked,
+                    onSelect: onSelect
+                )
+                .padding(.top, TopMenuMetrics.logoRowHeight)
+                .offset(y: -logoCollapse.distance)
 
-            TopMenuLogoRow(
-                title: title,
-                collapse: logoCollapse.distance,
-                flight: flight,
-                wordmarkSize: $wordmarkSize
-            ) {
-                leading
-            } trailing: {
-                trailing
+                TopMenuLogoRow(
+                    title: title,
+                    collapse: logoCollapse.distance,
+                    flight: LogoCollapseGeometry(containerWidth: geometry.size.width).flight(wordmarkSize: wordmarkSize),
+                    wordmarkSize: $wordmarkSize
+                ) {
+                    leading
+                } trailing: {
+                    trailing
+                }
+                // Flies above the chips, as ZoomInUIKit's unclipped copies do.
+                .zIndex(1)
             }
-            // Flies above the chips, as ZoomInUIKit's unclipped copies do.
-            .zIndex(1)
         }
         // A fixed height: the collapse moves what's inside, never the menu's
         // footprint, so the pages under it never move with it.
         .frame(height: TopMenuMetrics.expandedHeight, alignment: .top)
-        // Separate values, so the side menu's horizontal slide writes no state.
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.frame(in: .global).minY
-        } action: { minY in
-            safeAreaTop = minY
-        }
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.width
-        } action: { newWidth in
-            width = newWidth
-        }
-    }
-
-    private var flight: LogoFlight {
-        DevicePillGeometry(safeAreaTop: safeAreaTop, containerWidth: width)
-            .flight(wordmarkSize: wordmarkSize)
     }
 }
 

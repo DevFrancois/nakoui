@@ -3,10 +3,8 @@ import SwiftUI
 /// Sort each fact to the right animal: fling the card left for dog or right
 /// for cat, or tap the glass buttons, which also serve VoiceOver.
 struct DogOrCatQuizView: View {
-    let namespace: Namespace.ID
-
     @State private var session = QuizSession(questionCount: QuizKind.dogOrCat.questionCount)
-    @State private var dragOffset = 0.0
+    @GestureState private var dragOffset: Double?
     @State private var choice: PetSpecies?
     @Namespace private var glassNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -16,13 +14,14 @@ struct DogOrCatQuizView: View {
     }
 
     var body: some View {
-        QuizScreen(kind: .dogOrCat, session: session, namespace: namespace) {
+        QuizScreen(kind: .dogOrCat, session: session) {
             VStack(spacing: QuizMetrics.sectionSpacing) {
                 SpeciesCard(
                     statement: statement,
-                    dragOffset: dragOffset,
+                    dragOffset: dragOffset ?? 0,
                     answer: session.isAnswered ? statement.species : nil
                 )
+                .animation(dragOffset == nil && !reduceMotion ? .bouncy : nil, value: dragOffset)
                 .gesture(swipe, isEnabled: !session.isAnswered)
                 .id(statement.id)
                 .quizQuestionTransition()
@@ -60,16 +59,13 @@ struct DogOrCatQuizView: View {
     /// Follows the finger, and counts a fling past the threshold as an answer.
     private var swipe: some Gesture {
         DragGesture(minimumDistance: 12)
-            .onChanged { value in
-                dragOffset = value.translation.width
+            .updating($dragOffset) { value, offset, _ in
+                offset = value.translation.width
             }
             .onEnded { value in
                 let flung = value.predictedEndTranslation.width
                 if abs(flung) > QuizMetrics.swipeThreshold {
                     choose(flung < 0 ? .dog : .cat)
-                }
-                withAnimation(reduceMotion ? .default : .bouncy) {
-                    dragOffset = 0
                 }
             }
     }
@@ -95,9 +91,7 @@ struct DogOrCatQuizView: View {
 }
 
 #Preview {
-    @Previewable @Namespace var namespace
-
     NavigationStack {
-        DogOrCatQuizView(namespace: namespace)
+        QuizDestination(kind: .dogOrCat)
     }
 }

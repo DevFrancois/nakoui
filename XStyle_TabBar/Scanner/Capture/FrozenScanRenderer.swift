@@ -40,7 +40,10 @@ nonisolated enum FrozenScanRenderer {
         guard let patch = flatten(image, codeQuad: codeQuad, size: layout.liftTarget.size, displayScale: displayScale) else { return nil }
         return FrozenScan(
             sharp: sharp, blurred: blurred, patch: patch, patchPadding: paddingPixels / displayScale,
-            quad: viewQuad, layout: layout
+            geometry: ScanFrameGeometry(
+                viewQuad: viewQuad, viewSize: viewSize,
+                imageSize: CGSize(width: sharp.width, height: sharp.height)
+            )
         )
     }
 

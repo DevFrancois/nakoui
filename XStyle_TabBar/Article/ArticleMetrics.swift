@@ -7,6 +7,8 @@ enum ArticleMetrics {
     static let heroCornerRadius = 24.0
     /// The square hero stops growing past this width, on iPad and wide windows.
     static let heroMaxWidth = 600.0
+    /// Keeps reading lines comfortable while the page fills a wide window.
+    static let contentMaxWidth = 720.0
     /// How far down the page the backdrop's top lights reach, as a multiple of its height.
     static let backdropCoverage = 1.4
     /// How far up the page the bottom lights reach. Shorter than the top, so the

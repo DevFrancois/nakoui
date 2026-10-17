@@ -3,8 +3,6 @@ import SwiftUI
 /// Multiple choice: a question card, four glass answers that settle green or
 /// red, then a fun fact that morphs in from the answers.
 struct ClassicQuizView: View {
-    let namespace: Namespace.ID
-
     @State private var session = QuizSession(questionCount: QuizKind.classic.questionCount)
     @State private var selection: Int?
     @Namespace private var glassNamespace
@@ -14,7 +12,7 @@ struct ClassicQuizView: View {
     }
 
     var body: some View {
-        QuizScreen(kind: .classic, session: session, namespace: namespace) {
+        QuizScreen(kind: .classic, session: session) {
             VStack(spacing: QuizMetrics.sectionSpacing) {
                 QuizQuestionCard(prompt: question.prompt)
                     .id(question.id)
@@ -64,9 +62,7 @@ struct ClassicQuizView: View {
 }
 
 #Preview {
-    @Previewable @Namespace var namespace
-
     NavigationStack {
-        ClassicQuizView(namespace: namespace)
+        QuizDestination(kind: .classic)
     }
 }

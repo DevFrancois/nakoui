@@ -16,12 +16,12 @@ struct FeedRow: View {
                     .font(.headline)
 
                 ForEach(lineWidths.indices, id: \.self) { line in
-                    Capsule()
-                        .fill(.quaternary)
-                        .frame(height: 10)
-                        .containerRelativeFrame(.horizontal, alignment: .leading) { length, _ in
-                            length * lineWidths[line]
-                        }
+                    GeometryReader { geometry in
+                        Capsule()
+                            .fill(.quaternary)
+                            .frame(width: geometry.size.width * lineWidths[line])
+                    }
+                    .frame(height: 10)
                 }
             }
         }

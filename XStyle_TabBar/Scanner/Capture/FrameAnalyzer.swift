@@ -69,7 +69,10 @@ actor FrameAnalyzer {
             tracked = nil
             mode = .paused
         }
-        guard let tracked, let screen, let mapper else { return nil }
+        guard let tracked, let screen else { return nil }
+        // A resize invalidates the mapper even if no newer camera frame
+        // arrives before the freeze. The retained frame is sufficient.
+        let mapper = currentMapper(for: tracked.frame, screen: screen)
         let bufferQuad = Self.outline(of: tracked.reading)
         return FrozenScanRenderer.render(
             CIImage(cvPixelBuffer: tracked.frame), orientation: .right, codeQuad: bufferQuad,
@@ -122,12 +125,12 @@ actor FrameAnalyzer {
             }
             mode = .tracking(reading.text)
             tracked = (reading, frame)
-            let quad = Self.outline(of: reading).map(mapper.viewPoint)
-            continuation?.yield(.detected(ScanDetection(code: ScannedCode(reading), quad: quad)))
+            let geometry = ScanFrameGeometry(bufferQuad: Self.outline(of: reading), mapper: mapper)
+            continuation?.yield(.detected(ScanDetection(code: ScannedCode(reading), geometry: geometry)))
         case .tracking(let text):
             guard let reading = readings.first(where: { $0.text == text }) else { return }
             tracked = (reading, frame)
-            continuation?.yield(.tracked(Self.outline(of: reading).map(mapper.viewPoint)))
+            continuation?.yield(.tracked(ScanFrameGeometry(bufferQuad: Self.outline(of: reading), mapper: mapper)))
         case .paused:
             break
         }

@@ -7,6 +7,7 @@ struct ScannerView: View {
     /// Whether the Scan tab is showing. The camera only runs while it is.
     let isActive: Bool
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The zoom a pinch started from; nil between pinches, including ones
     /// cut short, such as by a code being found.
@@ -54,9 +55,13 @@ struct ScannerView: View {
             }
         }
         .safeAreaBar(edge: .bottom) {
-            // Each item pads its own bottom, so with neither showing the bar
+            // Each item pads its own bottom, so with none showing the bar
             // adds no inset.
             VStack(spacing: 0) {
+                if model.state == .idle || model.state == .scanning {
+                    ScannerHint(isRevealing: model.reveal != nil)
+                }
+
                 if model.state == .scanning, model.zoom != nil || model.hasTorch {
                     GlassEffectContainer(spacing: 12) {
                         HStack(spacing: 12) {
@@ -86,10 +91,17 @@ struct ScannerView: View {
         .onChange(of: reduceMotion, initial: true) {
             model.reduceMotion = reduceMotion
         }
-        .task(id: isActive) {
-            guard isActive else { return }
+        .onChange(of: displayScale) {
+            model.updateDisplayScale(displayScale)
+        }
+        .task(id: isCameraActive) {
+            guard isCameraActive else { return }
             await model.run()
         }
+    }
+
+    private var isCameraActive: Bool {
+        isActive && scenePhase == .active
     }
 
     /// The camera controls show while aiming, not while a found code is

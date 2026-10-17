@@ -35,6 +35,7 @@ struct CategoryChipStrip<Tab: TopMenuTab>: View {
                         proxy.frame(in: .named(Self.contentSpace))
                     } action: { frame in
                         chipFrames[index] = frame
+                        revealSelection(animated: false)
                     }
                 }
             }
@@ -51,13 +52,17 @@ struct CategoryChipStrip<Tab: TopMenuTab>: View {
         .scrollPosition($position)
         .onScrollGeometryChange(for: ChipStripGeometry.self) { scrollGeometry in
             ChipStripGeometry(scrollGeometry)
-        } action: { _, newGeometry in
+        } action: { oldGeometry, newGeometry in
             geometry = newGeometry
+            if oldGeometry.viewportWidth != newGeometry.viewportWidth
+                || oldGeometry.contentWidth != newGeometry.contentWidth {
+                revealSelection(animated: false)
+            }
         }
         // Clamped, so a pager bouncing past its last page doesn't scroll the
         // row to the same place every frame.
         .onChange(of: clampedSelection) {
-            revealSelection()
+            revealSelection(animated: isSelectionLocked)
         }
         .frame(height: TopMenuMetrics.chipRowHeight)
         .accessibilityElement(children: .contain)
@@ -73,7 +78,7 @@ struct CategoryChipStrip<Tab: TopMenuTab>: View {
         max(0, 1 - abs(clampedSelection - CGFloat(index)))
     }
 
-    private func revealSelection() {
+    private func revealSelection(animated: Bool) {
         let frames = tabs.indices.compactMap { chipFrames[$0] }
         guard frames.count == tabs.count,
               let target = ChipReveal.targetOffset(
@@ -82,12 +87,12 @@ struct CategoryChipStrip<Tab: TopMenuTab>: View {
                   geometry: geometry
               ) else { return }
 
-        if isSelectionLocked && !reduceMotion {
+        if animated && !reduceMotion {
             withAnimation(TopMenuMetrics.revealAnimation) {
                 position.scrollTo(x: target)
             }
         } else {
-            // Swipes call this every frame; follow the pager exactly.
+            // Geometry changes track the new viewport immediately.
             var transaction = Transaction(animation: nil)
             transaction.disablesAnimations = true
             withTransaction(transaction) {

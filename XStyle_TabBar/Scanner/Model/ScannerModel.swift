@@ -135,6 +135,11 @@ final class ScannerModel {
         }
     }
 
+    /// A scene can move to another display without changing its point size.
+    func updateDisplayScale(_ displayScale: CGFloat) {
+        updateScreen(size: screenSize, displayScale: displayScale)
+    }
+
     /// Zooms the camera, within its range: straight there for pinch steps,
     /// easing there for the zoom buttons.
     func setZoom(_ factor: Double, animated: Bool) {
@@ -224,12 +229,12 @@ final class ScannerModel {
         switch event {
         case .detected(let detection):
             guard reveal == nil, scannedCode == nil, let analyzer else { return }
-            reveal = ScanReveal(code: detection.code, viewfinder: Quad(viewfinder), liveQuad: detection.quad)
+            reveal = ScanReveal(code: detection.code, geometry: detection.geometry)
             playReveal { await analyzer.freeze() }
-        case .tracked(let quad):
+        case .tracked(let geometry):
             guard let current = reveal, current.frozen == nil else { return }
             // A little smoothing against jitter between frames.
-            reveal?.liveQuad = current.liveQuad.lerp(to: quad, 0.6)
+            reveal?.geometry = current.geometry.interpolated(to: geometry, fraction: 0.6)
         }
     }
 

@@ -29,9 +29,9 @@ struct SimulatedScan {
 
     /// A reveal of `code` that froze right on time, for pinning any moment.
     func reveal(of code: ScannedCode) async -> ScanReveal {
-        let viewfinder = Quad(ScannerMetrics.viewfinderRect(in: CGRect(origin: .zero, size: screenSize)))
         let start = Date.now
-        var reveal = ScanReveal(code: code, viewfinder: viewfinder, liveQuad: codeQuad, startDate: start)
+        let geometry = ScanFrameGeometry(imageQuad: codeQuad, imageSize: screenSize)
+        var reveal = ScanReveal(code: code, geometry: geometry, startDate: start)
         if let frozen = await frozenScan() {
             reveal.freeze(frozen, at: start.addingTimeInterval(ScanRevealTimeline.freeze))
         }

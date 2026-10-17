@@ -4,6 +4,6 @@ import CoreGraphics
 nonisolated enum ScanEvent: Sendable {
     /// A new code was confirmed. The analyzer then tracks it.
     case detected(ScanDetection)
-    /// The tracked code moved, in full-screen view points.
-    case tracked(Quad)
+    /// The tracked code moved in its source image.
+    case tracked(ScanFrameGeometry)
 }

@@ -1,8 +1,7 @@
 import SwiftUI
 
 /// The menu's upper row: buttons at the edges, the wordmark in the middle.
-/// As the row collapses, every item flies toward the device pill in step
-/// with the scroll.
+/// As the row collapses, every item shrinks and fades in step with the scroll.
 struct TopMenuLogoRow<Leading: View, Trailing: View>: View {
     let title: String
     /// How far the row has collapsed, in points.

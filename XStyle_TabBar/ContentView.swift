@@ -25,8 +25,6 @@ struct ContentView: View {
     /// Follows the shown page's scroll. Only the menu reads it, so its
     /// per-frame changes redraw the menu alone.
     @State private var logoCollapse = LogoCollapse()
-    /// The safe-area top without the menu, which pages add the menu to.
-    @State private var statusBarInset: CGFloat = 0
     /// Shared by the For you page and the side menu's debug reset.
     @State private var taskList = ForYouTaskList()
     #if DEBUG
@@ -36,7 +34,7 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @AccessibilityFocusState private var isMenuButtonFocused: Bool
-    /// Shared by the zoom transitions into articles and quizzes.
+    /// Shared by the feed images and article zoom transitions.
     @Namespace private var zoomNamespace
     private let mainTitle = "Nako"
 
@@ -104,7 +102,6 @@ struct ContentView: View {
                         pager: pager,
                         logoCollapse: logoCollapse,
                         taskList: taskList,
-                        topInset: statusBarInset + TopMenuMetrics.expandedHeight,
                         zoomNamespace: zoomNamespace,
                         onUpdate: openPendingSidebar
                     )
@@ -174,15 +171,10 @@ struct ContentView: View {
                 ArticleView(article: article, namespace: zoomNamespace)
             }
             .navigationDestination(for: QuizKind.self) { kind in
-                QuizDestination(kind: kind, namespace: zoomNamespace)
+                QuizDestination(kind: kind)
             }
         }
         .opacity(isRouteContentVisible ? 1 : 0)
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.safeAreaInsets.top
-        } action: { inset in
-            statusBarInset = inset
-        }
     }
 
     /// Asked as a touch begins, outside the pager (the top menu). Touches on

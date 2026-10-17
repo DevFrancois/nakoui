@@ -4,6 +4,8 @@ import SwiftUI
 /// it was seen, then lifts off, flattening into `target`.
 struct LiftedCodePatch: View {
     let frozen: FrozenScan
+    /// The code projected into the current camera viewport.
+    let quad: Quad
     let target: CGRect
     /// 0 = on the code in the frame, 1 = flat at the target.
     let lift: CGFloat
@@ -16,7 +18,7 @@ struct LiftedCodePatch: View {
             .frame(width: target.width + 2 * frozen.patchPadding, height: target.height + 2 * frozen.patchPadding)
             .brightness(0.04)
             .contrast(1.12)
-            .modifier(QuadWarpEffect(quad: frozen.quad.lifted(to: target, lift), padding: frozen.patchPadding))
+            .modifier(QuadWarpEffect(quad: quad.lifted(to: target, lift), padding: frozen.patchPadding))
             .shadow(color: .black.opacity(0.25 * Double(lift)), radius: 3 * lift)
     }
 }

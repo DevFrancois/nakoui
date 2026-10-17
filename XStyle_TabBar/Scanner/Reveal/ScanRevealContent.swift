@@ -7,43 +7,57 @@ struct ScanRevealContent: View {
     let frame: ScanRevealFrame
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            if frame.isFrozen, let frozen = reveal.frozen {
-                FrozenFrameBackdrop(frozen: frozen, blur: frame.blur)
-
-                LiftedCodePatch(frozen: frozen, target: frozen.layout.liftTarget, lift: frame.lift)
-                    .opacity(frame.patchOpacity)
-            }
-
-            QuadBrackets(quad: reveal.viewfinder.lerp(to: bracketTarget, frame.bracketProgress))
-                .stroke(.white, style: StrokeStyle(lineWidth: ScannerMetrics.bracketLineWidth, lineCap: .round, lineJoin: .round))
-                .shadow(color: .black.opacity(ScannerMetrics.bracketShadowOpacity), radius: 1.5)
-                .opacity(frame.bracketOpacity)
-
-            if let frozen = reveal.frozen, let bloom = reveal.bloom, let bloomTime = frame.bloomTime {
-                BloomCanvas(plan: bloom, time: bloomTime, card: frozen.layout.card, cornerRadius: frozen.layout.cardCornerRadius)
-                    .opacity(frame.cardOpacity)
-            }
-
-            if let frozen = reveal.frozen, let iconScale = frame.iconScale {
-                ScanRevealIcon(size: frozen.layout.iconSize)
-                    .scaleEffect(iconScale)
-                    .opacity(frame.iconOpacity)
-                    .position(x: frozen.layout.card.midX, y: frozen.layout.card.midY)
-            }
+        GeometryReader { proxy in
+            ScanRevealArtwork(reveal: reveal, frame: frame, viewSize: proxy.size)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // Flattened first, so the code doesn't show through the card as it fades.
         .compositingGroup()
         .opacity(frame.overlayOpacity)
     }
+}
 
-    /// The code the brackets close in on, with a little room around it.
-    private var bracketTarget: Quad {
+/// Geometry follows the live layout while the frozen pixels and animation
+/// timeline keep their identity through a fold.
+private struct ScanRevealArtwork: View {
+    let reveal: ScanReveal
+    let frame: ScanRevealFrame
+    let viewSize: CGSize
+
+    var body: some View {
+        let viewfinder = Quad(ScannerMetrics.viewfinderRect(in: CGRect(origin: .zero, size: viewSize)))
+        let quad = (reveal.frozen?.geometry ?? reveal.geometry).quad(in: viewSize)
+        let layout = RevealLayout(viewSize: viewSize, codeQuad: quad)
         let outset = ScannerMetrics.bracketOutset
-        return (reveal.frozen?.quad ?? reveal.liveQuad)
+        let bracketTarget = quad
             .expanded(leading: outset, trailing: outset, top: outset, bottom: outset)
-            .cornersAligned(to: reveal.viewfinder)
+            .cornersAligned(to: viewfinder)
+
+        ZStack(alignment: .topLeading) {
+            if frame.isFrozen, let frozen = reveal.frozen {
+                FrozenFrameBackdrop(frozen: frozen, blur: frame.blur)
+
+                LiftedCodePatch(frozen: frozen, quad: quad, target: layout.liftTarget, lift: frame.lift)
+                    .opacity(frame.patchOpacity)
+            }
+
+            QuadBrackets(quad: viewfinder.lerp(to: bracketTarget, frame.bracketProgress))
+                .stroke(.white, style: StrokeStyle(lineWidth: ScannerMetrics.bracketLineWidth, lineCap: .round, lineJoin: .round))
+                .shadow(color: .black.opacity(ScannerMetrics.bracketShadowOpacity), radius: 1.5)
+                .opacity(frame.bracketOpacity)
+
+            if reveal.frozen != nil, let bloom = reveal.bloom, let bloomTime = frame.bloomTime {
+                BloomCanvas(plan: bloom, time: bloomTime, card: layout.card, cornerRadius: layout.cardCornerRadius)
+                    .opacity(frame.cardOpacity)
+            }
+
+            if reveal.frozen != nil, let iconScale = frame.iconScale {
+                ScanRevealIcon(size: layout.iconSize)
+                    .scaleEffect(iconScale)
+                    .opacity(frame.iconOpacity)
+                    .position(x: layout.card.midX, y: layout.card.midY)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 

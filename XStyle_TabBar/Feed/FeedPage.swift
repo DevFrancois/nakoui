@@ -4,10 +4,7 @@ import SwiftUI
 /// tab. It scrolls beneath the top menu, under the pager's soft edge.
 struct FeedPage: View {
     let tab: AppTab
-    /// Clears the expanded menu. Fixed, rather than following the menu's
-    /// height, so collapsing the menu never moves the content.
-    let topInset: CGFloat
-    /// Shared with the article and quiz destinations for the zoom transitions.
+    /// Shared with article destinations for their zoom transitions.
     let zoomNamespace: Namespace.ID
     /// The For you tasks. Owned by `ContentView`, so the side menu can reach
     /// them too.
@@ -24,7 +21,7 @@ struct FeedPage: View {
         ScrollView(.vertical) {
             Group {
                 if tab == .quizz {
-                    QuizHub(namespace: zoomNamespace)
+                    QuizHub()
                 } else {
                     LazyVStack(spacing: 0) {
                         if tab == .bookmarks {
@@ -60,10 +57,9 @@ struct FeedPage: View {
                 }
             }
             .padding(.top, TopMenuMetrics.contentTopPadding)
+            .frame(maxWidth: 720)
+            .frame(maxWidth: .infinity)
         }
-        .ignoresSafeArea(.container, edges: .top)
-        .contentMargins(.top, topInset, for: .scrollContent)
-        .contentMargins(.top, topInset, for: .scrollIndicators)
         .sheet(item: $presentedDestination, content: ForYouDetailSheet.init)
         // A tap on a card, not the sheet's dismissal.
         .sensoryFeedback(trigger: presentedDestination) { _, newValue in
