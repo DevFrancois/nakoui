@@ -8,7 +8,9 @@ struct ArticleGallery: View {
     let images: [ImageResource]
     /// The page shown, fractional mid-swipe: 1.5 is halfway from the second image to the third.
     @Binding var position: CGFloat
-    @State private var selectedImage: ImageResource?
+    /// Owned by the article so switching between a split and continuous layout
+    /// keeps the selected image, even when the gallery changes containers.
+    @Binding var selectedImage: ImageResource?
 
     private var displayedIndex: Int {
         min(max(Int(position.rounded()), 0), max(images.count - 1, 0))
@@ -65,8 +67,9 @@ struct ArticleGallery: View {
 
 #Preview {
     @Previewable @State var position: CGFloat = 0
+    @Previewable @State var selectedImage: ImageResource?
 
-    ArticleGallery(images: [.pic2, .pic3, .pic4], position: $position)
+    ArticleGallery(images: [.pic2, .pic3, .pic4], position: $position, selectedImage: $selectedImage)
         .aspectRatio(1, contentMode: .fit)
         .clipShape(.rect(cornerRadius: ArticleMetrics.heroCornerRadius))
         .padding()

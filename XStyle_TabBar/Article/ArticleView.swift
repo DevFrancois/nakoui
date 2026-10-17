@@ -2,12 +2,9 @@ import SwiftUI
 
 struct ArticleView: View {
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let article: Article
     let namespace: Namespace.ID
-
-    @ScaledMetric(relativeTo: .body) private var minimumReadingWidth: CGFloat = 300
 
     @State private var isLiked = false
     @State private var isBookmarked = false
@@ -15,28 +12,17 @@ struct ArticleView: View {
     @State private var backdrops: [ArticleBackdrop] = []
     /// The gallery's page, fractional mid-swipe.
     @State private var galleryPosition: CGFloat = 0
-    @State private var readingPosition: ArticleReadingPosition?
+    @State private var selectedImage: ImageResource?
+    @State private var readingPosition = ScrollPosition(idType: ArticleReadingPosition.self)
 
     var body: some View {
-        GeometryReader { geometry in
-            ScrollView {
-                ArticleLayout(
-                    minimumReadingWidth: minimumReadingWidth,
-                    prefersStack: dynamicTypeSize.isAccessibilitySize,
-                    division: activeDivision(in: geometry)
-                ) {
-                    // The gallery and reading view remain in the same layout,
-                    // including while a fold or window resize changes columns.
-                    ArticleGalleryPanel(images: article.images, position: $galleryPosition)
-
-                    ArticleReadingContent(
-                        title: article.title, summary: article.summary, paragraphs: article.paragraphs,
-                        isLiked: $isLiked, isBookmarked: $isBookmarked
-                    )
-                }
-                .padding(.vertical, ArticleMetrics.pageMargin)
-            }
-            .scrollPosition(id: $readingPosition)
+        ArticlePresentation(readingPosition: $readingPosition) {
+            ArticleGalleryPanel(images: article.images, position: $galleryPosition, selectedImage: $selectedImage)
+        } reading: {
+            ArticleReadingContent(
+                title: article.title, summary: article.summary, paragraphs: article.paragraphs,
+                isLiked: $isLiked, isBookmarked: $isBookmarked
+            )
         }
         .background {
             if let backdrop = ArticleBackdrop.blending(backdrops, at: galleryPosition) {
@@ -60,14 +46,6 @@ struct ArticleView: View {
         .onChange(of: colorScheme, initial: true) {
             sampleImages()
         }
-    }
-
-    private func activeDivision(in geometry: GeometryProxy) -> CGRect? {
-        if #available(iOS 27.1, *) {
-            return geometry.reservedRegions(kind: .division)
-                .first { $0.frame.height > $0.frame.width }?.frame
-        }
-        return nil
     }
 
     /// Takes a backdrop from each gallery image, as it is shown, so swiping

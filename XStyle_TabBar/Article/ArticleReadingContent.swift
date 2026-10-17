@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Reading content has one identity in both the stacked and two-column layouts.
+/// Reading content shares article-owned state across split and continuous layouts.
 struct ArticleReadingContent: View {
     let title: LocalizedStringResource
     let summary: LocalizedStringResource
@@ -9,7 +9,7 @@ struct ArticleReadingContent: View {
     @Binding var isBookmarked: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        LazyVStack(alignment: .leading, spacing: 16) {
             Text(title)
                 .font(.largeTitle.bold())
                 .accessibilityAddTraits(.isHeader)
@@ -37,7 +37,7 @@ struct ArticleReadingContent: View {
     }
 }
 
-enum ArticleReadingPosition: Hashable {
+nonisolated enum ArticleReadingPosition: Hashable, Sendable {
     case title, summary, actions
     case paragraph(ArticleParagraph.ID)
 }
