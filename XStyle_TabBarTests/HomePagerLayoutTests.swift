@@ -1,0 +1,102 @@
+import SwiftUI
+import Testing
+import UIKit
+@testable import XStyle_TabBar
+
+@MainActor
+struct HomePagerLayoutTests {
+    @Test("The same pager resizes its pages when a wide display folds and reopens")
+    func foldingResizesRenderedPagesWithoutReplacingTheirScrollViews() async throws {
+        let scene = try #require(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let window = UIWindow(windowScene: scene)
+        let container = UIViewController()
+        window.rootViewController = container
+        window.isHidden = false
+        defer { window.isHidden = true }
+
+        let pager = PagerState()
+        let host = UIHostingController(rootView: PagerLayoutFixture(pager: pager))
+        container.addChild(host)
+        container.view.addSubview(host.view)
+        host.didMove(toParent: container)
+        host.additionalSafeAreaInsets.right = 64
+
+        func resize(to width: CGFloat) {
+            host.view.frame = CGRect(x: 0, y: 0, width: width, height: 700)
+            host.view.setNeedsLayout()
+            host.view.layoutIfNeeded()
+        }
+
+        resize(to: 736)
+        try #require(await eventually {
+            scrollViews(in: host.view).count == AppTab.allCases.count + 1
+                && abs(pager.viewportWidth - 736) < 0.5
+        })
+        let scrolls = scrollViews(in: host.view)
+        let horizontal = try #require(scrolls.first)
+        let pages = scrolls.dropFirst().sorted {
+            $0.convert($0.bounds, to: horizontal).minX < $1.convert($1.bounds, to: horizontal).minX
+        }
+        let originalPageIDs = pages.map(ObjectIdentifier.init)
+        #expect(abs(horizontal.contentSize.width - 736 * CGFloat(pages.count)) < 0.5)
+
+        // A nonzero category also catches a stale page stride after resizing.
+        pager.setReduceMotion(true)
+        pager.select(.videos)
+        try #require(await eventually { pager.selectedTab == .videos && pager.isAtRest })
+        let videoPage = pages[AppTab.videos.index]
+        videoPage.setContentOffset(CGPoint(x: 0, y: 320), animated: false)
+        try #require(await eventually { abs(videoPage.contentOffset.y - 320) < 0.5 })
+
+        for width: CGFloat in [466, 736, 466] {
+            resize(to: width)
+            try #require(await eventually {
+                abs(horizontal.bounds.width - width) < 0.5
+                    && abs(horizontal.contentSize.width - width * CGFloat(pages.count)) < 0.5
+                    && pages.allSatisfy { abs($0.bounds.width - width) < 0.5 }
+                    && pager.isAtRest
+            }, "All rendered pages must adopt the new viewport width \(width)")
+
+            #expect(Set(scrollViews(in: host.view).dropFirst().map(ObjectIdentifier.init)) == Set(originalPageIDs))
+            #expect(pager.selectedTab == .videos)
+            #expect(abs(horizontal.contentOffset.x + horizontal.adjustedContentInset.left - width) < 0.5)
+            // Lazy rows can refine their height estimates during resizing.
+            // Check that the existing scroll position survives without
+            // requiring an identical pixel offset after that refinement.
+            #expect(videoPage.contentOffset.y + videoPage.adjustedContentInset.top > 200)
+        }
+    }
+
+    private func scrollViews(in view: UIView) -> [UIScrollView] {
+        let ownScrollView = (view as? UIScrollView).map { [$0] } ?? []
+        return ownScrollView + view.subviews.flatMap { scrollViews(in: $0) }
+    }
+
+    private func eventually(_ condition: () -> Bool) async throws -> Bool {
+        var consecutiveMatches = 0
+        for _ in 0..<150 {
+            try await Task.sleep(for: .milliseconds(20))
+            consecutiveMatches = condition() ? consecutiveMatches + 1 : 0
+            if consecutiveMatches == 2 { return true }
+        }
+        return false
+    }
+}
+
+private struct PagerLayoutFixture: View {
+    let pager: PagerState
+    private let logoCollapse = LogoCollapse()
+    private let taskList = ForYouTaskList()
+    @Namespace private var zoomNamespace
+
+    var body: some View {
+        HomePager(
+            pager: pager,
+            logoCollapse: logoCollapse,
+            taskList: taskList,
+            topInset: 0,
+            zoomNamespace: zoomNamespace,
+            onUpdate: {}
+        )
+    }
+}

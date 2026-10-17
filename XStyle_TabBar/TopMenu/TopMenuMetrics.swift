@@ -54,6 +54,6 @@ enum TopMenuMetrics {
 
     /// Finishes a half-way logo row once scrolling stops.
     static let logoSettleAnimation = Animation.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.22)
-    static let selectionAnimation = Animation.easeOut(duration: 0.22)
+    static let selectionAnimation = Animation.easeOut(duration: 0.18)
     static let revealAnimation = Animation.smooth(duration: 0.3)
 }

@@ -14,8 +14,22 @@ struct HomePager: View {
     let onUpdate: () -> Void
 
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        GeometryReader { geometry in
+            // Capture the rail's insets before expanding the paging viewport.
+            GeometryReader { viewport in
+                pages(width: viewport.size.width, horizontalInsets: geometry.safeAreaInsets)
+            }
+            .ignoresSafeArea(.container, edges: .horizontal)
+        }
+        .onChange(of: reduceMotion, initial: true) {
+            pager.setReduceMotion(reduceMotion)
+        }
+    }
+
+    private func pages(width: CGFloat, horizontalInsets: EdgeInsets) -> some View {
         ScrollView(.horizontal) {
             // Distant destinations must exist before they slide into view.
             HStack(spacing: 0) {
@@ -26,6 +40,9 @@ struct HomePager: View {
                     let offsetFactor = pager.tapTransition?.offsetFactor ?? 0
 
                     FeedPage(tab: tab, topInset: topInset, zoomNamespace: zoomNamespace, taskList: taskList)
+                        .contentMargins(.leading, horizontalInsets.leading, for: .scrollContent)
+                        .contentMargins(.trailing, horizontalInsets.trailing, for: .scrollContent)
+                        .contentMargins(.trailing, horizontalInsets.trailing, for: .scrollIndicators)
                         .onScrollGeometryChange(for: PageScrollPosition.self) { geometry in
                             PageScrollPosition(geometry)
                         } action: { oldPosition, newPosition in
@@ -34,7 +51,10 @@ struct HomePager: View {
                         .onScrollPhaseChange { _, newPhase in
                             pageScrollPhaseDidChange(tab, to: newPhase)
                         }
-                        .containerRelativeFrame(.horizontal)
+                        // Size in the current layout pass. A stored scroll width
+                        // can still describe the open display when Duo closes.
+                        .frame(width: width)
+                        .background { HomePageBackground(tab: tab) }
                         .visualEffect { content, geometry in
                             // Compress a multi-tab scroll into one page of visual travel.
                             content.offset(x: geometry.frame(in: .scrollView(axis: .horizontal)).minX * offsetFactor)
@@ -55,7 +75,11 @@ struct HomePager: View {
         // The top menu's safe-area bar extends this scroll view's edge effect,
         // not the nested pages', so the soft edge under the menu lives here.
         .scrollEdgeEffectStyle(.soft, for: .top)
-        .scrollTargetBehavior(.paging)
+        .scrollTargetBehavior(HomePagingBehavior(
+            gestureID: pager.gestureID,
+            pageCount: AppTab.allCases.count,
+            onTarget: pager.receive
+        ))
         .scrollPosition($pager.scrollPosition)
         .allowsHitTesting(pager.tapTransition == nil)
         .onScrollGeometryChange(for: PagerGeometry.self) {

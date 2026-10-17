@@ -9,7 +9,7 @@ struct TopMenuBar<Tab: TopMenuTab, Leading: View, Trailing: View>: View {
     let selection: CGFloat
     /// The tab VoiceOver reports as selected.
     let selectedTab: Tab
-    /// True while a tapped tab is being reached.
+    /// True when selection changes discretely, so its chip is revealed smoothly.
     let isSelectionLocked: Bool
     let logoCollapse: LogoCollapse
     let onSelect: (Tab) -> Void

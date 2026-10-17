@@ -10,8 +10,19 @@
 		A8D0C0DE3018F95500099B01 /* BarcodeDecoding in Frameworks */ = {isa = PBXBuildFile; productRef = A8D0C0DE3018F95500099B02 /* BarcodeDecoding */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		36C03C872E5B9B82025D564E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A815BAA23018F95500099B0B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A815BAA93018F95500099B0B;
+			remoteInfo = XStyle_TabBar;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		A815BAAA3018F95500099B0B /* XStyle_TabBar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = XStyle_TabBar.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		DDB183A4E7DF97D83A5ADAEF /* XStyle_TabBarTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XStyle_TabBarTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -20,9 +31,21 @@
 			path = XStyle_TabBar;
 			sourceTree = "<group>";
 		};
+		DFDB7A3C90C4A35A65BBE459 /* XStyle_TabBarTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = XStyle_TabBarTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		8AC98B251B191FBEEF8A5EFD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A815BAA73018F95500099B0B /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -39,6 +62,7 @@
 			children = (
 				A815BAAC3018F95500099B0B /* XStyle_TabBar */,
 				A815BAAB3018F95500099B0B /* Products */,
+				DFDB7A3C90C4A35A65BBE459 /* XStyle_TabBarTests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -46,6 +70,7 @@
 			isa = PBXGroup;
 			children = (
 				A815BAAA3018F95500099B0B /* XStyle_TabBar.app */,
+				DDB183A4E7DF97D83A5ADAEF /* XStyle_TabBarTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -76,6 +101,29 @@
 			productReference = A815BAAA3018F95500099B0B /* XStyle_TabBar.app */;
 			productType = "com.apple.product-type.application";
 		};
+		FFAA08B3EE6DFBFE77D602DE /* XStyle_TabBarTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F7DF83E3A50AE927C648DF84 /* Build configuration list for PBXNativeTarget "XStyle_TabBarTests" */;
+			buildPhases = (
+				DDC115C0D3F7EC3EFC96AB0F /* Sources */,
+				8AC98B251B191FBEEF8A5EFD /* Frameworks */,
+				1BD0DF638D2ABA3389033AA8 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				79D35D0EBD3DA470C6937498 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				DFDB7A3C90C4A35A65BBE459 /* XStyle_TabBarTests */,
+			);
+			name = XStyle_TabBarTests;
+			packageProductDependencies = (
+			);
+			productName = XStyle_TabBarTests;
+			productReference = DDB183A4E7DF97D83A5ADAEF /* XStyle_TabBarTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -88,6 +136,10 @@
 				TargetAttributes = {
 					A815BAA93018F95500099B0B = {
 						CreatedOnToolsVersion = 27.0;
+					};
+					FFAA08B3EE6DFBFE77D602DE = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = A815BAA93018F95500099B0B;
 					};
 				};
 			};
@@ -109,11 +161,19 @@
 			projectRoot = "";
 			targets = (
 				A815BAA93018F95500099B0B /* XStyle_TabBar */,
+				FFAA08B3EE6DFBFE77D602DE /* XStyle_TabBarTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		1BD0DF638D2ABA3389033AA8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A815BAA83018F95500099B0B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -131,9 +191,52 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		DDC115C0D3F7EC3EFC96AB0F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		79D35D0EBD3DA470C6937498 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = XStyle_TabBar;
+			target = A815BAA93018F95500099B0B /* XStyle_TabBar */;
+			targetProxy = 36C03C872E5B9B82025D564E /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		63DC0BB417A51E45DA995F34 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TM8GM2Y6B8;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "dev.kavsoft.XStyle-TabBarTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/XStyle_TabBar.app/XStyle_TabBar";
+			};
+			name = Release;
+		};
 		A815BAB33018F95600099B0B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -331,6 +434,33 @@
 			};
 			name = Release;
 		};
+		EDCD2943F025B815D6AE89C3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TM8GM2Y6B8;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "dev.kavsoft.XStyle-TabBarTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/XStyle_TabBar.app/XStyle_TabBar";
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -348,6 +478,15 @@
 			buildConfigurations = (
 				A815BAB63018F95600099B0B /* Debug */,
 				A815BAB73018F95600099B0B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F7DF83E3A50AE927C648DF84 /* Build configuration list for PBXNativeTarget "XStyle_TabBarTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EDCD2943F025B815D6AE89C3 /* Debug */,
+				63DC0BB417A51E45DA995F34 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

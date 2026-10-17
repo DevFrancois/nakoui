@@ -1,114 +1,165 @@
 import SwiftUI
 
-/// The Home pager: which page is shown, chip taps jumping to another page,
-/// and the scroll in between. It changes on every frame of a swipe, so it
-/// lives outside `ContentView`: only the views drawing the pager read it,
-/// and the root view holding the navigation stack is never redrawn by it.
+/// Paging state is read only by the Home surfaces that draw it, keeping
+/// per-frame geometry changes out of the root navigation stack.
 @Observable
 final class PagerState {
-    /// Fractional index of the page in view, including skipped pages during
-    /// a tap transition.
     private(set) var progress: CGFloat = 0
-    /// The page the pager last came to rest on.
+    /// Last settled page, also used for vertical scroll and accessibility.
     private(set) var selectedTab: AppTab = .bookmarks
-    /// The chip tap being carried out, if any.
+    /// Remains fixed during a drag and changes when native paging commits.
+    private(set) var highlightedTab: AppTab = .bookmarks
     private(set) var tapTransition: TabTransition?
-    /// The tapped tab being reached. The chips show it at once and ignore the
-    /// pager, so the skipped tabs never light up.
-    private(set) var lockedTab: AppTab?
-    /// Bumps each time the pager passes a page's midpoint.
+    /// The full scroll viewport, including the area under a lateral tab rail.
+    private(set) var viewportWidth: CGFloat = 0
+    /// Captured by the target observer; interruption invalidates older reports.
+    private(set) var gestureID: UInt64 = 0
     private(set) var hapticTick = 0
     var scrollPosition = ScrollPosition(idType: AppTab.self)
 
-    // The rest drives the logic below and no view reads it.
     @ObservationIgnored private(set) var geometry = PagerGeometry()
     @ObservationIgnored private(set) var phase: ScrollPhase = .idle
-    /// A tapped tab waiting for the pager to come to rest.
     @ObservationIgnored private(set) var pendingTab: AppTab?
+    @ObservationIgnored private var pendingTarget: PagerTarget?
+    @ObservationIgnored private var resizeDestination: AppTab?
     @ObservationIgnored private var hapticPage = 0
+    @ObservationIgnored private var reduceMotion = false
 
-    /// Whether the first page sits fully in view.
     var isAtFirstPage: Bool {
         geometry.width > 0 && geometry.offset <= 0.5
     }
 
-    /// Whether the pager is still, with no tap being carried out or waiting.
     var isAtRest: Bool {
-        phase == .idle && tapTransition == nil && pendingTab == nil
+        phase == .idle && tapTransition == nil && pendingTab == nil && resizeDestination == nil
     }
 
-    /// Moves to `tab`, once the pager comes to rest if it's moving. A later
-    /// tap replaces one still waiting.
+    func setReduceMotion(_ enabled: Bool) {
+        reduceMotion = enabled
+    }
+
+    /// Later chip taps replace a choice waiting for an active scroll to finish.
     func select(_ tab: AppTab) {
         pendingTab = tab
         startPendingTransition()
     }
 
+    func receive(_ target: PagerTarget) {
+        guard target.gestureID == gestureID, tapTransition == nil,
+              resizeDestination == nil, target.width.isFinite,
+              abs(target.width - viewportWidth) < 0.5,
+              AppTab.allCases.indices.contains(target.index),
+              phase == .tracking || phase == .interacting || phase == .decelerating else { return }
+        pendingTarget = target
+        if phase == .decelerating {
+            highlight(AppTab.allCases[target.index])
+        }
+    }
+
     func scrollPhaseDidChange(from oldPhase: ScrollPhase, to newPhase: ScrollPhase, geometry: PagerGeometry) {
+        if (newPhase == .tracking && oldPhase != .interacting)
+            || (newPhase == .interacting && oldPhase != .tracking) {
+            invalidateTarget()
+        }
         phase = newPhase
+        if newPhase == .decelerating, let target = pendingTarget {
+            highlight(AppTab.allCases[target.index])
+        }
+        if newPhase == .idle {
+            invalidateTarget()
+        }
         update(geometry, didFinishScrolling: oldPhase != .idle && newPhase == .idle)
     }
 
     func update(_ newGeometry: PagerGeometry, didFinishScrolling: Bool = false) {
-        let widthChanged = geometry.width != newGeometry.width
+        guard newGeometry.width.isFinite, newGeometry.width > 0,
+              newGeometry.offset.isFinite else { return }
+        let widthChanged = viewportWidth != newGeometry.width
+        let wasLaidOut = viewportWidth > 0
         geometry = newGeometry
-        guard newGeometry.width > 0 else { return }
+        if widthChanged {
+            viewportWidth = newGeometry.width
+            invalidateTarget()
+            if wasLaidOut {
+                let destination = tapTransition?.destination
+                    ?? (phase == .decelerating ? highlightedTab : selectedTab)
+                resizeDestination = destination
+                snap(to: destination)
+            }
+        }
+        progress = newGeometry.progress
 
-        if progress != newGeometry.progress {
-            progress = newGeometry.progress
+        if let destination = resizeDestination {
+            guard isAligned(with: destination) else {
+                if didFinishScrolling { snap(to: destination) }
+                return
+            }
+            resizeDestination = nil
         }
         updateHapticPage()
 
         if let transition = tapTransition {
-            let destinationIndex = transition.destination.index
-            let reachedDestination = abs(newGeometry.offset - CGFloat(destinationIndex) * newGeometry.width) < 0.5
-
-            if reachedDestination && phase == .idle {
+            if isAligned(with: transition.destination) && phase == .idle {
                 withoutAnimation {
                     selectedTab = transition.destination
+                    highlightedTab = transition.destination
                     tapTransition = nil
-                    lockedTab = nil
                 }
                 startPendingTransition()
-            } else if !reachedDestination && (widthChanged || didFinishScrolling) {
-                // Keep other pages hidden until an interrupted/resized scroll reaches its target.
-                withoutAnimation {
-                    scrollPosition.scrollTo(id: transition.destination, anchor: .leading)
-                }
+            } else if didFinishScrolling {
+                snap(to: transition.destination)
             }
         } else if phase == .idle {
-            let index = min(max(Int(newGeometry.progress.rounded()), 0), AppTab.allCases.count - 1)
-            let tab = AppTab.allCases[index]
-            if selectedTab != tab {
-                selectedTab = tab
-            }
+            let tab = AppTab.allCases[newGeometry.nearestPageIndex(pageCount: AppTab.allCases.count)]
+            selectedTab = tab
+            highlight(tab)
             startPendingTransition()
         }
     }
 
-    private func startPendingTransition() {
-        // A tap during a swipe or another tap animation replaces the queued choice.
-        guard phase == .idle, tapTransition == nil,
-              geometry.width > 0, let destination = pendingTab else { return }
+    private func invalidateTarget() {
+        gestureID &+= 1
+        pendingTarget = nil
+    }
 
-        pendingTab = nil
-        guard destination != selectedTab else { return }
+    private func isAligned(with tab: AppTab) -> Bool {
+        abs(geometry.offset - CGFloat(tab.index) * geometry.width) < 0.5
+    }
 
+    private func snap(to tab: AppTab) {
         withoutAnimation {
-            tapTransition = TabTransition(source: selectedTab, destination: destination)
-        }
-        // A transaction of its own: the chip highlight fades straight to the
-        // destination, which withoutAnimation would turn into a jump.
-        withAnimation(TopMenuMetrics.selectionAnimation) {
-            lockedTab = destination
-        }
-        withAnimation(.easeInOut(duration: 0.25)) {
-            scrollPosition.scrollTo(id: destination, anchor: .leading)
+            scrollPosition.scrollTo(id: tab, anchor: .leading)
         }
     }
 
-    /// One tick each time the pager passes a page's midpoint. A tap transition
-    /// ticks once, at its compressed midpoint, not once per skipped page.
+    private func highlight(_ tab: AppTab) {
+        guard highlightedTab != tab else { return }
+        if reduceMotion {
+            withoutAnimation { highlightedTab = tab }
+        } else {
+            withAnimation(TopMenuMetrics.selectionAnimation) { highlightedTab = tab }
+        }
+    }
+
+    private func startPendingTransition() {
+        guard phase == .idle, tapTransition == nil, resizeDestination == nil,
+              viewportWidth > 0, let destination = pendingTab else { return }
+        pendingTab = nil
+        guard destination != selectedTab else { return }
+        invalidateTarget()
+        withoutAnimation {
+            tapTransition = TabTransition(source: selectedTab, destination: destination)
+        }
+        highlight(destination)
+        if reduceMotion {
+            snap(to: destination)
+        } else {
+            withAnimation(.smooth(duration: 0.45, extraBounce: 0)) {
+                scrollPosition.scrollTo(id: destination, anchor: .leading)
+            }
+        }
+    }
+
+    /// Preserve the existing single midpoint tick for a compressed distant jump.
     private func updateHapticPage() {
         let page: Int
         if let transition = tapTransition {
@@ -116,11 +167,9 @@ final class PagerState {
             let destination = transition.destination.index
             page = abs(progress - CGFloat(source)) <= abs(progress - CGFloat(destination)) ? source : destination
         } else {
-            page = min(max(Int(progress.rounded()), 0), AppTab.allCases.count - 1)
+            page = geometry.nearestPageIndex(pageCount: AppTab.allCases.count)
         }
         guard page != hapticPage else { return }
-
-        // Programmatic scrolls, such as the side menu's snap, move silently.
         if tapTransition != nil || phase == .interacting || phase == .decelerating {
             hapticTick += 1
         }

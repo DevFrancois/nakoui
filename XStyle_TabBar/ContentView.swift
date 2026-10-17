@@ -41,6 +41,14 @@ struct ContentView: View {
     private let mainTitle = "Nako"
 
     var body: some View {
+        if AppFeatures.sideMenuEnabled {
+            contentWithSidebar
+        } else {
+            appContent
+        }
+    }
+
+    private var contentWithSidebar: some View {
         CustomSideMenu(
             // Home only: the other tabs, and anything pushed, have no side menu.
             isEnabled: rootTab == .home && navigationPath.isEmpty && revealingRoute == nil,
@@ -81,110 +89,118 @@ struct ContentView: View {
             }
             .disabled(revealingRoute != nil)
         } content: { _ in
-            NavigationStack(path: $navigationPath) {
-                // Inside the stack, so articles, quizzes and sidebar pages
-                // cover the tab bar when pushed.
-                TabView(selection: $rootTab) {
-                    Tab(value: RootTab.home) {
-                        HomePager(
-                            pager: pager,
-                            logoCollapse: logoCollapse,
-                            taskList: taskList,
-                            topInset: statusBarInset + TopMenuMetrics.expandedHeight,
-                            zoomNamespace: zoomNamespace,
-                            onUpdate: openPendingSidebar
-                        )
-                            .safeAreaBar(edge: .top, spacing: 0) {
-                                HomeTopMenu(
-                                    title: mainTitle,
-                                    pager: pager,
-                                    logoCollapse: logoCollapse,
-                                    onSelect: selectTab
-                                ) {
+            appContent
+        }
+    }
+
+    /// Keep the same navigation, tab and page ownership in either menu mode.
+    private var appContent: some View {
+        NavigationStack(path: $navigationPath) {
+            // Inside the stack, so articles, quizzes and sidebar pages
+            // cover the tab bar when pushed.
+            TabView(selection: $rootTab) {
+                Tab(value: RootTab.home) {
+                    HomePager(
+                        pager: pager,
+                        logoCollapse: logoCollapse,
+                        taskList: taskList,
+                        topInset: statusBarInset + TopMenuMetrics.expandedHeight,
+                        zoomNamespace: zoomNamespace,
+                        onUpdate: openPendingSidebar
+                    )
+                        .safeAreaBar(edge: .top, spacing: 0) {
+                            HomeTopMenu(
+                                title: mainTitle,
+                                pager: pager,
+                                logoCollapse: logoCollapse,
+                                onSelect: selectTab
+                            ) {
+                                if AppFeatures.sideMenuEnabled {
                                     TopMenuIconButton(title: "Open menu", systemImage: "line.3.horizontal", action: openMenu)
                                         .accessibilityIdentifier("navigation.openMenu")
                                         .accessibilityFocused($isMenuButtonFocused)
                                 }
                             }
-                            .background {
-                                HomeBackground(pager: pager)
-                            }
-                    } label: {
-                        Label(RootTab.home.title, systemImage: RootTab.home.symbol)
-                    }
-
-                    Tab(value: RootTab.scanner) {
-                        ScannerView(model: scanner, isActive: rootTab == .scanner)
-                    } label: {
-                        Label(RootTab.scanner.title, systemImage: RootTab.scanner.symbol)
-                    }
-
-                    ForEach(RootTab.placeholderTabs, id: \.self) { tab in
-                        Tab(value: tab) {
-                            RootTabPlaceholder(tab: tab)
-                        } label: {
-                            Label(tab.title, systemImage: tab.symbol)
                         }
-                    }
-
-                    Tab(value: RootTab.search, role: .search) {
-                        RootTabPlaceholder(tab: .search)
-                    } label: {
-                        Label(RootTab.search.title, systemImage: RootTab.search.symbol)
-                    }
-                }
-                .onChange(of: rootTab, rootTabDidChange)
-                .onChange(of: voiceOverEnabled, voiceOverDidChange)
-                .navigationTitle(mainTitle)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbarVisibility(.hidden, for: .navigationBar)
-                .navigationDestination(for: SidebarRoute.self) { route in
-                    Group {
-                        if let historyStyle = route.historyStyle {
-                            HistoryLab(style: historyStyle)
-                        } else {
-                            Text("Hello World")
+                        .background {
+                            HomeBackground(pager: pager)
                         }
+                } label: {
+                    Label(RootTab.home.title, systemImage: RootTab.home.symbol)
+                }
+
+                Tab(value: RootTab.scanner) {
+                    ScannerView(model: scanner, isActive: rootTab == .scanner)
+                } label: {
+                    Label(RootTab.scanner.title, systemImage: RootTab.scanner.symbol)
+                }
+
+                ForEach(RootTab.placeholderTabs, id: \.self) { tab in
+                    Tab(value: tab) {
+                        RootTabPlaceholder(tab: tab)
+                    } label: {
+                        Label(tab.title, systemImage: tab.symbol)
                     }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(.background)
-                        .navigationTitle(route.title)
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbarVisibility(.visible, for: .navigationBar)
-                        .accessibilityIdentifier("destination.\(route.rawValue)")
-                        .onAppear { revealSidebarRoute(route) }
                 }
-                .navigationDestination(for: Article.self) { article in
-                    ArticleView(article: article, namespace: zoomNamespace)
-                }
-                .navigationDestination(for: QuizKind.self) { kind in
-                    QuizDestination(kind: kind, namespace: zoomNamespace)
+
+                Tab(value: RootTab.search, role: .search) {
+                    RootTabPlaceholder(tab: .search)
+                } label: {
+                    Label(RootTab.search.title, systemImage: RootTab.search.symbol)
                 }
             }
-            .opacity(isRouteContentVisible ? 1 : 0)
-            .onGeometryChange(for: CGFloat.self) { proxy in
-                proxy.safeAreaInsets.top
-            } action: { inset in
-                statusBarInset = inset
+            .onChange(of: rootTab, rootTabDidChange)
+            .onChange(of: voiceOverEnabled, voiceOverDidChange)
+            .navigationTitle(mainTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarVisibility(.hidden, for: .navigationBar)
+            .navigationDestination(for: SidebarRoute.self) { route in
+                Group {
+                    if let historyStyle = route.historyStyle {
+                        HistoryLab(style: historyStyle)
+                    } else {
+                        Text("Hello World")
+                    }
+                }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.background)
+                    .navigationTitle(route.title)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbarVisibility(.visible, for: .navigationBar)
+                    .accessibilityIdentifier("destination.\(route.rawValue)")
+                    .onAppear { revealSidebarRoute(route) }
             }
+            .navigationDestination(for: Article.self) { article in
+                ArticleView(article: article, namespace: zoomNamespace)
+            }
+            .navigationDestination(for: QuizKind.self) { kind in
+                QuizDestination(kind: kind, namespace: zoomNamespace)
+            }
+        }
+        .opacity(isRouteContentVisible ? 1 : 0)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.safeAreaInsets.top
+        } action: { inset in
+            statusBarInset = inset
         }
     }
 
     /// Asked as a touch begins, outside the pager (the top menu). Touches on
     /// the pager are judged against the live scroll view by the gesture itself.
     private func canOpenSidebarFromAnywhere() -> Bool {
-        pager.isAtFirstPage
+        AppFeatures.sideMenuEnabled && pager.isAtFirstPage
     }
 
     /// Asked as a touch begins. Pager position and motion are checked by the
     /// gesture against the live scroll view; the pager's recorded phase and
     /// geometry can lag behind it.
     private func canBeginSidebarOpening() -> Bool {
-        navigationPath.isEmpty && revealingRoute == nil && pager.tapTransition == nil && pager.pendingTab == nil
+        AppFeatures.sideMenuEnabled && navigationPath.isEmpty && revealingRoute == nil && pager.tapTransition == nil && pager.pendingTab == nil
     }
 
     private func openPendingSidebar() {
-        guard pendingSidebarOpen, rootTab == .home, navigationPath.isEmpty, revealingRoute == nil,
+        guard AppFeatures.sideMenuEnabled, pendingSidebarOpen,
+              rootTab == .home, navigationPath.isEmpty, revealingRoute == nil,
               pager.isAtRest else { return }
         pendingSidebarOpen = false
         isSidebarExpanded = true
@@ -233,6 +249,7 @@ struct ContentView: View {
     #endif
 
     private func openMenu() {
+        guard AppFeatures.sideMenuEnabled else { return }
         pendingSidebarOpen = true
         openPendingSidebar()
     }

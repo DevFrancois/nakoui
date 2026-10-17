@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The Home tab's top menu, highlighting the chip under the pager. It reads
-/// the pager itself, so a swipe redraws the menu and not `ContentView`.
+/// The Home tab's top menu, highlighting the committed destination. It reads
+/// the pager itself, keeping selection updates out of `ContentView`.
 struct HomeTopMenu<Leading: View>: View {
     let title: String
     let pager: PagerState
@@ -12,9 +12,9 @@ struct HomeTopMenu<Leading: View>: View {
     var body: some View {
         TopMenuBar(
             title: title,
-            selection: pager.lockedTab.map { CGFloat($0.index) } ?? pager.progress,
-            selectedTab: pager.lockedTab ?? pager.selectedTab,
-            isSelectionLocked: pager.lockedTab != nil,
+            selection: CGFloat(pager.highlightedTab.index),
+            selectedTab: pager.highlightedTab,
+            isSelectionLocked: true,
             logoCollapse: logoCollapse,
             onSelect: onSelect
         ) {

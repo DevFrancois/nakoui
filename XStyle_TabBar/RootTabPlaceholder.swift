@@ -4,6 +4,10 @@ import SwiftUI
 struct RootTabPlaceholder: View {
     let tab: RootTab
 
+    #if DEBUG
+    @State private var isShowingDebugSettings = false
+    #endif
+
     var body: some View {
         ContentUnavailableView {
             Label {
@@ -13,11 +17,26 @@ struct RootTabPlaceholder: View {
             }
         } description: {
             Text(tab.placeholderDescription)
+        } actions: {
+            #if DEBUG
+            if tab == .profile {
+                Button("Debug Settings", systemImage: "slider.horizontal.3") {
+                    isShowingDebugSettings = true
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("profile.debugSettings")
+            }
+            #endif
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
             AmbientGradientBackground(palettes: [.lavenderHealth], progress: 0)
         }
+        #if DEBUG
+        .sheet(isPresented: $isShowingDebugSettings) {
+            ProfileDebugSettings()
+        }
+        #endif
     }
 }
 

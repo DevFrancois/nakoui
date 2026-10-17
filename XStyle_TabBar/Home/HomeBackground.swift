@@ -1,14 +1,29 @@
 import SwiftUI
 
-/// The Home tab's background, washing between the pages' colors as the
-/// pager moves, with a tick as it passes each page. It reads the pager
-/// itself, so a swipe redraws the background and not `ContentView`.
+/// The shared base beneath Home's moving pages. The original blended wash
+/// remains available in Debug Settings without making `ContentView` observe
+/// the pager or the background preference.
 struct HomeBackground: View {
     let pager: PagerState
 
+    #if DEBUG
+    @AppStorage(HomeBackgroundStyle.storageKey) private var style = HomeBackgroundStyle.pageAttached
+    #else
+    private let style = HomeBackgroundStyle.pageAttached
+    #endif
+
     var body: some View {
-        AmbientGradientBackground(palettes: palettes, progress: progress)
-            .sensoryFeedback(.impact(weight: .medium, intensity: 0.7), trigger: pager.hapticTick)
+        Group {
+            if style == .originalBlended {
+                AmbientGradientBackground(palettes: palettes, progress: progress)
+            } else {
+                Color(.pageBackground)
+                    .ignoresSafeArea()
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .sensoryFeedback(.impact(weight: .medium, intensity: 0.7), trigger: pager.hapticTick)
     }
 
     /// During a tap transition only the two endpoints' palettes blend, so a

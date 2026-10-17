@@ -1,16 +1,17 @@
 import SwiftUI
 
 /// The horizontally scrolling row of glass chips. The highlight follows the
-/// pager continuously, and the row scrolls to keep it in view.
+/// supplied selection, and the row scrolls to keep it in view.
 struct CategoryChipStrip<Tab: TopMenuTab>: View {
     /// Fractional index of the highlighted chip.
     let selection: CGFloat
     let selectedTab: Tab
-    /// While a tapped tab is being reached, the row scrolls with an animation.
+    /// Committed selections reveal their chip with an animation.
     let isSelectionLocked: Bool
     let onSelect: (Tab) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var position = ScrollPosition()
     @State private var chipFrames: [Int: CGRect] = [:]
     @State private var geometry = ChipStripGeometry()
@@ -81,7 +82,7 @@ struct CategoryChipStrip<Tab: TopMenuTab>: View {
                   geometry: geometry
               ) else { return }
 
-        if isSelectionLocked {
+        if isSelectionLocked && !reduceMotion {
             withAnimation(TopMenuMetrics.revealAnimation) {
                 position.scrollTo(x: target)
             }

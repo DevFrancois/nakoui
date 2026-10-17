@@ -1,8 +1,8 @@
 #if DEBUG
 import SwiftUI
 
-/// Sliders for the Home background's intensity and depth, at the bottom of
-/// the side menu. Compiled into debug builds only, so it never ships.
+/// Sliders for the Home background's intensity and depth, shared by Profile
+/// settings and the side menu. Compiled into debug builds only.
 struct GradientDebugControls: View {
     @AppStorage(AmbientGradientTuning.intensityKey) private var intensity = AmbientGradientTuning.defaultIntensity
     @AppStorage(AmbientGradientTuning.depthKey) private var depth = AmbientGradientTuning.defaultDepth

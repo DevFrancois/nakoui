@@ -16,7 +16,7 @@ struct AmbientGradientBackground: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
-    /// Debug dials, set from the side menu; at their defaults the wash is
+    /// Debug dials, set from Profile or the side menu; at their defaults the wash is
     /// unchanged. Release builds have no dials, so they ignore stored values.
     #if DEBUG
     @AppStorage(AmbientGradientTuning.intensityKey) private var intensity = AmbientGradientTuning.defaultIntensity
