@@ -54,7 +54,7 @@ struct SideBar<QuickActions: View, Footer: View>: View {
     let onSelect: (SidebarRoute) -> Void
     /// Under the profile, above the routes.
     @ViewBuilder let quickActions: QuickActions
-    /// Pinned to the menu's bottom edge, below the scrolling routes.
+    /// Follows the routes so expanded controls remain reachable in short windows.
     @ViewBuilder let footer: Footer
 
     var body: some View {
@@ -85,14 +85,12 @@ struct SideBar<QuickActions: View, Footer: View>: View {
                     }
                 }
                 .padding(.top, 10)
+
+                footer
+                    .padding(.top, 15)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(15)
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            // Opaque, so routes scrolling underneath don't show through.
-            footer
-                .background(.background)
         }
         .accessibilityIdentifier("sidebar.menu")
     }

@@ -18,8 +18,8 @@ struct ScannedCodeDetails: View {
             Text(code.value)
                 .font(.largeTitle.monospaced())
                 .bold()
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 // Digit by digit, not as one huge number.
                 .speechSpellsOutCharacters()
                 .textSelection(.enabled)

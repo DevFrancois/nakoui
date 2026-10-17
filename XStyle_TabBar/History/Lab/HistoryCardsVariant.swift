@@ -7,14 +7,24 @@ struct HistoryCardsVariant: View {
         ScrollView {
             LazyVStack(spacing: 16) {
                 ForEach(HistoryItem.samples) { item in
-                    card(item)
+                    HistoryArtworkCard(item: item)
                 }
             }
             .padding()
         }
     }
 
-    private func card(_ item: HistoryItem) -> some View {
+}
+
+private struct HistoryArtworkCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let item: HistoryItem
+
+    var body: some View {
+        let metadataLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout())
+
         VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .bottomLeading) {
                 LinearGradient(
@@ -35,9 +45,9 @@ struct HistoryCardsVariant: View {
                 Text(item.title)
                     .font(.headline)
 
-                HStack {
+                metadataLayout {
                     Text(item.source)
-                    Spacer()
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     Text(item.date, format: .relative(presentation: .named))
                 }
                 .font(.subheadline)

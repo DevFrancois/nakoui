@@ -20,17 +20,10 @@ actor FrameAnalyzer {
         case paused
     }
 
-    /// The full-screen view the frames are shown in.
-    private struct Screen {
-        var size: CGSize
-        var viewfinder: CGRect
-        var displayScale: CGFloat
-    }
-
     private let decoder = BarcodeDecoder()
     private var confirmer = ReadingConfirmer()
     private var mode = Mode.scanning
-    private var screen: Screen?
+    private var screen: ScannerViewport?
     private var mapper: AspectFillMapper?
     private var region: ScanRegion?
     /// The newest frame the tracked code was read in, kept for the freeze.
@@ -50,9 +43,10 @@ actor FrameAnalyzer {
         return stream
     }
 
-    func setScreen(size: CGSize, viewfinder: CGRect, displayScale: CGFloat) {
-        guard size.width > 0, size.height > 0 else { return }
-        screen = Screen(size: size, viewfinder: viewfinder, displayScale: displayScale)
+    func setViewport(_ viewport: ScannerViewport) {
+        guard viewport.size.width > 0, viewport.size.height > 0,
+              screen.map({ viewport.revision >= $0.revision }) ?? true else { return }
+        screen = viewport
         mapper = nil
     }
 
@@ -64,7 +58,10 @@ actor FrameAnalyzer {
     }
 
     /// Stops decoding and prepares the newest frame of the tracked code for the reveal.
-    func freeze() -> FrozenScan? {
+    func freeze(viewport: ScannerViewport?) -> FrozenScan? {
+        // The capture queue may still be forwarding the scene's newest
+        // geometry. Freeze the retained raw frame in that same configuration.
+        if let viewport { setViewport(viewport) }
         defer {
             tracked = nil
             mode = .paused
@@ -75,7 +72,7 @@ actor FrameAnalyzer {
         let mapper = currentMapper(for: tracked.frame, screen: screen)
         let bufferQuad = Self.outline(of: tracked.reading)
         return FrozenScanRenderer.render(
-            CIImage(cvPixelBuffer: tracked.frame), orientation: .right, codeQuad: bufferQuad,
+            CIImage(cvPixelBuffer: tracked.frame), rotation: screen.rotation, codeQuad: bufferQuad,
             viewQuad: bufferQuad.map(mapper.viewPoint), viewSize: screen.size, displayScale: screen.displayScale
         )
     }
@@ -139,12 +136,12 @@ actor FrameAnalyzer {
     /// The buffer-to-screen mapping, and the region to scan: the viewfinder
     /// plus a margin, in buffer pixels. Recomputed when the frame or screen
     /// size changes.
-    private func currentMapper(for frame: CVPixelBuffer, screen: Screen) -> AspectFillMapper {
+    private func currentMapper(for frame: CVPixelBuffer, screen: ScannerViewport) -> AspectFillMapper {
         let bufferSize = CGSize(width: CVPixelBufferGetWidth(frame), height: CVPixelBufferGetHeight(frame))
         if let mapper, mapper.bufferSize == bufferSize {
             return mapper
         }
-        let mapper = AspectFillMapper(bufferSize: bufferSize, viewSize: screen.size, rotatesClockwise: true)
+        let mapper = screen.mapper(bufferSize: bufferSize)
         let margin = screen.viewfinder.width * ScannerMetrics.scanMarginFraction
         let rect = mapper.bufferRect(fromView: screen.viewfinder.insetBy(dx: -margin, dy: -margin))
             .intersection(CGRect(origin: .zero, size: bufferSize))

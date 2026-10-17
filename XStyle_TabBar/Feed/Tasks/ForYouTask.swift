@@ -18,7 +18,7 @@ extension ForYouTask {
     static let samples = [
         ForYouTask(
             id: "profile",
-            category: "Getting Started",
+            category: "GETTING STARTED",
             title: "Finish Your Profile",
             message: "Add a photo and a short bio so people know who's behind your bookmarks.",
             symbol: "person.crop.circle.badge.plus",
@@ -27,7 +27,7 @@ extension ForYouTask {
         ),
         ForYouTask(
             id: "notifications",
-            category: "Notifications",
+            category: "NOTIFICATIONS",
             title: "Choose Your Alerts",
             message: "Pick which updates reach you, and when, so nothing important slips by.",
             symbol: "bell.badge",
@@ -36,7 +36,7 @@ extension ForYouTask {
         ),
         ForYouTask(
             id: "privacy",
-            category: "Privacy Checklist",
+            category: "PRIVACY CHECKLIST",
             title: "Check Who Sees Your Likes",
             message: "Review who can see your likes and bookmarks before you share more.",
             symbol: "lock.shield",

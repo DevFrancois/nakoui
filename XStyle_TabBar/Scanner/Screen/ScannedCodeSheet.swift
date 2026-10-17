@@ -1,27 +1,33 @@
 import SwiftUI
 
-/// Result style A: a system sheet. At a medium detent iOS floats it on Liquid
-/// Glass over the live camera, and it can be swiped away as well as closed.
+/// A scrollable system sheet that can expand when the window or text size
+/// needs more space. At a medium detent it floats over the found code.
 struct ScannedCodeSheet: View {
-    let code: ScannedCode
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let code: ScannedCode
 
     var body: some View {
         NavigationStack {
-            ScannedCodeDetails(code: code)
-                .padding()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .navigationTitle("Code Found")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button(role: .close, action: close)
-                    }
+            ScrollView {
+                ScannedCodeDetails(code: code)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+            }
+            .defaultScrollAnchor(.center, for: .alignment)
+            .scrollBounceBehavior(.basedOnSize)
+            .navigationTitle("Code Found")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(role: .close, action: close)
                 }
+            }
         }
         // No presentation background, which would replace the glass, and no
         // dimming, so the found code stays bright above the sheet.
-        .presentationDetents([.medium])
+        .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
         .presentationBackgroundInteraction(.enabled(upThrough: .medium))
     }
 

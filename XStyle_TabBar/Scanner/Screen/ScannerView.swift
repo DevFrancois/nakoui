@@ -25,8 +25,8 @@ struct ScannerView: View {
                         model.updateScreen(size: size, displayScale: displayScale)
                     }
 
-                if let session = model.session {
-                    CameraPreview(session: session)
+                if let session = model.session, let device = model.cameraDevice {
+                    CameraPreview(session: session, device: device, onRotationChange: model.updatePreviewRotation)
                 } else {
                     ScannerBackdropPlaceholder()
                 }

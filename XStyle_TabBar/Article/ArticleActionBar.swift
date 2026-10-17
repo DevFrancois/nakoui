@@ -2,29 +2,36 @@ import SwiftUI
 
 /// Like and bookmark controls shown under the article title, as Liquid Glass buttons.
 struct ArticleActionBar: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @Binding var isLiked: Bool
     @Binding var isBookmarked: Bool
 
     var body: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading))
+            : AnyLayout(HStackLayout())
+
         GlassEffectContainer {
-            HStack {
+            layout {
                 Button("Like", systemImage: "heart", action: toggleLike)
                     .symbolVariant(isLiked ? .fill : .none)
                     .accessibilityAddTraits(isLiked ? .isSelected : [])
                     .tint(isLiked ? .pink : .primary)
-                    .symbolEffect(.bounce, value: isLiked)
+                    .symbolEffect(.bounce, value: reduceMotion ? false : isLiked)
                     .sensoryFeedback(.impact(weight: .light), trigger: isLiked)
 
                 Button("Bookmark", systemImage: "bookmark", action: toggleBookmark)
                     .symbolVariant(isBookmarked ? .fill : .none)
                     .accessibilityAddTraits(isBookmarked ? .isSelected : [])
                     .tint(isBookmarked ? .orange : .primary)
-                    .symbolEffect(.bounce, value: isBookmarked)
+                    .symbolEffect(.bounce, value: reduceMotion ? false : isBookmarked)
                     .sensoryFeedback(.selection, trigger: isBookmarked)
             }
             .buttonStyle(.glass)
             .controlSize(.large)
-            .contentTransition(.symbolEffect(.replace))
+            .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
         }
     }
 

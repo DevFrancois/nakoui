@@ -7,6 +7,9 @@ struct Article: Identifiable, Hashable {
     let summary: LocalizedStringResource
     /// Placeholder copy, intentionally not localized.
     let body: String
+    /// Stable reading targets, prepared with the article rather than while
+    /// SwiftUI renders it. Resizing can retain the currently visible paragraph.
+    let paragraphs: [ArticleParagraph]
     let tint: Color
     /// The cover: shown in the feed and first in the article.
     let image: ImageResource
@@ -18,6 +21,20 @@ struct Article: Identifiable, Hashable {
         [image] + additionalImages
     }
 
+    init(
+        id: String, title: LocalizedStringResource, summary: LocalizedStringResource,
+        body: String, tint: Color, image: ImageResource, additionalImages: [ImageResource]
+    ) {
+        self.id = id
+        self.title = title
+        self.summary = summary
+        self.body = body
+        paragraphs = body.components(separatedBy: "\n\n").map { ArticleParagraph(text: $0) }
+        self.tint = tint
+        self.image = image
+        self.additionalImages = additionalImages
+    }
+
     // Identity alone decides equality, so navigation compares articles by ID.
     static func == (lhs: Article, rhs: Article) -> Bool {
         lhs.id == rhs.id
@@ -26,6 +43,11 @@ struct Article: Identifiable, Hashable {
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
+}
+
+struct ArticleParagraph: Identifiable {
+    let id = UUID()
+    let text: String
 }
 
 extension Article {

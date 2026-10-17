@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// The quiz formats offered by the Quizz tab. Also the navigation value and
-/// zoom transition ID that open each one.
+/// The quiz formats offered by the Quizz tab and their navigation values.
 enum QuizKind: String, CaseIterable, Identifiable, Hashable {
     case classic
     case dogOrCat

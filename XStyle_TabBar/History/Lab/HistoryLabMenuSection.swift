@@ -4,8 +4,7 @@ import SwiftUI
 /// Temporary.
 struct HistoryLabMenuSection: View {
     let onSelect: (SidebarRoute) -> Void
-
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 5)
+    @ScaledMetric(relativeTo: .callout) private var minimumButtonWidth = 44.0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -21,7 +20,7 @@ struct HistoryLabMenuSection: View {
                     .accessibilityAddTraits(.isHeader)
             }
 
-            LazyVGrid(columns: columns, spacing: 6) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumButtonWidth), spacing: 6)], spacing: 6) {
                 ForEach(HistoryStyle.allCases) { style in
                     Button {
                         onSelect(style.route)
@@ -29,7 +28,8 @@ struct HistoryLabMenuSection: View {
                         Text(style.rawValue, format: .number)
                             .font(.callout.bold().monospacedDigit())
                             .foregroundStyle(Color.primary)
-                            .frame(maxWidth: .infinity, minHeight: 40)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity, minHeight: 44)
                             .background(.fill.tertiary, in: .capsule)
                     }
                     .buttonStyle(.plain)

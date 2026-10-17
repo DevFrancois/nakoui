@@ -8,19 +8,24 @@ struct DebugSliderRow: View {
     let range: ClosedRange<Double>
 
     var body: some View {
-        HStack(spacing: 10) {
-            Text(title)
-                .font(.caption.bold())
-                .frame(width: 62, alignment: .leading)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .font(.caption.bold())
 
-            Slider(value: $value, in: range)
+                Spacer(minLength: 8)
 
-            Text(value, format: .number.precision(.fractionLength(2)))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 34, alignment: .trailing)
+                Text(value, format: .number.precision(.fractionLength(2)))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityHidden(true)
+
+            Slider(value: $value, in: range) {
+                Text(title)
+            }
+            .accessibilityValue(Text(value, format: .number.precision(.fractionLength(2))))
         }
-        .accessibilityElement(children: .combine)
     }
 }
 #endif

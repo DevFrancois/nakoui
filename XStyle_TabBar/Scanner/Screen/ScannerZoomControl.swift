@@ -8,30 +8,58 @@ struct ScannerZoomControl: View {
 
     var body: some View {
         if let zoom = model.zoom {
-            buttons(zoom: zoom, factor: model.zoomFactor)
+            ScannerZoomOptions(zoom: zoom, factor: model.zoomFactor, onSelect: select)
         }
     }
 
-    private func buttons(zoom: CameraZoom, factor: Double) -> some View {
+    /// Eases to `factor`; the model keeps it within the camera's range.
+    private func select(_ factor: Double) {
+        model.setZoom(factor, animated: true)
+    }
+}
+
+private struct ScannerZoomOptions: View {
+    let zoom: CameraZoom
+    let factor: Double
+    let onSelect: (Double) -> Void
+
+    var body: some View {
         let presets = zoom.presets
         let activeIndex = zoom.presetIndex(for: factor)
 
-        return HStack(spacing: 4) {
-            ForEach(presets.indices, id: \.self) { index in
-                let isActive = index == activeIndex
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 4) {
+                ForEach(presets.indices, id: \.self) { index in
+                    let isActive = index == activeIndex
 
-                Button {
-                    select(presets[index])
-                } label: {
-                    Text(isActive ? "\(Self.format(factor))×" : Self.format(presets[index]))
-                        .font(.footnote.bold().monospacedDigit())
-                        .foregroundStyle(isActive ? .yellow : .white)
-                        .frame(width: ScannerMetrics.zoomButtonSize, height: ScannerMetrics.zoomButtonSize)
-                        .background(.black.opacity(isActive ? 0.45 : 0.25), in: .circle)
-                        .scaleEffect(isActive ? 1 : 0.8)
+                    Button {
+                        onSelect(presets[index])
+                    } label: {
+                        Text(isActive ? "\(Self.format(factor))×" : Self.format(presets[index]))
+                            .font(.footnote.bold().monospacedDigit())
+                            .foregroundStyle(isActive ? .yellow : .white)
+                            .padding(.horizontal, 8)
+                            .frame(minWidth: TopMenuMetrics.minimumTapSize, minHeight: TopMenuMetrics.minimumTapSize)
+                            .background(.black.opacity(isActive ? 0.45 : 0.25), in: .capsule)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
+            .fixedSize(horizontal: true, vertical: false)
+
+            Menu {
+                ForEach(presets, id: \.self) { preset in
+                    Button("\(Self.format(preset)) times") { onSelect(preset) }
+                }
+            } label: {
+                Text("\(Self.format(factor))×")
+                    .font(.footnote.bold().monospacedDigit())
+                    .foregroundStyle(.yellow)
+                    .padding(.horizontal, 12)
+                    .frame(minWidth: TopMenuMetrics.minimumTapSize, minHeight: TopMenuMetrics.minimumTapSize)
+                    .contentShape(.capsule)
+            }
+            .buttonStyle(.plain)
         }
         .padding(ScannerMetrics.zoomButtonInset)
         .glassEffect(.regular, in: .capsule)
@@ -42,16 +70,11 @@ struct ScannerZoomControl: View {
         .accessibilityValue("\(Self.format(factor)) times")
         .accessibilityAdjustableAction { direction in
             switch direction {
-            case .increment: select(factor.rounded(.down) + 1)
-            case .decrement: select(factor.rounded(.up) - 1)
+            case .increment: onSelect(factor.rounded(.down) + 1)
+            case .decrement: onSelect(factor.rounded(.up) - 1)
             @unknown default: break
             }
         }
-    }
-
-    /// Eases to `factor`; the model keeps it within the camera's range.
-    private func select(_ factor: Double) {
-        model.setZoom(factor, animated: true)
     }
 
     private static func format(_ factor: Double) -> String {

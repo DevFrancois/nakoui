@@ -10,7 +10,8 @@ struct ScannerTorchButton: View {
             Image(systemName: model.isTorchOn ? "flashlight.on.fill" : "flashlight.off.fill")
                 .font(.body.weight(.semibold))
                 .foregroundStyle(model.isTorchOn ? .yellow : .white)
-                .frame(width: ScannerMetrics.cameraControlSize, height: ScannerMetrics.cameraControlSize)
+                .padding(10)
+                .frame(minWidth: ScannerMetrics.cameraControlSize, minHeight: ScannerMetrics.cameraControlSize)
                 .contentShape(.circle)
         }
         .buttonStyle(.plain)

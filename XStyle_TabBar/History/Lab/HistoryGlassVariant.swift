@@ -14,30 +14,7 @@ struct HistoryGlassVariant: View {
                             .padding(.leading, 8)
 
                         ForEach(day.items) { item in
-                            HStack(spacing: 12) {
-                                HistoryKindIcon(kind: item.kind, size: 34)
-                                    .clipShape(.circle)
-
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(item.title)
-                                        .font(.subheadline.weight(.semibold))
-                                        .lineLimit(1)
-
-                                    Text(item.source)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-
-                                Spacer(minLength: 0)
-
-                                Text(item.date, format: .dateTime.hour().minute())
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(8)
-                            .padding(.trailing, 8)
-                            .glassEffect(.regular, in: .capsule)
-                            .accessibilityElement(children: .combine)
+                            HistoryGlassRow(item: item)
                         }
                     }
                 }
@@ -52,5 +29,41 @@ struct HistoryGlassVariant: View {
             )
             .ignoresSafeArea()
         }
+    }
+}
+
+private struct HistoryGlassRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let item: HistoryItem
+
+    var body: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 12))
+
+        layout {
+            HistoryKindIcon(kind: item.kind, size: 34)
+                .clipShape(.circle)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.title)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+
+                Text(item.source)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(item.date, format: .dateTime.hour().minute())
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .fixedSize()
+        }
+        .padding(dynamicTypeSize.isAccessibilitySize ? 16 : 8)
+        .padding(.trailing, 8)
+        .glassEffect(.regular, in: .rect(cornerRadius: 24))
+        .accessibilityElement(children: .combine)
     }
 }

@@ -2,24 +2,21 @@ import SwiftUI
 
 /// A history entry in a list: its icon, title, and source with the time.
 struct HistoryRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let item: HistoryItem
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             HistoryKindIcon(kind: item.kind)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title)
                     .font(.body.weight(.medium))
-                    .lineLimit(2)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
 
-                HStack(spacing: 4) {
-                    Text(item.source)
-                    Text("·")
-                    Text(item.date, format: .dateTime.hour().minute())
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                Text("\(item.source) · \(Text(item.date, format: .dateTime.hour().minute()))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .accessibilityElement(children: .combine)

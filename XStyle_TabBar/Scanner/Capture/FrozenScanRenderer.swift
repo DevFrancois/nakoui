@@ -14,16 +14,18 @@ nonisolated enum FrozenScanRenderer {
 
     /// - Parameters:
     ///   - image: The frame, in buffer orientation.
-    ///   - orientation: How to turn it upright (`.right` for the back camera
-    ///     in portrait).
+    ///   - rotation: The same coordinator angle used by the preview connection.
     ///   - codeQuad: The code in the image, in pixels with y down, in reading
     ///     orientation.
     ///   - viewQuad: The same quad in full-screen view points.
-    static func render(_ image: CIImage, orientation: CGImagePropertyOrientation, codeQuad: Quad,
+    static func render(_ image: CIImage, rotation: CameraImageRotation, codeQuad: Quad,
                        viewQuad: Quad, viewSize: CGSize, displayScale: CGFloat) -> FrozenScan? {
         let layout = RevealLayout(viewSize: viewSize, codeQuad: viewQuad)
 
-        let upright = image.oriented(orientation)
+        let rotated = image.transformed(by: rotation.coreImageTransform(for: image.extent.size))
+        // CGImage has integral pixel dimensions. Keep the image and its
+        // canonical code coordinates in that exact canvas after any rotation.
+        let upright = rotated.cropped(to: rotated.extent.integral)
         guard let sharp = makeImage(upright, from: upright.extent) else { return nil }
 
         // A big blur hides the downscale, which makes it about 16x cheaper.
@@ -41,8 +43,9 @@ nonisolated enum FrozenScanRenderer {
         return FrozenScan(
             sharp: sharp, blurred: blurred, patch: patch, patchPadding: paddingPixels / displayScale,
             geometry: ScanFrameGeometry(
-                viewQuad: viewQuad, viewSize: viewSize,
-                imageSize: CGSize(width: sharp.width, height: sharp.height)
+                bufferQuad: codeQuad,
+                mapper: AspectFillMapper(bufferSize: image.extent.size, viewSize: viewSize, rotation: rotation),
+                renderedImageBounds: CGRect(origin: upright.extent.origin, size: CGSize(width: sharp.width, height: sharp.height))
             )
         )
     }
@@ -50,7 +53,7 @@ nonisolated enum FrozenScanRenderer {
     /// The same, off the caller's actor: for callers on the main actor.
     @concurrent
     static func render(_ image: CGImage, codeQuad: Quad, viewQuad: Quad, viewSize: CGSize, displayScale: CGFloat) async -> FrozenScan? {
-        render(CIImage(cgImage: image), orientation: .up, codeQuad: codeQuad, viewQuad: viewQuad,
+        render(CIImage(cgImage: image), rotation: .unrotated, codeQuad: codeQuad, viewQuad: viewQuad,
                viewSize: viewSize, displayScale: displayScale)
     }
 

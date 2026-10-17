@@ -3,10 +3,9 @@ import SwiftUI
 /// The modal a task's action button opens: a placeholder for the task's own
 /// flow, which the user can mark as done or close to come back to later.
 struct TaskDetailSheet: View {
+    @Environment(\.dismiss) private var dismiss
     let task: ForYouTask
     let onComplete: () -> Void
-
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
@@ -26,6 +25,7 @@ struct TaskDetailSheet: View {
                 }
                 .multilineTextAlignment(.center)
                 .padding()
+                .frame(maxWidth: 560)
                 .frame(maxWidth: .infinity)
             }
             .safeAreaBar(edge: .bottom) {
@@ -37,6 +37,8 @@ struct TaskDetailSheet: View {
                 .buttonBorderShape(.capsule)
                 .controlSize(.large)
                 .padding()
+                .frame(maxWidth: 560)
+                .frame(maxWidth: .infinity)
             }
             .background(Color(.taskSheetBackground))
             .navigationTitle(task.actionTitle)

@@ -5,4 +5,9 @@ enum HomeBackgroundStyle: String {
     case originalBlended
 
     static let storageKey = "home.backgroundStyle"
+
+    var usesOriginalBlended: Bool {
+        get { self == .originalBlended }
+        set { self = newValue ? .originalBlended : .pageAttached }
+    }
 }

@@ -11,7 +11,7 @@ enum ForYouDestination: String, Identifiable {
 
     var id: Self { self }
 
-    var title: String {
+    var title: LocalizedStringResource {
         switch self {
         case .whatsNew: "What's New"
         case .first: "First"
@@ -33,7 +33,12 @@ enum ForYouDestination: String, Identifiable {
         switch self {
         case .whatsNew: [
             ForYouDetailItem(text: "Swipe between tabs, or tap a chip to jump straight to one.", symbol: "rectangle.stack"),
-            ForYouDetailItem(text: "Drag from the left edge to open the side menu.", symbol: "sidebar.left"),
+            ForYouDetailItem(
+                text: AppFeatures.sideMenuEnabled
+                    ? "Drag from the left edge to open the side menu."
+                    : "Open Scan to read a product barcode.",
+                symbol: AppFeatures.sideMenuEnabled ? "sidebar.left" : "barcode.viewfinder"
+            ),
             ForYouDetailItem(text: "The top menu tucks away as you scroll down.", symbol: "arrow.up.and.down")
         ]
         case .first: [

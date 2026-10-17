@@ -2,35 +2,34 @@ import SwiftUI
 
 /// Bookmarks and Likes, side by side under the side menu's profile, as two
 /// faintly tinted glass tiles with a big symbol, a title and a count, like
-/// Control Center modules. A tap shows a short loading state in that tile,
-/// then opens it.
+/// Control Center modules. Each action opens its destination directly.
 struct SideMenuQuickActions: View {
     let onOpen: (SideMenuQuickAction) -> Void
-
-    @State private var loading: SideMenuQuickAction?
 
     var body: some View {
         GlassEffectContainer(spacing: 10) {
             HStack(spacing: 10) {
                 ForEach(SideMenuQuickAction.allCases) { action in
-                    tile(action)
+                    SideMenuQuickActionTile(action: action) {
+                        onOpen(action)
+                    }
                 }
             }
         }
-        .sensoryFeedback(trigger: loading) { _, newValue in
-            newValue == nil ? nil : .impact(flexibility: .soft)
-        }
     }
+}
 
-    private func tile(_ action: SideMenuQuickAction) -> some View {
-        Button {
-            open(action)
-        } label: {
+private struct SideMenuQuickActionTile: View {
+    let action: SideMenuQuickAction
+    let onOpen: () -> Void
+
+    var body: some View {
+        Button(action: onOpen) {
             VStack(alignment: .leading, spacing: 6) {
-                SideMenuQuickIcon(action: action, isLoading: loading == action)
+                Image(systemName: action.symbol)
                     .font(.title2)
                     .foregroundStyle(action.tint)
-                    .frame(height: 28)
+                    .accessibilityHidden(true)
 
                 Text(action.title)
                     .font(.subheadline.bold())
@@ -45,20 +44,6 @@ struct SideMenuQuickActions: View {
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.tint(action.tint.opacity(0.12)).interactive(), in: .rect(cornerRadius: 22))
-    }
-
-    private func open(_ action: SideMenuQuickAction) {
-        guard loading == nil else { return }
-        withAnimation(.bouncy) {
-            loading = action
-        }
-        Task {
-            try? await Task.sleep(for: .seconds(0.8))
-            withAnimation(.bouncy) {
-                loading = nil
-            }
-            onOpen(action)
-        }
     }
 }
 

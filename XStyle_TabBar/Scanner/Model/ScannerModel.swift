@@ -14,6 +14,7 @@ final class ScannerModel {
     /// The live session, for the preview layer. Nil until the camera first
     /// starts, and always in previews and the Simulator.
     private(set) var session: AVCaptureSession?
+    private(set) var cameraDevice: AVCaptureDevice?
     /// The camera's zoom range, for the zoom control. Nil until the camera
     /// first starts.
     private(set) var zoom: CameraZoom?
@@ -33,6 +34,9 @@ final class ScannerModel {
     @ObservationIgnored private var analyzer: FrameAnalyzer?
     @ObservationIgnored private var screenSize = CGSize.zero
     @ObservationIgnored private var displayScale: CGFloat = 3
+    @ObservationIgnored private var previewRotation: CameraImageRotation?
+    @ObservationIgnored private var viewportRevision: UInt64 = 0
+    @ObservationIgnored private var latestViewport: ScannerViewport?
     @ObservationIgnored private var revealTask: Task<Void, Never>?
     /// The latest torch switch. Each waits for the one before, so quick taps
     /// land in order.
@@ -86,6 +90,7 @@ final class ScannerModel {
             return
         }
         session = capture.session
+        cameraDevice = await capture.device
         // The camera keeps its zoom between runs, so only the first sets it.
         // The camera was set to it already, unless that failed.
         if zoom == nil, let cameraZoom = await capture.zoom {
@@ -101,7 +106,7 @@ final class ScannerModel {
         }
         defer { torchTracking.cancel() }
         state = .scanning
-        await capture.setScreen(size: screenSize, viewfinder: viewfinder, displayScale: displayScale)
+        publishViewport()
         if reveal == nil && scannedCode == nil {
             await capture.analyzer.resume(suppressing: nil)
         }
@@ -123,14 +128,34 @@ final class ScannerModel {
         guard size != screenSize || displayScale != self.displayScale else { return }
         screenSize = size
         self.displayScale = displayScale
-        let viewfinder = viewfinder
+        publishViewport()
+    }
+
+    /// The preview's native coordinator, not the window's dimensions, defines
+    /// how raw camera pixels are oriented in this scene.
+    func updatePreviewRotation(_ rotation: CameraImageRotation) {
+        guard previewRotation != rotation else { return }
+        previewRotation = rotation
+        if var current = reveal, current.frozen == nil {
+            current.geometry = current.geometry.reoriented(to: rotation)
+            reveal = current
+        }
+        publishViewport()
+    }
+
+    private func publishViewport() {
+        guard let previewRotation, screenSize.width > 0, screenSize.height > 0 else { return }
+        viewportRevision &+= 1
+        let viewport = ScannerViewport(size: screenSize, viewfinder: viewfinder, displayScale: displayScale,
+                                       rotation: previewRotation, revision: viewportRevision)
+        latestViewport = viewport
         if let capture {
             Task {
-                await capture.setScreen(size: size, viewfinder: viewfinder, displayScale: displayScale)
+                await capture.setViewport(viewport)
             }
         } else if let analyzer {
             Task {
-                await analyzer.setScreen(size: size, viewfinder: viewfinder, displayScale: displayScale)
+                await analyzer.setViewport(viewport)
             }
         }
     }
@@ -207,7 +232,8 @@ final class ScannerModel {
         let analyzer = analyzer ?? FrameAnalyzer()
         self.analyzer = analyzer
         let events = await analyzer.events()
-        await analyzer.setScreen(size: screenSize, viewfinder: viewfinder, displayScale: displayScale)
+        previewRotation = .simulated
+        publishViewport()
         state = .scanning
         for await event in events {
             handle(event)
@@ -229,12 +255,13 @@ final class ScannerModel {
         switch event {
         case .detected(let detection):
             guard reveal == nil, scannedCode == nil, let analyzer else { return }
-            reveal = ScanReveal(code: detection.code, geometry: detection.geometry)
-            playReveal { await analyzer.freeze() }
+            reveal = ScanReveal(code: detection.code, geometry: previewRotation.map { detection.geometry.reoriented(to: $0) } ?? detection.geometry)
+            playReveal { await analyzer.freeze(viewport: self.latestViewport) }
         case .tracked(let geometry):
             guard let current = reveal, current.frozen == nil else { return }
             // A little smoothing against jitter between frames.
-            reveal?.geometry = current.geometry.interpolated(to: geometry, fraction: 0.6)
+            let projected = previewRotation.map { geometry.reoriented(to: $0) } ?? geometry
+            reveal?.geometry = current.geometry.interpolated(to: projected, fraction: 0.6)
         }
     }
 
@@ -244,7 +271,9 @@ final class ScannerModel {
         revealTask = Task {
             try? await Task.sleep(for: .seconds(ScanRevealTimeline.freeze))
             guard !Task.isCancelled else { return }
-            if let frozen = await freeze() {
+            let frozen = await freeze()
+            guard !Task.isCancelled else { return }
+            if let frozen {
                 reveal?.freeze(frozen)
             }
             guard let current = reveal else { return }

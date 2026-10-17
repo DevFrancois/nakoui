@@ -31,19 +31,9 @@ struct FeedPage: View {
 
                             WhatsNewRow(tint: tab.tint) { presentedDestination = .whatsNew }
 
-                            VStack(spacing: 12) {
-                                HStack(spacing: 12) {
-                                    tile(.first)
-                                    tile(.second)
-                                }
-
-                                HStack(spacing: 12) {
-                                    tile(.third, size: .compact)
-                                    tile(.fourth, size: .compact)
-                                }
+                            ForYouTileGrid { destination in
+                                presentedDestination = destination
                             }
-                            .padding(.horizontal)
-                            .padding(.vertical, 8)
                         }
 
                         ForEach(1...Self.postCount, id: \.self) { number in
@@ -91,12 +81,6 @@ struct FeedPage: View {
     private func revealTaskChanges() {
         withAnimation(TaskMetrics.stackAnimation) {
             taskList.updateStack()
-        }
-    }
-
-    private func tile(_ destination: ForYouDestination, size: FeedTileSize = .regular) -> some View {
-        FeedTile(caption: "Placeholder caption", title: destination.title, tint: destination.tint, size: size) {
-            presentedDestination = destination
         }
     }
 }

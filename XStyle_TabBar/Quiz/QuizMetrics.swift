@@ -5,8 +5,10 @@ enum QuizMetrics {
     static let cardCornerRadius = 28.0
     static let answerCornerRadius = 20.0
     static let sectionSpacing = 16.0
-    /// Quiz content stops growing past this width on iPad and wide windows.
+    /// A single column stays readable; wide rounds can use two columns.
     static let contentMaxWidth = 600.0
+    static let expandedContentMaxWidth = 960.0
+    static let hubMaxWidth = 720.0
     static let iconSize = 56.0
     /// How far a Dog or Cat? card must be flung to count as an answer.
     static let swipeThreshold = 110.0

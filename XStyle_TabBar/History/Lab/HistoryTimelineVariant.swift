@@ -29,7 +29,8 @@ struct HistoryTimelineVariant: View {
             Text(item.date, format: .dateTime.hour().minute())
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
-                .frame(width: 48, alignment: .trailing)
+                .frame(minWidth: 48, alignment: .trailing)
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(.top, 2)
 
             VStack(spacing: 0) {

@@ -2,13 +2,14 @@ import SwiftUI
 
 /// The final score as a ring that fills on appear, inside a glass circle.
 struct QuizScoreRing: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let score: Int
     let total: Int
     let tint: Color
 
     @ScaledMetric(relativeTo: .largeTitle) private var size = 150.0
     @State private var shownFraction = 0.0
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var fraction: Double {
         total > 0 ? Double(score) / Double(total) : 0
@@ -29,7 +30,8 @@ struct QuizScoreRing: View {
                 .bold()
                 .monospacedDigit()
         }
-        .frame(width: size, height: size)
+        .aspectRatio(1, contentMode: .fit)
+        .frame(idealWidth: size, maxWidth: size)
         .padding(24)
         .glassEffect(in: .circle)
         .onAppear(perform: fill)

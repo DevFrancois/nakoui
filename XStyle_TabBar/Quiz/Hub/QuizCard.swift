@@ -5,10 +5,16 @@ import SwiftUI
 /// touches on a card are swipes, and interactive glass would run its touch
 /// effect through every swipe and every bounce past the last page.
 struct QuizCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let kind: QuizKind
 
     var body: some View {
-        HStack(spacing: QuizMetrics.sectionSpacing) {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: QuizMetrics.sectionSpacing))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: QuizMetrics.sectionSpacing))
+
+        layout {
             Image(systemName: kind.symbol)
                 .font(.title2)
                 .foregroundStyle(kind.tint)
@@ -24,7 +30,7 @@ struct QuizCard: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
-                HStack {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("^[\(kind.questionCount) question](inflect: true)")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -33,14 +39,9 @@ struct QuizCard: View {
                 }
             }
 
-            Spacer(minLength: 0)
-
-            Image(systemName: "chevron.forward")
-                .font(.footnote)
-                .bold()
-                .foregroundStyle(.tertiary)
-                .accessibilityHidden(true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
         .padding()
         .contentShape(.rect(cornerRadius: QuizMetrics.cardCornerRadius))
         .glassEffect(.regular, in: .rect(cornerRadius: QuizMetrics.cardCornerRadius))

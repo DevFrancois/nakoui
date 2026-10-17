@@ -3,15 +3,23 @@ import SwiftUI
 /// A task's symbol beside its title and message, with an optional footer,
 /// such as the sheet's action button, under the text.
 struct TaskSummary<Footer: View>: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .largeTitle) private var iconWidth = TaskMetrics.iconWidth
     let task: ForYouTask
     @ViewBuilder let footer: Footer
 
+    private var layout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: TaskMetrics.summarySpacing))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: TaskMetrics.summarySpacing))
+    }
+
     var body: some View {
-        HStack(alignment: .top, spacing: TaskMetrics.summarySpacing) {
+        layout {
             Image(systemName: task.symbol)
                 .font(.largeTitle)
                 .foregroundStyle(task.tint)
-                .frame(width: TaskMetrics.iconWidth)
+                .frame(width: iconWidth)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: TaskMetrics.textSpacing) {
@@ -23,6 +31,7 @@ struct TaskSummary<Footer: View>: View {
 
                 footer
             }
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }

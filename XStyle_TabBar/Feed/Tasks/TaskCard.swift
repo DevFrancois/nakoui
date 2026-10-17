@@ -31,7 +31,6 @@ struct TaskCard<Content: View>: View {
                     .fontWeight(.medium)
                     .allowsHitTesting(!isOpenable)
                     .accessibilityHidden(isOpenable)
-                    .textCase(.uppercase)
                     .foregroundStyle(.secondary)
 
                 Spacer()

@@ -48,12 +48,14 @@ nonisolated enum ScannerMetrics {
     static let cameraControlSize = 46.0
     /// The zoom buttons' inset inside their capsule.
     static let zoomButtonInset = 4.0
-    static let zoomButtonSize = cameraControlSize - 2 * zoomButtonInset
 
     /// The viewfinder's frame in a full-screen `bounds`. The on-screen frame
     /// and the camera's scan region both come from here, so they match.
     static func viewfinderRect(in bounds: CGRect) -> CGRect {
-        let width = min(bounds.width * viewfinderWidthFraction, viewfinderMaxWidth)
+        // Keep both edges in a short window while retaining the same preferred
+        // width and optical center when there is enough room.
+        let availableHeight = bounds.height * 2 * min(viewfinderCenterFraction, 1 - viewfinderCenterFraction)
+        let width = max(0, min(bounds.width * viewfinderWidthFraction, viewfinderMaxWidth, availableHeight * viewfinderAspectRatio))
         let height = width / viewfinderAspectRatio
         return CGRect(
             x: bounds.midX - width / 2,

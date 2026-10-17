@@ -12,6 +12,8 @@ struct ChoiceButton: View {
                 Text(title)
                     .font(.headline)
                     .foregroundStyle(state == .dimmed ? .secondary : .primary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Spacer(minLength: 0)
 

@@ -13,7 +13,8 @@ actor BarcodeCaptureService {
     private nonisolated let sessionQueue = DispatchSerialQueue(label: "dev.kavsoft.XStyle-TabBar.scanner.session")
     private let output = AVCaptureVideoDataOutput()
     private var delegate: VideoFrameDelegate?
-    private var device: AVCaptureDevice?
+    private(set) var device: AVCaptureDevice?
+    private var viewport: ScannerViewport?
     /// Identifies the latest run, so a stop that arrives after a newer start
     /// is ignored.
     private var runToken = 0
@@ -72,14 +73,18 @@ actor BarcodeCaptureService {
 
     /// Tells the analyzer where the frames are shown, and focuses and meters
     /// on the viewfinder.
-    func setScreen(size: CGSize, viewfinder: CGRect, displayScale: CGFloat) async {
-        guard size.width > 0, size.height > 0 else { return }
-        await analyzer.setScreen(size: size, viewfinder: viewfinder, displayScale: displayScale)
+    func setViewport(_ viewport: ScannerViewport) async {
+        guard viewport.size.width > 0, viewport.size.height > 0,
+              self.viewport.map({ viewport.revision >= $0.revision }) ?? true else { return }
+        self.viewport = viewport
+        await analyzer.setViewport(viewport)
+        // The actor may have accepted a newer configuration during the hop.
+        guard self.viewport?.revision == viewport.revision else { return }
         guard let device else { return }
         let dimensions = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
         let bufferSize = CGSize(width: Int(dimensions.width), height: Int(dimensions.height))
-        let mapper = AspectFillMapper(bufferSize: bufferSize, viewSize: size, rotatesClockwise: true)
-        let rect = mapper.bufferRect(fromView: viewfinder)
+        let mapper = viewport.mapper(bufferSize: bufferSize)
+        let rect = mapper.bufferRect(fromView: viewport.viewfinder)
         let deviceRect = CGRect(
             x: rect.minX / bufferSize.width, y: rect.minY / bufferSize.height,
             width: rect.width / bufferSize.width, height: rect.height / bufferSize.height
@@ -119,7 +124,7 @@ actor BarcodeCaptureService {
             continuation.finish()
             return stream
         }
-        nonisolated(unsafe) let observation = device.observe(\.isTorchActive, options: [.initial, .new]) { device, _ in
+        let observation = device.observe(\.isTorchActive, options: [.initial, .new]) { device, _ in
             continuation.yield(device.isTorchActive)
         }
         continuation.onTermination = { _ in

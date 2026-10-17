@@ -10,7 +10,7 @@ struct ProfileDebugSettings: View {
         NavigationStack {
             Form {
                 Section {
-                    Toggle("Original blended background", isOn: usesOriginalBackground)
+                    Toggle("Original blended background", isOn: $backgroundStyle.usesOriginalBlended)
                         .accessibilityIdentifier("debug.originalBlendedBackground")
                 } header: {
                     Text("Home background")
@@ -36,13 +36,6 @@ struct ProfileDebugSettings: View {
         }
     }
 
-    private var usesOriginalBackground: Binding<Bool> {
-        Binding {
-            backgroundStyle == .originalBlended
-        } set: { usesOriginal in
-            backgroundStyle = usesOriginal ? .originalBlended : .pageAttached
-        }
-    }
 }
 
 #Preview {

@@ -8,6 +8,11 @@
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+
+    private let mainTitle = "Nako"
+
     /// The Home pager. Only the views drawing it read it, so paging never
     /// redraws this view and its navigation stack.
     @State private var pager = PagerState()
@@ -27,16 +32,9 @@ struct ContentView: View {
     @State private var logoCollapse = LogoCollapse()
     /// Shared by the For you page and the side menu's debug reset.
     @State private var taskList = ForYouTaskList()
-    #if DEBUG
-    /// Whether the side menu's glass and background dials are open.
-    @State private var isDebugTuningShown = false
-    #endif
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @AccessibilityFocusState private var isMenuButtonFocused: Bool
     /// Shared by the feed images and article zoom transitions.
     @Namespace private var zoomNamespace
-    private let mainTitle = "Nako"
 
     var body: some View {
         if AppFeatures.sideMenuEnabled {
@@ -59,30 +57,7 @@ struct ContentView: View {
                 SideMenuQuickActions(onOpen: openQuickAction)
             } footer: {
                 #if DEBUG
-                VStack(spacing: 0) {
-                    // Collapsed by default: the footer is pinned, so open
-                    // panels would crowd out the routes on small screens.
-                    if isDebugTuningShown {
-                        FeedGlassDebugControls()
-                        GradientDebugControls()
-                    }
-
-                    Divider()
-
-                    Button {
-                        withAnimation { isDebugTuningShown.toggle() }
-                    } label: {
-                        Label(isDebugTuningShown ? "Hide Tuning" : "Show Tuning", systemImage: "slider.horizontal.3")
-                            .font(.callout.bold())
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, minHeight: TopMenuMetrics.minimumTapSize, alignment: .leading)
-                            .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 15)
-
-                    ResetTasksDebugButton(action: resetTasks)
-                }
+                SideMenuDebugControls(onResetTasks: resetTasks)
                 #endif
             }
             .disabled(revealingRoute != nil)
@@ -96,54 +71,21 @@ struct ContentView: View {
         NavigationStack(path: $navigationPath) {
             // Inside the stack, so articles, quizzes and sidebar pages
             // cover the tab bar when pushed.
-            TabView(selection: $rootTab) {
-                Tab(value: RootTab.home) {
-                    HomePager(
-                        pager: pager,
-                        logoCollapse: logoCollapse,
-                        taskList: taskList,
-                        zoomNamespace: zoomNamespace,
-                        onUpdate: openPendingSidebar
-                    )
-                        .safeAreaBar(edge: .top, spacing: 0) {
-                            HomeTopMenu(
-                                title: mainTitle,
-                                pager: pager,
-                                logoCollapse: logoCollapse,
-                                onSelect: selectTab
-                            ) {
-                                if AppFeatures.sideMenuEnabled {
-                                    TopMenuIconButton(title: "Open menu", systemImage: "line.3.horizontal", action: openMenu)
-                                        .accessibilityIdentifier("navigation.openMenu")
-                                        .accessibilityFocused($isMenuButtonFocused)
-                                }
-                            }
-                        }
-                        .background {
-                            HomeBackground(pager: pager)
-                        }
-                } label: {
-                    Label(RootTab.home.title, systemImage: RootTab.home.symbol)
-                }
-
-                Tab(value: RootTab.scanner) {
-                    ScannerView(model: scanner, isActive: rootTab == .scanner)
-                } label: {
-                    Label(RootTab.scanner.title, systemImage: RootTab.scanner.symbol)
-                }
-
-                ForEach(RootTab.placeholderTabs, id: \.self) { tab in
-                    Tab(value: tab) {
-                        RootTabPlaceholder(tab: tab)
-                    } label: {
-                        Label(tab.title, systemImage: tab.symbol)
+            RootTabContent(selection: $rootTab, scanner: scanner) {
+                HomeRootView(
+                    title: mainTitle,
+                    pager: pager,
+                    logoCollapse: logoCollapse,
+                    taskList: taskList,
+                    zoomNamespace: zoomNamespace,
+                    onSelect: selectTab,
+                    onUpdate: openPendingSidebar
+                ) {
+                    if AppFeatures.sideMenuEnabled {
+                        TopMenuIconButton(title: "Open menu", systemImage: "line.3.horizontal", action: openMenu)
+                            .accessibilityIdentifier("navigation.openMenu")
+                            .accessibilityFocused($isMenuButtonFocused)
                     }
-                }
-
-                Tab(value: RootTab.search, role: .search) {
-                    RootTabPlaceholder(tab: .search)
-                } label: {
-                    Label(RootTab.search.title, systemImage: RootTab.search.symbol)
                 }
             }
             .onChange(of: rootTab, rootTabDidChange)
@@ -152,19 +94,7 @@ struct ContentView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarVisibility(.hidden, for: .navigationBar)
             .navigationDestination(for: SidebarRoute.self) { route in
-                Group {
-                    if let historyStyle = route.historyStyle {
-                        HistoryLab(style: historyStyle)
-                    } else {
-                        Text("Hello World")
-                    }
-                }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.background)
-                    .navigationTitle(route.title)
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbarVisibility(.visible, for: .navigationBar)
-                    .accessibilityIdentifier("destination.\(route.rawValue)")
+                SidebarRouteView(route: route)
                     .onAppear { revealSidebarRoute(route) }
             }
             .navigationDestination(for: Article.self) { article in

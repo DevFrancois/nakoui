@@ -3,6 +3,8 @@ import SwiftUI
 /// Page dots for the article gallery, on a Liquid Glass capsule so they stay
 /// readable over any image.
 struct ArticleGalleryIndicator: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let count: Int
     let position: CGFloat
 
@@ -25,7 +27,7 @@ struct ArticleGalleryIndicator: View {
         }
         .padding(ArticleMetrics.galleryIndicatorPadding)
         .glassEffect(in: .capsule)
-        .animation(.snappy, value: page)
+        .animation(reduceMotion ? nil : .snappy, value: page)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Image \(page + 1) of \(count)"))
     }

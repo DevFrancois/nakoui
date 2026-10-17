@@ -20,8 +20,11 @@ struct AnswerTile: View {
                 Text(title)
                     .font(.headline)
                     .foregroundStyle(state == .dimmed ? .secondary : .primary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity)
+            .padding(.horizontal)
             .padding(.vertical, 20)
             // Inside the label, so the glass draws it crisply on top rather
             // than blending it in, as it does with overlays on the glass itself.

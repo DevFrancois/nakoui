@@ -24,3 +24,16 @@ struct QuizDestination: View {
         .toolbarVisibility(.visible, for: .navigationBar)
     }
 }
+
+#Preview("Wide quiz", traits: .fixedLayout(width: 960, height: 700)) {
+    NavigationStack {
+        QuizDestination(kind: .classic)
+    }
+}
+
+#Preview("Large text", traits: .fixedLayout(width: 393, height: 852)) {
+    NavigationStack {
+        QuizDestination(kind: .estimate)
+    }
+    .environment(\.dynamicTypeSize, .accessibility3)
+}

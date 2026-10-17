@@ -3,6 +3,8 @@ import SwiftUI
 /// The frame every quiz shares: its ambient light, a glass status header with
 /// progress and score, and the results once the round is over.
 struct QuizScreen<Content: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let kind: QuizKind
     let session: QuizSession
     @ViewBuilder let content: Content
@@ -13,17 +15,18 @@ struct QuizScreen<Content: View>: View {
             Group {
                 if session.isFinished {
                     QuizResultsView(kind: kind, session: session)
+                        .frame(maxWidth: QuizMetrics.contentMaxWidth)
                 } else {
                     content
                 }
             }
-            .transition(.blurReplace)
+            .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
             .padding()
-            .frame(maxWidth: QuizMetrics.contentMaxWidth)
+            .frame(maxWidth: QuizMetrics.expandedContentMaxWidth)
             .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
-        .animation(.smooth, value: session.isFinished)
+        .animation(reduceMotion ? nil : .smooth, value: session.isFinished)
         .sensoryFeedback(trigger: session.outcome) { _, outcome in
             outcome?.feedback
         }
@@ -32,7 +35,7 @@ struct QuizScreen<Content: View>: View {
         }
         .safeAreaBar(edge: .top) {
             QuizStatusHeader(kind: kind, session: session)
-                .frame(maxWidth: QuizMetrics.contentMaxWidth)
+                .frame(maxWidth: QuizMetrics.expandedContentMaxWidth)
                 .frame(maxWidth: .infinity)
         }
     }

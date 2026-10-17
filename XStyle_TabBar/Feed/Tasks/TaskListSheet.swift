@@ -43,6 +43,8 @@ struct TaskListSheet: View {
                     }
                 }
                 .padding()
+                .frame(maxWidth: 720)
+                .frame(maxWidth: .infinity)
             }
             .background(Color(.taskSheetBackground))
             .navigationTitle("Tasks")
