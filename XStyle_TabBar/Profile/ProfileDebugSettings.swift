@@ -4,7 +4,7 @@ import SwiftUI
 /// Home background comparisons stay reachable while the side menu is off.
 struct ProfileDebugSettings: View {
     @Environment(\.dismiss) private var dismiss
-    @AppStorage(HomeBackgroundStyle.storageKey) private var backgroundStyle = HomeBackgroundStyle.pageAttached
+    @AppStorage(HomeBackgroundStyle.storageKey) private var backgroundStyle = HomeBackgroundStyle.defaultStyle
 
     var body: some View {
         NavigationStack {

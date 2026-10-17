@@ -6,9 +6,9 @@ struct HomePageBackground: View {
     let tab: AppTab
 
     #if DEBUG
-    @AppStorage(HomeBackgroundStyle.storageKey) private var style = HomeBackgroundStyle.pageAttached
+    @AppStorage(HomeBackgroundStyle.storageKey) private var style = HomeBackgroundStyle.defaultStyle
     #else
-    private let style = HomeBackgroundStyle.pageAttached
+    private let style = HomeBackgroundStyle.defaultStyle
     #endif
 
     var body: some View {

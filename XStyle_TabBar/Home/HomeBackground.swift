@@ -1,15 +1,15 @@
 import SwiftUI
 
-/// The shared base beneath Home's moving pages. The original blended wash
-/// remains available in Debug Settings without making `ContentView` observe
-/// the pager or the background preference.
+/// The shared base beneath Home's moving pages. The default blended wash
+/// follows the pager without making `ContentView` observe scrolling or the
+/// background preference.
 struct HomeBackground: View {
     let pager: PagerState
 
     #if DEBUG
-    @AppStorage(HomeBackgroundStyle.storageKey) private var style = HomeBackgroundStyle.pageAttached
+    @AppStorage(HomeBackgroundStyle.storageKey) private var style = HomeBackgroundStyle.defaultStyle
     #else
-    private let style = HomeBackgroundStyle.pageAttached
+    private let style = HomeBackgroundStyle.defaultStyle
     #endif
 
     var body: some View {
