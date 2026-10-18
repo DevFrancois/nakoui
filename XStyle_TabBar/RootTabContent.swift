@@ -5,6 +5,7 @@ struct RootTabContent<Home: View>: View {
     @Binding var selection: RootTab
     let scanner: ScannerModel
     @ViewBuilder let home: Home
+    @State private var reflections = TabBarReflectionSource()
 
     var body: some View {
         // Preserve destination state and lifecycle, while each destination
@@ -34,7 +35,7 @@ struct RootTabContent<Home: View>: View {
             }
 
             Tab(value: RootTab.search) {
-                RootTabPlaceholder(tab: .search)
+                CarouselDebugView(isActive: selection == .search)
                     .toolbarVisibility(.hidden, for: .tabBar)
             } label: {
                 Label(RootTab.search.title, systemImage: RootTab.search.symbol)
@@ -42,5 +43,7 @@ struct RootTabContent<Home: View>: View {
         }
         // Inside the navigation root, so pushed pages cover the custom menu.
         .modifier(GlassTabBarInset(selection: $selection))
+        .environment(\.tabBarReflectionSource, reflections)
+        .onChange(of: selection) { reflections.clear() }
     }
 }

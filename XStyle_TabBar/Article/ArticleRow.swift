@@ -21,7 +21,7 @@ struct ArticleRow: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
 
-                    ArticleHeroImage(image: article.image)
+                    ArticleThumbnailImage(image: article.image)
                         .frame(height: ArticleMetrics.thumbnailHeight)
                         .overlay(alignment: .topTrailing) {
                             if article.images.count > 1 {

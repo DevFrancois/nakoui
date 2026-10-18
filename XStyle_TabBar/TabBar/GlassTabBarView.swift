@@ -1,10 +1,14 @@
 import SwiftUI
 import UIKit
 
-/// One custom optical capsule holds all destinations. Its neighboring-color
-/// sampling and rim lighting are independent of the system glass materials.
+/// One capsule holds all destinations. Its custom Metal material reflects
+/// ordinary UI colors and direct Carousel scene textures.
 final class GlassTabBarView: UIView {
     var onSelect: ((RootTab) -> Void)?
+    var reflectionSource: TabBarReflectionSource? {
+        get { optics.reflectionSource }
+        set { optics.reflectionSource = newValue }
+    }
 
     private let surface = UIView()
     private let optics = TabBarOpticalSurface(frame: .zero)

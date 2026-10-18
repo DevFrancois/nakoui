@@ -7,6 +7,7 @@ struct GlassTabBar: UIViewRepresentable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.locale) private var locale
+    @Environment(\.tabBarReflectionSource) private var reflectionSource
     @ScaledMetric(relativeTo: .body) private var height = 60.0
 
     func makeUIView(context: Context) -> GlassTabBarView {
@@ -15,6 +16,10 @@ struct GlassTabBar: UIViewRepresentable {
 
     func updateUIView(_ view: GlassTabBarView, context: Context) {
         view.onSelect = { selection = $0 }
+        view.reflectionSource = reflectionSource
+        // The temporary Carousel preview has an intentionally light canvas,
+        // including in Dark Mode. Its menu needs matching readable controls.
+        view.overrideUserInterfaceStyle = selection == .search ? .light : .unspecified
         view.semanticContentAttribute = layoutDirection == .rightToLeft
             ? .forceRightToLeft : .forceLeftToRight
         view.update(

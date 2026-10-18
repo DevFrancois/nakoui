@@ -1,0 +1,74 @@
+# Tab bar reflections and Carousel
+
+The tab bar uses one custom Metal capsule on every tab. `TabBarOptics.metal` supplies the surface tint, sharp rim, soft glow, warm/cool lighting and slight edge darkening. Its center absorbs more light to keep underlying feed text from competing with the controls; the rim retains its transparency and nearby-color reflections. There is no `UIGlassEffect` or `UIGlassContainerEffect` in the tab bar.
+
+Ordinary UIKit/SwiftUI content feeds this shader through `TabBarUITextureCapture`. `TabBarLayerRegionRenderer` walks one presentation-layer tree, propagates affine transforms, and rejects offscreen subtrees before drawing the nearby region into reusable IOSurface-backed pixel buffers. Plain layout containers can be split. Empty rounded containers leading through safe empty wrappers to one image/drawing leaf use cached native corner coverage, including continuous and selected corners; the current image placement is rendered each time. The immutable mask cache is bounded to 16 entries and 512 KiB. Arbitrary masks, group opacity, perspective, rounded groups with overlapping children and other complex groups retain Core Animation's original subtree rendering. The live view/layer tree is never modified. A clipped hole excludes the capsule and its controls to prevent recursive reflections.
+
+Supported public `CGImage` photo sources are prepared once into sRGB-premultiplied images up to 256 pixels per side. The cache retains source identity and is bounded to 16 entries and 32 MiB of estimated source-plus-prepared raster storage. Each capture reapplies the current layer bounds, aspect-fill gravity, clipping and opacity; scrolling changes image placement without decoding and resampling the full asset again. Replacing an image selects a new entry. Unsupported source formats, mappings and compositing keep native rendering. This is an image-source cache, not a cache of old UI frames.
+
+The UI color field is bounded to 160 pixels on its long edge; the capsule contour still renders at display resolution. Captured UI pixels require no intermediate UIImage, CGImage, CPU pixel copy or texture upload. Core Graphics writes encoded premultiplied BGRA into shared storage exposed as a raw `bgra8Unorm` texture. A GPU preparation pass decodes each new capture once into a cached linear-premultiplied `rgba16Float` texture, so the rim's many samples do not repeat color conversion. Both pools have four bounded slots and track in-flight reads before reuse.
+
+This is a nearby-color source, not a complete replacement for UIKit's compositor. Publicly identifiable text layers, UILabels and alpha-only image masks are omitted. SwiftUI does not expose every text run that way, so not all SwiftUI text is excluded. Custom/compositor effects can differ from their on-screen appearance, and ordinary video/Metal layers need a direct texture producer. Capturing still costs main-thread time; a small output alone does not make traversal free.
+
+`TabBarCaptureCadence` measures this cost, allows up to 60 fresh UI captures per second within a 60% capture-work budget, and avoids a capture when it is likely to miss the next display deadline. It queues no backlog. Cost history ages by elapsed time when a successful capture supplies a new measurement, so one expensive image does not trap later inexpensive content at the 250 ms retry cadence. Waiting alone never lowers the estimate or relaxes the deadline. The optical pass is submitted before capture at the display's supported cadence. Two captured frames blend over at most 33 ms using display target timestamps; this is color interpolation, not synthesized motion. A costly hierarchy can reduce fresh UI sample frequency. Device measurements determine actual performance; GPU submission rate alone does not establish smooth UI reflection updates.
+
+Carousel is temporarily in Search for debugging, with three local poster/video pairs: home insurance, Mexico City and spending. Its renderer and videos pause when Search is inactive. It supplies live card and video pixels through:
+
+```swift
+CardCarousel.onRenderTexture(_:onUnavailable:)
+```
+
+The callback lends a scene texture and its uncommitted command buffer. The tab bar appends a GPU copy of the visible nearby crop (at most 320 pixels on its long edge) to that same buffer. After completion, a consumer-owned copy can be sampled on subsequent display frames. Three bounded scene slots remain leased until both the producer write and all presentation reads finish. The original pooled scene is never held for a later GPU read; the consumer never commits the producer's command buffer or creates a duplicate video player. No CPU readback occurs on this path.
+
+The shader blends previous/current UI captures in window coordinates, then composites the direct Carousel crop only inside its visible screen region. Both feeds contribute nearby colors to the same optical material. Native Carousel companion overlays belong to the UI capture rather than its Metal texture. `onUnavailable` removes only the direct scene contribution; ordinary UI continues reflecting.
+
+`RootTabContent` owns `tabBarReflectionSource` and supplies it through the environment. Search already connects. `TabBarReflectionConnection.swift.example` shows how to connect a configured Carousel elsewhere under the same root and window.
+
+`render-texture.patch` preserves the original producer hook against Carousel commit `b1478a1a9304f79936c89aa1b1429088930e0c7e`. It changes `CardCarousel.swift`, `CarouselMetalView.swift` and `CarouselRenderer.swift`. It is already applied in `/Users/francois/Downloads/Carousel` and included in the app's copied sources. Do not apply it again to either existing copy.
+
+`Configuration/AppInfo.plist` opts supported iPhones into high-refresh display links. The OS still chooses the available refresh rate. Background and detached surfaces stop requesting frames; Reduce Transparency uses an opaque custom material without UI capture.
+
+Run `Tests/Rendering/check-tab-bar-optics.sh` to compile the production shader for iOS and run native macOS Metal checks. These cover both texture feeds, interpolation, coordinates, clipping, premultiplied composition, edge lighting and Reduce Transparency without a simulator. Capture cadence and reflection geometry also have focused Swift tests.
+
+`Tests/Rendering/check-tab-bar-layer-capture.sh` compares the production region renderer with Core Animation's reference rendering on native macOS for public-layer cases, including transforms, clipping, masks, opacity and z-order. These checks do not establish complete SwiftUI compositor fidelity on iOS.
+
+For a Debug device launch, `TABBAR_METRICS=1` logs display ticks, completed GPU frames, fresh UI captures, mean/peak capture time, GPU time and long display intervals every two seconds. `TABBAR_SKIP_UI_CAPTURE=1` provides a diagnostic comparison with UI capture disabled. `TABBAR_HIERARCHY_CAPTURE=1` selects the old hierarchy capture for comparison. `TABBAR_DUMP_CAPTURE=1` exports a diagnostic crop and layer tree; `TABBAR_DUMP_CAPTURE_DELAY=10` delays the export to allow navigation first. Extra diagnostic work is excluded from normal performance runs. None of these flags changes a normal app launch.
+
+### Physical-device measurements, 2026-10-18
+
+On the connected iPhone 12 (iOS 26.5.2), using a normal Debug build with metrics enabled and diagnostic exports disabled:
+
+| Workload | Fresh UI captures | Display-link / tab-bar GPU rate | Capture cost |
+| --- | --- | --- | --- |
+| Home, settled dense cards, after scrolling | 58.3–59.8/s | About 59.8/s | 5.0–5.3 ms |
+| Home, ordinary list scrolling | About 57–60/s | About 57–60/s | About 2.2 ms |
+| Search, moving Carousel cards | About 57–60/s | About 58–60/s | About 1 ms |
+
+The settled Home run recorded no long display-link intervals over roughly 30 seconds after scrolling. Carousel interactions recorded 0–2 long intervals per two-second record, comparable to the earlier scrolling baseline. These are app-loop and GPU-completion measurements, not an independent compositor-wide frame-rate measurement. GPU time was approximately 3.6–3.7 ms on settled Home. The previous hierarchy approach took roughly 65 ms per Home capture and supplied only 2–4 captures/s under the limiter.
+
+These initial Home measurements covered the For you feed, not every category. Subsequent Articles testing exposed a separate image-capture bottleneck: two continuous rounded image groups took approximately 8.8 ms and 6.8 ms to render, bringing a capture to about 20 ms and reducing fresh captures to roughly 4/s. Both the Air and iPhone 12 reproduced this when the relevant images entered the capture region. Different screen heights place different rows near the capsule, so matching only the selected category is not a controlled hardware comparison. On the Air, disabling UI capture restored settled Articles to approximately 120 display-link/GPU frames/s with no long intervals; the shader itself took about 0.8 ms.
+
+Further isolation placed that cost inside the image leaves. Rounded-mask splitting alone and public UIImageView backing alone were insufficient; preparing and reusing the public image pixels removed the sustained bottleneck. Using the same signed Debug binary, without diagnostic exports:
+
+| Articles workload | Fresh UI captures | Display-link / tab-bar GPU rate | Capture cost |
+| --- | --- | --- | --- |
+| Air, settled before and after scrolling | About 60/s | About 120/s | 4.15 ms median before scrolling |
+| Air, six slow swipes | 48–60/s; median 55.3/s | 111–120/s; median 112.2/s | 2.39 ms median |
+| iPhone 12, settled before and after scrolling | About 59–60/s | About 59.8/s | 5.26–5.47 ms |
+| iPhone 12, six slow swipes | 47–60/s; median 54.3/s | 55–60/s | 2.2 ms median |
+
+Settled runs recorded no long display intervals. Air scrolling recorded 0–4 long intervals per two-second window, close to the no-capture control's 1–5 intervals and 109–118 display-link frames/s. The first use of an uncached image can still cause a one-off capture spike: 13.54 ms on Air and 18.5 ms on iPhone 12 were observed. Steady captures recover rather than remaining at 4/s. The Air ran iOS 27.2 beta and the iPhone 12 ran iOS 26.5.2; these are whole-device comparisons, not an isolated test of the OS or processor. Physical automation also verified article opening, a gallery swipe and return to the feed with the thumbnail crop and image-count badge preserved.
+
+A separate diagnostic Articles run prepared its two visible image sources once (3.56 and 3.15 ms), then reused them for roughly a minute. Individual cached photo draws took approximately 0.25–0.30 ms. The exported capture matched the nearby green/purple image colors and positions in the device screenshot. Final Carousel regression checks retained the direct scene feed; Air Search measured approximately 120 display-link/GPU frames/s, 60 fresh UI captures/s, 0.6 ms UI capture and 1.2 ms GPU time.
+
+An earlier 40% budget held the optimized traversal to roughly 30 captures/s on settled Home, at 9.2–9.9 ms per capture. A controlled `-O` build retaining Debug metrics reduced that cost to 8.2–8.7 ms without increasing cadence. The final 60% budget, with the same deadline guard, sustained the higher rates above in a normal Debug build; project optimization settings remain unchanged. Physical UI automation verified tab switching, Home scrolling and Carousel card changes. No simulator was used.
+
+## GPUI glass study
+
+The reference at `/Users/francois/Downloads/Carousel/gpui-glass-demo` owns the entire UI renderer. Its `BackdropContext` lends an existing scene texture and command encoder at the correct draw-order position; background text is already in that texture, while glass foreground controls draw afterward. This avoids the UIKit acquisition cost rather than hiding it with a different shader.
+
+Its reflection pipeline separates a coarse exterior radiance field (roughly four logical pixels per texel) from detailed edge geometry, prepares reusable GPU fields, and tracks damaged regions. The coarse color field and decode-once preparation above follow that separation of source detail from optical contour quality. Carousel already provides the analogous direct GPU callback. GPUI's source-damage tracking cannot be assumed for arbitrary UIKit content, so cached UI captures must still be refreshed. No GPUI source code has been copied into this implementation.
+
+A second review focused on Articles. In `vendor/gpui-ce/crates/gpui/src/window.rs`, `paint_image_with_corner_smoothing` caches decoded image bytes in the sprite atlas by image ID and animation-frame index, then draws the visible texture subrectangle with rounded geometry. This ownership is the transferable idea: `ArticleThumbnailImage` exposes the feed's existing asset through a persistent `UIImageView` with the same centered aspect-fill crop, and the bounded prepared-image cache above reuses those pixels for reflection capture. A public image backing alone did not remove the measured cost; preparing and reusing its pixels is also necessary. The gallery keeps `ArticleHeroImage`, preserving its SwiftUI `ImageRenderer` backdrop sampling.
+
+GPUI's incremental bleed damage in `crates/gpui-glass/src/glass.rs` applies between consecutive glass surfaces within the same frame; its renderer starts each new frame fully invalidated. It does not justify reusing old UIKit pixels based on layer identity or `needsDisplay`. Further candidates are capture bounds derived from the shader's actual sampling radius, footprint-filtered Carousel downsampling, and a prepared edge field. Those address separate costs and fidelity concerns; none supplies SwiftUI's missing compositor texture or removes expensive CPU image rendering by itself.

@@ -1,0 +1,16 @@
+import SwiftUI
+
+/// Add this file to the app when placing Carousel. Supply an existing configured
+/// CardCarousel, including its card media, before applying generic View modifiers.
+struct TabBarReflectionConnection: View {
+    let carousel: CardCarousel
+    @Environment(\.tabBarReflectionSource) private var reflections
+
+    var body: some View {
+        carousel.onRenderTexture { texture, commandBuffer, view in
+            reflections?.render(texture: texture, commandBuffer: commandBuffer, view: view)
+        } onUnavailable: { view in
+            reflections?.remove(view: view)
+        }
+    }
+}

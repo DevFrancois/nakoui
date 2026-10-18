@@ -1,0 +1,276 @@
+diff --git a/Carousel/CardCarousel.swift b/Carousel/CardCarousel.swift
+index 382f87a..e1f6ad7 100644
+--- a/Carousel/CardCarousel.swift
++++ b/Carousel/CardCarousel.swift
+@@ -1,5 +1,6 @@
+ import SwiftUI
+ import UIKit
++import Metal
+ 
+ /// Native iOS controller. Navigation follows the current focused state.
+ @MainActor
+@@ -92,6 +93,8 @@ public struct CardCarousel: UIViewRepresentable {
+     var cards: CarouselCards?
+     var back: ((Int) -> AnyView)?
+     var backVideo: ((Int) -> URL?)?
++    var renderTextureReceiver: ((MTLTexture, MTLCommandBuffer, UIView) -> Void)?
++    var renderTextureUnavailable: ((UIView) -> Void)?
+ 
+     public init(images: [String], configuration: CarouselConfiguration = .init(),
+                 controller: CardCarouselController? = nil, onReady: (() -> Void)? = nil,
+@@ -166,6 +169,33 @@ public struct CardCarousel: UIViewRepresentable {
+         return result
+     }
+ 
++    /// Shares the current Metal scene, including moving cards and prepared video frames,
++    /// without reading pixels back to the CPU. The callback runs synchronously on main
++    /// after the scene is encoded, before its command buffer is committed.
++    ///
++    /// Append sampling work to the supplied command buffer and end every encoder before
++    /// returning. Do not commit it, present its drawables, or retain the source texture
++    /// for later GPU reads: its pooled storage is reused after this submission completes.
++    /// To display a derived reflection later, render into your own texture here and wait
++    /// for successful command-buffer completion before consuming that result.
++    ///
++    /// The source view supplies coordinates: capture its bounds converted to the shared
++    /// window during this callback. The texture covers those bounds, with its origin at
++    /// the top left. Native UIKit overlays are not captured; native-glass mode exports
++    /// the cards' Metal imagery. `onUnavailable` clears retained results when the source
++    /// is hidden, offscreen, inactive, detached, stopped, or this callback is removed.
++    /// Disconnect an old consumer explicitly before replacing it with a different one;
++    /// SwiftUI closure updates do not carry a comparable consumer identity.
++    public func onRenderTexture(
++        _ receive: @escaping (MTLTexture, MTLCommandBuffer, UIView) -> Void,
++        onUnavailable: ((UIView) -> Void)? = nil
++    ) -> CardCarousel {
++        var result = self
++        result.renderTextureReceiver = receive
++        result.renderTextureUnavailable = onUnavailable
++        return result
++    }
++
+     /// Text companions have their own playful gestures and never navigate the cards.
+     public func cardCompanion(configuration: CarouselCompanionConfiguration = .init(),
+                               content: @escaping (Int) -> CarouselCompanionContent?) -> CardCarousel {
+@@ -181,7 +211,8 @@ public struct CardCarousel: UIViewRepresentable {
+                     layouts: itemLayouts, featureMedia: featureMedia, holdIntervals: holdIntervals,
+                     companions: companionContent, companionConfiguration: companionConfiguration,
+                     configuration: configuration,
+-                    controller: controller, onReady: onReady, onIndexChange: onIndexChange)
++                    controller: controller, onReady: onReady, onIndexChange: onIndexChange,
++                    onRenderTexture: renderTextureReceiver, onTextureUnavailable: renderTextureUnavailable)
+         return view
+     }
+ 
+@@ -190,7 +221,8 @@ public struct CardCarousel: UIViewRepresentable {
+                     layouts: itemLayouts, featureMedia: featureMedia, holdIntervals: holdIntervals,
+                     companions: companionContent, companionConfiguration: companionConfiguration,
+                     configuration: configuration,
+-                    controller: controller, onReady: onReady, onIndexChange: onIndexChange)
++                    controller: controller, onReady: onReady, onIndexChange: onIndexChange,
++                    onRenderTexture: renderTextureReceiver, onTextureUnavailable: renderTextureUnavailable)
+     }
+ 
+     public static func dismantleUIView(_ view: CarouselMetalView, coordinator: ()) { view.stop() }
+diff --git a/Carousel/CarouselMetalView.swift b/Carousel/CarouselMetalView.swift
+index 39febad..d79d019 100644
+--- a/Carousel/CarouselMetalView.swift
++++ b/Carousel/CarouselMetalView.swift
+@@ -204,6 +204,9 @@ public final class CarouselMetalView: MTKView, MTKViewDelegate, UIGestureRecogni
+     internal var usesFrontLayer = true
+     private weak var controller: CardCarouselController?
+     private var onReady: (() -> Void)?
++    private var renderTextureReceiver: ((MTLTexture, MTLCommandBuffer, UIView) -> Void)?
++    private var renderTextureUnavailable: ((UIView) -> Void)?
++    private var hasSharedRenderTexture = false
+     private var ready = false
+     private var renderGeneration = 0
+     private var renderSequence = 0
+@@ -394,9 +397,19 @@ public final class CarouselMetalView: MTKView, MTKViewDelegate, UIGestureRecogni
+                 companionConfiguration: CarouselCompanionConfiguration = .init(),
+                 configuration: CarouselConfiguration,
+                 controller: CardCarouselController?, onReady: (() -> Void)?,
+-                onIndexChange: ((Int) -> Void)?) {
++                onIndexChange: ((Int) -> Void)?,
++                onRenderTexture: ((MTLTexture, MTLCommandBuffer, UIView) -> Void)? = nil,
++                onTextureUnavailable: ((UIView) -> Void)? = nil) {
+         cancelAutoplayWake()
+         invalidateRenderPackets()
++        if onRenderTexture == nil {
++            invalidateSharedRenderTexture()
++            if renderTextureReceiver != nil, configuration.rendering.motionScale >= 1 {
++                renderer?.releaseMotionResources()
++            }
++        }
++        renderTextureReceiver = onRenderTexture
++        renderTextureUnavailable = onTextureUnavailable
+         // A new SwiftUI update can change the back builder without changing card
+         // identity. Refresh existing pictures when idle, keeping them usable during motion.
+         staleBackPictureIndices.formUnion(backPictureIndices)
+@@ -1049,6 +1062,7 @@ public final class CarouselMetalView: MTKView, MTKViewDelegate, UIGestureRecogni
+ 
+     private func wakeDisplayClock() {
+         guard canDraw else {
++            invalidateSharedRenderTexture()
+             cancelActiveTouch(redraw: false)
+             cardTouches.removeAll()
+             companionOverlay?.cancelInteraction(preservingTouchOwnership: false)
+@@ -1068,6 +1082,12 @@ public final class CarouselMetalView: MTKView, MTKViewDelegate, UIGestureRecogni
+         }
+     }
+ 
++    private func invalidateSharedRenderTexture() {
++        guard hasSharedRenderTexture else { return }
++        hasSharedRenderTexture = false
++        renderTextureUnavailable?(self)
++    }
++
+     private func pauseClock() {
+         cancelAutoplayWake()
+         displayLink?.isPaused = true
+@@ -1327,10 +1347,18 @@ public final class CarouselMetalView: MTKView, MTKViewDelegate, UIGestureRecogni
+             }
+             self.drawableBroker.submit { command.commit() }
+         }
++        let receiveTexture: ((MTLTexture, MTLCommandBuffer) -> Void)? = renderTextureReceiver.map { receive in
++            { [weak self] texture, command in
++                guard let self, self.canDraw else { return }
++                self.hasSharedRenderTexture = true
++                receive(texture, command, self)
++            }
++        }
+         let submitted = renderer.draw(frame: frame, in: view, nativeSurfaces: surfaces, front: front,
+             synchronizeLayers: (layer as? CAMetalLayer)?.presentsWithTransaction == true,
+             acquiredDrawables: acquired, motionScale: motionResolution.scale,
+-            skipsHiddenShading: engine.configuration.rendering.skipHiddenShading, submit: submit,
++            skipsHiddenShading: engine.configuration.rendering.skipHiddenShading,
++            onRenderTexture: receiveTexture, submit: submit,
+             updateLayers: { [weak self] in
+                 guard let self else { return }
+                 self.glassOverlay.update(frame: frame, in: self)
+@@ -1595,6 +1623,9 @@ public final class CarouselMetalView: MTKView, MTKViewDelegate, UIGestureRecogni
+ 
+     func stop() {
+         stopped = true
++        invalidateSharedRenderTexture()
++        renderTextureReceiver = nil
++        renderTextureUnavailable = nil
+         cancelActiveTouch(redraw: false)
+         cardTouches.removeAll()
+         invalidatePresentation()
+diff --git a/Carousel/CarouselRenderer.swift b/Carousel/CarouselRenderer.swift
+index a6ac233..26e02db 100644
+--- a/Carousel/CarouselRenderer.swift
++++ b/Carousel/CarouselRenderer.swift
+@@ -456,6 +456,8 @@ final class CarouselRenderer {
+     private let backgroundPipeline: MTLRenderPipelineState
+     private let frontCompositePipeline: MTLRenderPipelineState
+     private let sceneCompositePipeline: MTLRenderPipelineState
++    private var reflectionCompositePipeline: MTLRenderPipelineState?
++    private var reflectionCompositeUnavailable = false
+     private let renderTargets = CarouselRenderTargetPool()
+     private(set) var lastSceneRenderSize: CGSize = .zero
+     private let sampler: MTLSamplerState
+@@ -1019,6 +1021,32 @@ final class CarouselRenderer {
+         return texture
+     }
+ 
++    /// Only texture consumers with a split front layer need this blend pass.
++    private func prepareReflectionCompositePipeline() -> MTLRenderPipelineState? {
++        if let reflectionCompositePipeline { return reflectionCompositePipeline }
++        guard !reflectionCompositeUnavailable else { return nil }
++        let descriptor = MTLRenderPipelineDescriptor()
++        descriptor.label = "Carousel reflected front cards"
++        descriptor.vertexFunction = library.makeFunction(name: "carouselFullscreenVertex")
++        descriptor.fragmentFunction = library.makeFunction(name: "carouselSceneCompositeFragment")
++        let color = descriptor.colorAttachments[0]!
++        color.pixelFormat = Self.outputPixelFormat
++        color.isBlendingEnabled = true
++        color.sourceRGBBlendFactor = .one
++        color.destinationRGBBlendFactor = .oneMinusSourceAlpha
++        color.sourceAlphaBlendFactor = .one
++        color.destinationAlphaBlendFactor = .oneMinusSourceAlpha
++        do {
++            let pipeline = try device.makeRenderPipelineState(descriptor: descriptor)
++            reflectionCompositePipeline = pipeline
++            return pipeline
++        } catch {
++            reflectionCompositeUnavailable = true
++            print("Carousel reflection composite pipeline error: \(error)")
++            return nil
++        }
++    }
++
+     /// Called only by the host's display link through MTKView.draw().
+     /// `front` moves its scene indices, or its legacy promoted suffix, into
+     /// `front.layer`, drawn in the same submission and presented with it.
+@@ -1030,6 +1058,7 @@ final class CarouselRenderer {
+               acquiredDrawables: [ObjectIdentifier: CAMetalDrawable]? = nil,
+               motionScale: Double = 1,
+               skipsHiddenShading: Bool = false,
++              onRenderTexture: ((MTLTexture, MTLCommandBuffer) -> Void)? = nil,
+               submit: ((MTLCommandBuffer, @escaping () -> Void) -> Void)? = nil,
+               updateLayers: (() -> Void)? = nil,
+               onSubmitted: (() -> Void)? = nil,
+@@ -1102,10 +1131,10 @@ final class CarouselRenderer {
+         let height = max(1, Int((Double(drawable.texture.height) * scale).rounded()))
+         let destination = MTLRenderPassDescriptor()
+         let sceneTarget: MTLTexture?
+-        if scale < 1 {
++        if scale < 1 || onRenderTexture != nil {
+             renderTargets.retainTargets(scene: true)
+             guard let texture = makeTarget(existing: targetSlot.scene, width: width, height: height,
+-                                            label: "Carousel reduced moving scene") else { return false }
++                                            label: "Carousel sampleable moving scene") else { return false }
+             targetSlot.scene = texture
+             sceneTarget = texture
+             destination.colorAttachments[0].texture = texture
+@@ -1226,6 +1255,48 @@ final class CarouselRenderer {
+                  state: &state, encoder: encoder)
+             encoder.endEncoding()
+         }
++        if let onRenderTexture, let sceneTarget {
++            // The ordinary drawable has already consumed sceneTarget. Complete the
++            // exported image now without changing Carousel's UIKit layer ordering.
++            // Native glass's main pass contains shadows, so explicitly draw the card
++            // imagery here; live UIKit overlays themselves are never captured.
++            if native {
++                let pass = MTLRenderPassDescriptor()
++                pass.colorAttachments[0].texture = sceneTarget
++                pass.colorAttachments[0].loadAction = .dontCare
++                pass.colorAttachments[0].storeAction = .store
++                guard let encoder = command.makeRenderCommandEncoder(descriptor: pass) else { return false }
++                encoder.label = "Carousel native card imagery for reflections"
++                encoder.setRenderPipelineState(backgroundPipeline)
++                encoder.setFragmentBytes(&scrimOpacity, length: MemoryLayout<Float>.stride, index: 0)
++                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
++                var state = CarouselCardEncodingState()
++                for card in frame.wheel {
++                    draw(card, frame: frame, promoted: false, pixelWidth: width, pixelHeight: height,
++                         state: &state, encoder: encoder)
++                }
++                for card in frame.promoted {
++                    draw(card, frame: frame, promoted: true, pixelWidth: width, pixelHeight: height,
++                         state: &state, encoder: encoder)
++                }
++                encoder.endEncoding()
++            } else if let frontCards {
++                guard let pipeline = prepareReflectionCompositePipeline() else { return false }
++                let pass = MTLRenderPassDescriptor()
++                pass.colorAttachments[0].texture = sceneTarget
++                pass.colorAttachments[0].loadAction = .load
++                pass.colorAttachments[0].storeAction = .store
++                guard let encoder = command.makeRenderCommandEncoder(descriptor: pass) else { return false }
++                encoder.label = "Carousel full scene for reflections"
++                encoder.setRenderPipelineState(pipeline)
++                encoder.setFragmentTexture(frontCards, index: 0)
++                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
++                encoder.endEncoding()
++            }
++            // Consumers append work to this submission. The target slot and current
++            // video pixel buffers remain alive until every appended pass completes.
++            onRenderTexture(sceneTarget, command)
++        }
+         let videoFrames = videoFramesInFlight
+         command.addCompletedHandler { [inFlight, renderTargets, targetSlot, weak self] buffer in
+             withExtendedLifetime(videoFrames) {}

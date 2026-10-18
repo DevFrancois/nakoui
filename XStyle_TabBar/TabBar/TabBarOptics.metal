@@ -1,11 +1,15 @@
 #include <metal_stdlib>
 using namespace metal;
 
-// Swift twin: TabBarOpticsUniforms. Three SIMD4<Float> values, 48 bytes.
+// Swift twin: TabBarOpticsRenderer.Uniforms. Seven SIMD4<Float> values, 112 bytes.
 struct TabBarOpticsUniforms {
     float4 geometry; // capsule width/height (points), drawable pixels/point, dark appearance
-    float4 capture;  // capsule origin in captured crop (points), crop width/height (points)
+    float4 capture;  // capsule origin in current UI crop, crop width/height (points)
     float4 material; // light angle (radians), highlight, sampling reach (points), reduce transparency
+    float4 visibleRect; // current UI crop visible minX/minY/maxX/maxY (points)
+    float4 previousCapture; // previous UI crop x/y/width/height in window points
+    float4 sceneRect; // owned Carousel crop x/y/width/height in window points
+    float4 feed; // current UI crop window x/y, UI interpolation, has Carousel
 };
 
 struct TabBarOpticsVertexOutput {
@@ -18,6 +22,26 @@ vertex TabBarOpticsVertexOutput tabBarOpticsVertex(uint vertexID [[vertex_id]]) 
     const float2 positions[] = { float2(-1, -1), float2(3, -1), float2(-1, 3) };
     float2 p = positions[vertexID];
     return { float4(p, 0, 1), float2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5) };
+}
+
+static float3 tabBarLinearToSRGB(float3 value) {
+    value = max(value, float3(0));
+    return select(value * 12.92, 1.055 * powr(value, float3(1.0 / 2.4)) - 0.055,
+                  value > 0.0031308);
+}
+
+static float3 tabBarSRGBToLinear(float3 value) {
+    value = max(value, float3(0));
+    return select(value / 12.92, powr((value + 0.055) / 1.055, float3(2.4)),
+                  value > 0.04045);
+}
+
+// Decode each newly captured BGRA8Unorm UI texel once. Subsequent bilinear
+// samples and rim filtering operate on cached linear-premultiplied RGBA16Float
+// rather than repeating nonlinear color conversion for every reflection tap.
+static float4 tabBarDecodeUICapture(float4 value) {
+    if (value.a <= 0) return 0;
+    return float4(tabBarSRGBToLinear(saturate(value.rgb / value.a)) * value.a, value.a);
 }
 
 static float tabBarCapsuleDistance(float2 p, float2 size, thread float2 &normal) {
@@ -57,65 +81,97 @@ static void tabBarLaminateRim(float distance, float bevel, float pixel, float2 r
     through *= float3(1 - shade) - float3(0.010, 0.003, 0.001) * soft * fillLobe;
 }
 
+// Both UI captures and the owned Carousel crop use premultiplied alpha. Never
+// clamp a sample from outside a source onto its border: that would smear colors
+// into unrelated regions and leak clipped/offscreen content into the optics.
+static float4 tabBarSampleTexture(float2 point, float2 size, float4 visible,
+                                 texture2d<float> texture) {
+    if (any(size <= 0)) return 0;
+    float2 texel = size / float2(texture.get_width(), texture.get_height());
+    float2 visibleMin = (ceil(max(visible.xy, float2(0)) / texel) + 0.5) * texel;
+    float2 visibleMax = (floor(min(visible.zw, size) / texel) - 0.5) * texel;
+    if (any(point < visibleMin) || any(point > visibleMax)) return 0;
+    constexpr sampler sampling(coord::normalized, address::clamp_to_edge, filter::linear);
+    return texture.sample(sampling, point / size, level(0));
+}
+
+static float4 tabBarSampleFeeds(float2 point, constant TabBarOpticsUniforms &u,
+                               texture2d<float> previousUI, texture2d<float> currentUI,
+                               texture2d<float> scene) {
+    float2 windowPoint = u.feed.xy + point;
+    float interpolation = saturate(u.feed.z);
+    float4 current = tabBarSampleTexture(point, u.capture.zw, u.visibleRect, currentUI);
+    float4 ui = current;
+    // Once the blend has finished, avoid a second UI texture read for every
+    // blur tap. The window-coordinate mapping also handles moving crop bounds.
+    if (interpolation < 1) {
+        float4 previous = tabBarSampleTexture(windowPoint - u.previousCapture.xy,
+                                              u.previousCapture.zw,
+                                              float4(0, 0, u.previousCapture.zw), previousUI);
+        ui = mix(previous, current, interpolation);
+    }
+    if (u.feed.w > 0.5) {
+        float4 live = tabBarSampleTexture(windowPoint - u.sceneRect.xy, u.sceneRect.zw,
+                                         float4(0, 0, u.sceneRect.zw), scene);
+        ui = live + ui * (1 - live.a);
+    }
+    return ui;
+}
+
 static void tabBarAccumulateSample(float2 point, float weight,
                                    constant TabBarOpticsUniforms &u,
-                                   texture2d<float> backdrop,
-                                   thread float3 &color, thread float &total) {
-    float2 cropSize = max(u.capture.zw, float2(1));
-    float2 halfTexel = cropSize / float2(backdrop.get_width(), backdrop.get_height()) * 0.5;
-    if (any(point < halfTexel) || any(point > cropSize - halfTexel)) return;
-
-    // The window capture includes this view. Reject its entire bounding rectangle,
-    // not just its curved silhouette, plus a six-point gutter AND the bilinear
-    // footprint. No icon, selection highlight or prior optical frame can feed back.
-    float2 excludedMin = u.capture.xy - 6.0 - halfTexel;
-    float2 excludedMax = u.capture.xy + u.geometry.xy + 6.0 + halfTexel;
-    if (all(point >= excludedMin) && all(point <= excludedMax)) return;
-
-    constexpr sampler sampling(coord::normalized, address::clamp_to_edge, filter::linear);
-    float4 seen = backdrop.sample(sampling, point / cropSize, level(0));
-    float sampleWeight = weight * seen.a;
-    color += seen.rgb / max(seen.a, 1e-4) * sampleWeight;
-    total += sampleWeight;
+                                   texture2d<float> previousUI, texture2d<float> currentUI,
+                                   texture2d<float> scene,
+                                   thread float3 &color, thread float &total, thread float &support) {
+    float4 seen = tabBarSampleFeeds(point, u, previousUI, currentUI, scene);
+    color += seen.rgb * weight;
+    total += weight * seen.a;
+    support += weight;
 }
 
 static void tabBarSampleSide(float2 origin, float2 direction, float weight, float blur,
-                            constant TabBarOpticsUniforms &u, texture2d<float> backdrop,
-                            thread float3 &color, thread float &total) {
+                            constant TabBarOpticsUniforms &u, texture2d<float> previousUI,
+                            texture2d<float> currentUI, texture2d<float> scene,
+                            thread float3 &color, thread float &total, thread float &support) {
     float2 tangent = float2(-direction.y, direction.x);
     // Finite Gaussian-like footprint. Every individual tap is checked before
-    // sampling, including taps that straddle the screen boundary or exclusion.
-    tabBarAccumulateSample(origin, weight * 0.28, u, backdrop, color, total);
-    tabBarAccumulateSample(origin + tangent * blur, weight * 0.12, u, backdrop, color, total);
-    tabBarAccumulateSample(origin - tangent * blur, weight * 0.12, u, backdrop, color, total);
-    tabBarAccumulateSample(origin + direction * blur, weight * 0.12, u, backdrop, color, total);
-    tabBarAccumulateSample(origin - direction * blur, weight * 0.12, u, backdrop, color, total);
+    // sampling, including taps that straddle a crop's visible boundary.
+    tabBarAccumulateSample(origin, weight * 0.28, u, previousUI, currentUI, scene, color, total, support);
+    tabBarAccumulateSample(origin + tangent * blur, weight * 0.12, u, previousUI, currentUI, scene, color, total, support);
+    tabBarAccumulateSample(origin - tangent * blur, weight * 0.12, u, previousUI, currentUI, scene, color, total, support);
+    tabBarAccumulateSample(origin + direction * blur, weight * 0.12, u, previousUI, currentUI, scene, color, total, support);
+    tabBarAccumulateSample(origin - direction * blur, weight * 0.12, u, previousUI, currentUI, scene, color, total, support);
     float2 diagonal = (tangent + direction) * (blur * 0.7);
     float2 otherDiagonal = (tangent - direction) * (blur * 0.7);
-    tabBarAccumulateSample(origin + diagonal, weight * 0.06, u, backdrop, color, total);
-    tabBarAccumulateSample(origin - diagonal, weight * 0.06, u, backdrop, color, total);
-    tabBarAccumulateSample(origin + otherDiagonal, weight * 0.06, u, backdrop, color, total);
-    tabBarAccumulateSample(origin - otherDiagonal, weight * 0.06, u, backdrop, color, total);
+    tabBarAccumulateSample(origin + diagonal, weight * 0.06, u, previousUI, currentUI, scene, color, total, support);
+    tabBarAccumulateSample(origin - diagonal, weight * 0.06, u, previousUI, currentUI, scene, color, total, support);
+    tabBarAccumulateSample(origin + otherDiagonal, weight * 0.06, u, previousUI, currentUI, scene, color, total, support);
+    tabBarAccumulateSample(origin - otherDiagonal, weight * 0.06, u, previousUI, currentUI, scene, color, total, support);
 }
 
 static float4 tabBarNearbyColor(float2 point, float inward, float2 normal, float bandDepth,
-                               constant TabBarOpticsUniforms &u, texture2d<float> backdrop) {
+                               constant TabBarOpticsUniforms &u, texture2d<float> previousUI,
+                               texture2d<float> currentUI, texture2d<float> scene) {
     float t = saturate(inward / bandDepth);
     if (t >= 1 || u.material.z <= 0) return 0;
 
     // Carousel's circular lens profile reaches furthest out at the contour, and
-    // settles inward. Here rays stop outside the receiver to avoid sampling the
-    // tab bar captured in the window. The color always comes from real pixels.
+    // settles inward. The UI crop excludes the bar to avoid feedback; direct
+    // Carousel pixels underneath the receiver remain valid sources.
     float circular = 1 - sqrt(t * (2 - t));
     float reach = max(u.material.z, 8.0);
     float outside = 8.0 + reach * 0.55 * circular;
     float blur = min(reach * 0.23, mix(10.0, 22.0, smoothstep(0.0, 0.65, t)));
     float2 size = u.geometry.xy;
-    float2 cropPoint = u.capture.xy + point;
+    float2 sourcePoint = u.capture.xy + point;
     float2 directions[] = { float2(-1, 0), float2(1, 0), float2(0, -1), float2(0, 1) };
     float distances[] = { point.x, size.x - point.x, point.y, size.y - point.y };
     float3 color = 0;
     float total = 0;
+    float support = 0;
+
+    tabBarSampleSide(sourcePoint + normal * (reach * 0.55 * circular), normal,
+                     1.0, blur, u, previousUI, currentUI, scene, color, total, support);
 
     for (uint side = 0; side < 4; ++side) {
         float2 direction = directions[side];
@@ -123,22 +179,24 @@ static float4 tabBarNearbyColor(float2 point, float inward, float2 normal, float
         float facing = saturate(dot(normal, direction));
         float proximity = 1.0 / (1.0 + (distance / reach) * (distance / reach));
         // The small opposing contribution matters at screen edges: if outward
-        // rays leave the captured window, the inward side remains a real source.
+        // rays leave the window's visible frame, the inward side remains a source.
         // Side anchors preserve the fragment's along-bar coordinate, so colors
         // change along the capsule rather than becoming a single averaged tint.
         float weight = (0.12 + 0.88 * facing * facing) * proximity;
-        float2 origin = cropPoint + direction * (distance + outside);
-        tabBarSampleSide(origin, direction, weight, blur, u, backdrop, color, total);
+        float2 origin = sourcePoint + direction * (distance + outside);
+        tabBarSampleSide(origin, direction, weight, blur, u, previousUI, currentUI, scene, color, total, support);
     }
 
     if (total <= 1e-4) return 0;
     float band = 1 - t;
-    return float4(color / total, 0.62 * band * band);
+    return float4(color / total, 0.62 * band * band * saturate(total / max(support, 1e-4)));
 }
 
 fragment float4 tabBarOpticsFragment(TabBarOpticsVertexOutput in [[stage_in]],
                                     constant TabBarOpticsUniforms &u [[buffer(0)]],
-                                    texture2d<float> backdrop [[texture(0)]]) {
+                                    texture2d<float> previousUI [[texture(0)]],
+                                    texture2d<float> currentUI [[texture(1)]],
+                                    texture2d<float> scene [[texture(2)]]) {
     float2 size = max(u.geometry.xy, float2(1));
     float2 point = in.uv * size;
     float2 normal;
@@ -149,15 +207,32 @@ fragment float4 tabBarOpticsFragment(TabBarOpticsVertexOutput in [[stage_in]],
 
     bool opaque = u.material.w > 0.5;
     float dark = saturate(u.geometry.w);
-    float baseAlpha = opaque ? 1.0 : mix(0.44, 0.38, dark);
+    float inward = max(-distance, 0.0);
+    float bandDepth = min(11.0, min(size.x, size.y) * 0.32);
+    // Keep the reflective contour translucent, then smoothly absorb the
+    // high-contrast content behind tab icons and labels. A uniform low alpha
+    // lets scrolling text compete with the controls even with accurate optics.
+    float bodyDepth = min(12.0, min(size.x, size.y) * 0.30);
+    float interior = smoothstep(min(3.5, bodyDepth * 0.3), bodyDepth, inward);
+    // This is the complete custom surface. No UIKit glass/backdrop effect is
+    // required. The denser neutral body supports text while the clear rim
+    // retains nearby colors, sharp highlights and the softer opposing glow.
+    float baseAlpha = opaque ? 1.0 : mix(mix(0.30, 0.24, dark), mix(0.88, 0.90, dark), interior);
     float3 neutral = float3(mix(0.90, 0.018, dark));
     float3 light = neutral * baseAlpha;
     float3 through = float3(1 - baseAlpha);
 
-    float bandDepth = min(11.0, min(size.x, size.y) * 0.32);
-    float inward = max(-distance, 0.0);
     if (!opaque) {
-        float4 nearby = tabBarNearbyColor(point, inward, normal, max(bandDepth, 1.0), u, backdrop);
+        // Let real source colors tint the body, without reintroducing sharp
+        // background text at the center. The capture excludes this surface;
+        // Carousel's independent pixels remain valid underneath it as well.
+        float2 sourcePoint = u.capture.xy + point;
+        float4 body = tabBarSampleFeeds(sourcePoint + normal * 3.0, u, previousUI, currentUI, scene);
+        float bodyWeight = mix(0.10, 0.02, interior);
+        float bodyAlpha = bodyWeight * body.a;
+        light = light * (1 - bodyAlpha) + body.rgb * bodyWeight;
+        through *= 1 - bodyAlpha;
+        float4 nearby = tabBarNearbyColor(point, inward, normal, max(bandDepth, 1.0), u, previousUI, currentUI, scene);
         light = mix(light, nearby.rgb, nearby.a);
         through *= 1 - nearby.a;
     }
@@ -167,6 +242,40 @@ fragment float4 tabBarOpticsFragment(TabBarOpticsVertexOutput in [[stage_in]],
     tabBarLaminateRim(distance, 2.1, pixel, normal, nov, u, light, through);
     // Standard premultiplied source-over: approximate the rim's slightly colored
     // attenuation with scalar transmission, without dual-source blending.
-    float alpha = saturate(1 - dot(through, float3(1.0 / 3.0)));
-    return float4(clamp(light, float3(0), float3(alpha)), alpha) * coverage;
+    float attenuation = 1 - dot(through, float3(1.0 / 3.0));
+    // A glint adds light even on a transparent base. Give it enough coverage
+    // for valid premultiplied output without clipping it to the darkening lobe.
+    float alpha = saturate(max(attenuation, max(light.r, max(light.g, light.b))));
+    float4 linearPremultiplied = float4(clamp(light, float3(0), float3(alpha)), alpha) * coverage;
+    // CAMetalLayer/Core Animation composites encoded premultiplied sRGB bytes.
+    // A plain linear-premultiplied write to an _srgb target would encode RGB
+    // after premultiplication: e.g. 0.27 RGB / 0.30 alpha becomes 0.556 / 0.30,
+    // blowing the translucent surface out to white. Encode straight color,
+    // multiply in encoded space, then undo the target's automatic encoding.
+    float3 encodedPremultiplied = tabBarLinearToSRGB(
+        linearPremultiplied.rgb / max(linearPremultiplied.a, 1e-6)) * linearPremultiplied.a;
+    return float4(tabBarSRGBToLinear(encodedPremultiplied), linearPremultiplied.a);
+}
+
+// Copy only the visible, nearby part of Carousel into a consumer-owned texture
+// while the producer command buffer still owns its frame. This stays entirely
+// on the GPU and preserves premultiplied alpha for source-over composition.
+fragment float4 tabBarSceneCopyFragment(TabBarOpticsVertexOutput in [[stage_in]],
+                                        constant float4 &sourceRect [[buffer(0)]],
+                                        texture2d<float> scene [[texture(0)]]) {
+    constexpr sampler sampling(coord::normalized, address::clamp_to_edge, filter::linear);
+    float2 size = float2(scene.get_width(), scene.get_height());
+    float2 firstCenter = (ceil(max(sourceRect.xy, float2(0)) * size) + 0.5) / size;
+    float2 lastCenter = (floor(min(sourceRect.xy + sourceRect.zw, float2(1)) * size) - 0.5) / size;
+    if (any(firstCenter > lastCenter)) return 0;
+    float2 uv = clamp(sourceRect.xy + in.uv * sourceRect.zw, firstCenter, lastCenter);
+    return scene.sample(sampling, uv, level(0));
+}
+
+// A small preparation pass runs only when a new CPU UI capture arrives. The
+// output has the same dimensions and linear premultiplication as GPU scenes.
+fragment float4 tabBarPrepareUIFragment(TabBarOpticsVertexOutput in [[stage_in]],
+                                        texture2d<float> capture [[texture(0)]]) {
+    uint2 pixel = min(uint2(in.position.xy), uint2(capture.get_width(), capture.get_height()) - 1);
+    return tabBarDecodeUICapture(capture.read(pixel));
 }
