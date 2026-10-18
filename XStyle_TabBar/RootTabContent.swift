@@ -6,6 +6,10 @@ struct RootTabContent<Home: View>: View {
     let scanner: ScannerModel
     @ViewBuilder let home: Home
     @State private var reflections = TabBarReflectionSource()
+    #if DEBUG
+    @State private var reflectionTuning = TabBarReflectionTuningStore()
+    @Environment(\.scenePhase) private var scenePhase
+    #endif
 
     var body: some View {
         // Preserve destination state and lifecycle, while each destination
@@ -45,5 +49,11 @@ struct RootTabContent<Home: View>: View {
         .modifier(GlassTabBarInset(selection: $selection))
         .environment(\.tabBarReflectionSource, reflections)
         .onChange(of: selection) { reflections.clear() }
+        #if DEBUG
+        .environment(\.tabBarReflectionTuning, reflectionTuning)
+        .onChange(of: scenePhase) {
+            if scenePhase != .active { reflectionTuning.flush() }
+        }
+        #endif
     }
 }

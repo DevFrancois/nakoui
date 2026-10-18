@@ -4,6 +4,17 @@ import UIKit
 /// A single custom Metal surface. Ordinary UI uses a small reusable shared
 /// texture; Carousel supplies GPU crops directly, including animated video.
 final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
+    var reflectionSettings: TabBarReflectionSettings {
+        get { renderer?.settings ?? .defaults }
+        set {
+            let value = newValue.sanitized()
+            guard renderer?.settings != value else { return }
+            // The existing display link picks up the snapshot next frame.
+            // Capture history, cadence, and Carousel leases remain intact.
+            renderer?.settings = value
+        }
+    }
+
     weak var reflectionSource: TabBarReflectionSource? {
         didSet {
             guard oldValue !== reflectionSource else { return }
@@ -23,6 +34,10 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     private let capture: TabBarUITextureCapture?
     private var cadence = TabBarCaptureCadence()
     private var displayLink: CADisplayLink?
+    private let drawableBroker = CarouselDrawableBroker<CAMetalDrawable>(
+        worker: DispatchQueue(label: "tabbar.drawable-broker", qos: .userInteractive))
+    private var presentationRevision: UInt64 = 0
+    private var presentationTime: CFTimeInterval = 0
     private weak var displayLinkScene: UIWindowScene?
     private weak var producerView: UIView?
     private var producerGeometry: TabBarReflectionGeometry?
@@ -42,10 +57,17 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     private var metricLastTick: CFTimeInterval = 0
     private var metricDrawCost: Double = 0
     private var metricDrawPeak: Double = 0
+    private var metricDraws = 0
     private var metricEntryHeadroom: Double = 0
     private var metricCaptureHeadroom: Double = 0
     private var metricUpdateHeadroom: Double = 0
     private var metricUpdateCount = 0
+    private var metricAcquisitionCost: Double = 0
+    private var metricAcquisitionPeak: Double = 0
+    private var metricEncodingCost: Double = 0
+    private var metricSubmissions = 0
+    private var metricAppearanceResets = 0
+    private var metricGeometryResets = 0
     #endif
 
     override init(frame: CGRect) {
@@ -54,6 +76,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         if let layer = view.layer as? CAMetalLayer {
             layer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
             layer.maximumDrawableCount = 3
+            layer.presentsWithTransaction = true
         }
         view.clearColor = MTLClearColorMake(0, 0, 0, 0)
         view.isOpaque = false
@@ -63,7 +86,9 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         view.enableSetNeedsDisplay = false
         view.isUserInteractionEnabled = false
         view.isAccessibilityElement = false
-        view.autoResizeDrawable = true
+        // Only the broker's preparation phase changes drawableSize. A layout
+        // update must never reconfigure it while nextDrawable runs off-main.
+        view.autoResizeDrawable = false
         metalView = view
         renderer = TabBarOpticsRenderer(view: view)
         capture = view.device.flatMap { TabBarUITextureCapture(device: $0) }
@@ -77,6 +102,15 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
             guard let self, self.logsMetrics else { return }
             self.metricFrames += 1
             self.metricGPUCost += max(0, duration)
+        }
+        if logsMetrics {
+            renderer?.onCPUFrame = { [weak self] acquisition, encoding in
+                guard let self else { return }
+                self.metricAcquisitionCost += acquisition
+                self.metricAcquisitionPeak = max(self.metricAcquisitionPeak, acquisition)
+                self.metricEncodingCost += encoding
+                self.metricSubmissions += 1
+            }
         }
         #endif
         NotificationCenter.default.addObserver(self, selector: #selector(resetAppearance),
@@ -92,13 +126,18 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    deinit { displayLink?.invalidate() }
+    deinit {
+        displayLink?.invalidate()
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        metalView.frame = bounds
-        metalView.contentScaleFactor = traitCollection.displayScale
-        layer.cornerRadius = min(bounds.width, bounds.height) / 2
+        if metalView.frame != bounds { metalView.frame = bounds }
+        if metalView.contentScaleFactor != traitCollection.displayScale {
+            metalView.contentScaleFactor = traitCollection.displayScale
+        }
+        let radius = min(bounds.width, bounds.height) / 2
+        if layer.cornerRadius != radius { layer.cornerRadius = radius }
         if previousSize != bounds.size {
             previousSize = bounds.size
             resetAppearance()
@@ -113,6 +152,10 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     }
 
     @objc private func resetAppearance() {
+        #if DEBUG
+        metricAppearanceResets += 1
+        #endif
+        invalidatePresentation()
         renderer?.clearScene()
         renderer?.currentUI = nil
         renderer?.previousUI = nil
@@ -148,48 +191,99 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         reflectionSource?.requestFrame()
     }
 
+    private var canDraw: Bool {
+        window?.windowScene?.activationState == .foregroundActive && isVisibleInWindow(self)
+    }
+
+    private var desiredDrawableSize: CGSize {
+        let scale = traitCollection.displayScale
+        return CGSize(width: max(1, (bounds.width * scale).rounded(.up)),
+                      height: max(1, (bounds.height * scale).rounded(.up)))
+    }
+
+    private func invalidatePresentation() {
+        presentationRevision &+= 1
+        drawableBroker.invalidate()
+    }
+
+    private func requestDraw() {
+        // Carousel's bounded broker replaces pending requests. A blocked driver
+        // can neither block UIKit nor accumulate obsolete reflection frames.
+        drawableBroker.request(prepare: { [weak self] in
+            guard let self, self.canDraw, let layer = self.metalView.layer as? CAMetalLayer else { return nil }
+            let size = self.desiredDrawableSize
+            if layer.drawableSize != size { layer.drawableSize = size }
+            return { layer.nextDrawable() }
+        }, consume: { [weak self] drawable, finish in
+            guard let self, self.canDraw,
+                  drawable.texture.width == Int(self.desiredDrawableSize.width),
+                  drawable.texture.height == Int(self.desiredDrawableSize.height) else { finish(); return }
+            self.draw(drawable, finish: finish)
+        })
+    }
+
+    private func draw(_ drawable: CAMetalDrawable, finish: @escaping () -> Void) {
+        guard let window, let renderer else { finish(); return }
+        // The UI may move while acquisition waits. Use the latest textures,
+        // geometry and tuning at handoff, never the request's older snapshot.
+        synchronizeGeometry(window: window, renderer: renderer)
+        renderer.currentUI = capture?.current
+        renderer.previousUI = capture?.previous
+        renderer.presentationTime = presentationTime
+        renderer.darkMode = traitCollection.userInterfaceStyle == .dark
+        renderer.reduceTransparency = UIAccessibility.isReduceTransparencyEnabled
+        #if DEBUG
+        let started = CACurrentMediaTime()
+        #endif
+        let revision = presentationRevision
+        let broker = drawableBroker
+        let submitted = autoreleasepool {
+            renderer.draw(in: metalView, drawable: drawable) { [weak self] command, present in
+                var pendingPresentation: (() -> Void)? = present
+                let resolve: (Bool) -> Void = { [weak self] scheduled in
+                    guard let presentation = pendingPresentation else { return }
+                    pendingPresentation = nil
+                    defer { finish() }
+                    guard let self, scheduled, self.canDraw,
+                          self.presentationRevision == revision else { return }
+                    presentation()
+                }
+                command.addScheduledHandler { _ in DispatchQueue.main.async { resolve(true) } }
+                command.addCompletedHandler { buffer in
+                    if buffer.status != .completed { DispatchQueue.main.async { resolve(false) } }
+                }
+                broker.submit { command.commit() }
+            }
+        }
+        if !submitted { finish() }
+        #if DEBUG
+        if logsMetrics {
+            let duration = CACurrentMediaTime() - started
+            metricDrawCost += duration
+            metricDrawPeak = max(metricDrawPeak, duration)
+            metricDraws += 1
+        }
+        #endif
+    }
+
     private func tick(_ link: CADisplayLink) {
         guard let window, let renderer, isVisibleInWindow(self),
               window.windowScene?.activationState == .foregroundActive else { return }
         #if DEBUG
         let tickStart = CACurrentMediaTime()
         #endif
-        let capsule = convert(bounds, to: window)
-        if capsule != previousCapsule {
-            previousCapsule = capsule
-            renderer.clearScene()
-            capture?.reset()
-            cadence.reset()
-            reflectionSource?.requestFrame()
-        }
-        renderer.capsuleInWindow = capsule
-        if let producerView {
-            let geometry = reflectionGeometry(from: producerView)
-            if geometry != producerGeometry {
-                producerGeometry = geometry
-                renderer.clearScene()
-                reflectionSource?.requestFrame()
-            }
-        }
-        renderer.currentUI = capture?.current
-        renderer.previousUI = capture?.previous
-        renderer.presentationTime = link.targetTimestamp
-        renderer.darkMode = traitCollection.userInterfaceStyle == .dark
+        synchronizeGeometry(window: window, renderer: renderer)
+        let capsule = renderer.capsuleInWindow
         renderer.reduceTransparency = UIAccessibility.isReduceTransparencyEnabled
-        // Submit the optical pass first; UI capture cannot delay this submission.
-        #if DEBUG
-        let drawStart = CACurrentMediaTime()
-        #endif
-        metalView.draw()
+        presentationTime = link.targetTimestamp
+        // One scene clock drives both capture and rendering. Capture is admitted
+        // before requesting a drawable, and all driver waits stay on the worker.
         let now = CACurrentMediaTime()
         let updateDeadline = UIUpdateInfo.current(for: self)?.completionDeadlineTime
         let captureDeadline = TabBarCaptureCadence.submissionDeadline(
             displayTarget: link.targetTimestamp, uiCompletion: updateDeadline)
         #if DEBUG
         if logsMetrics {
-            let drawCost = now - drawStart
-            metricDrawCost += drawCost
-            metricDrawPeak = max(metricDrawPeak, drawCost)
             metricEntryHeadroom += link.targetTimestamp - tickStart
             metricCaptureHeadroom += link.targetTimestamp - now
             if let updateDeadline {
@@ -212,13 +306,40 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
             metricCapturePeak = max(metricCapturePeak, capture.lastCaptureDuration)
             #endif
         }
+        requestDraw()
         #if DEBUG
         logMetrics(link)
         #endif
     }
 
+    private func synchronizeGeometry(window: UIWindow, renderer: TabBarOpticsRenderer) {
+        let capsule = convert(bounds, to: window)
+        if capsule != previousCapsule {
+            #if DEBUG
+            metricGeometryResets += 1
+            #endif
+            invalidatePresentation()
+            previousCapsule = capsule
+            renderer.clearScene()
+            capture?.reset()
+            cadence.reset()
+            reflectionSource?.requestFrame()
+        }
+        renderer.capsuleInWindow = capsule
+        if let producerView {
+            let geometry = reflectionGeometry(from: producerView)
+            if geometry != producerGeometry {
+                invalidatePresentation()
+                producerGeometry = geometry
+                renderer.clearScene()
+                reflectionSource?.requestFrame()
+            }
+        }
+    }
+
     func clearReflection(from view: UIView?) {
         guard view == nil || producerView === view else { return }
+        invalidatePresentation()
         producerView = nil
         producerGeometry = nil
         renderer?.clearScene()
@@ -289,20 +410,27 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         metricTicks += 1
         let elapsed = now - metricStart
         guard elapsed >= 2 else { return }
-        print(String(format: "TABBAR_METRICS ticks=%.1f gpuFPS=%.1f captures=%.1f captureMeanMS=%.2f captureMaxMS=%.2f gpuMS=%.2f drawMeanMS=%.2f drawMaxMS=%.2f entryHeadroomMS=%.2f captureHeadroomMS=%.2f updateHeadroomMS=%.2f updateSamples=%d longFrames=%d scene=%@",
+        print(String(format: "TABBAR_METRICS ticks=%.1f gpuFPS=%.1f captures=%.1f captureMeanMS=%.2f captureMaxMS=%.2f gpuMS=%.2f drawMeanMS=%.2f drawMaxMS=%.2f entryHeadroomMS=%.2f captureHeadroomMS=%.2f updateHeadroomMS=%.2f updateSamples=%d longFrames=%d acquisitionMeanMS=%.2f acquisitionMaxMS=%.2f encodingMeanMS=%.2f appearanceResets=%d geometryResets=%d thermalState=%d scene=%@",
                      Double(metricTicks) / elapsed, Double(metricFrames) / elapsed,
                      Double(metricCaptures) / elapsed, metricCaptureCost * 1000 / Double(max(1, metricCaptures)),
                      metricCapturePeak * 1000, metricGPUCost * 1000 / Double(max(1, metricFrames)),
-                     metricDrawCost * 1000 / Double(max(1, metricTicks)), metricDrawPeak * 1000,
+                     metricDrawCost * 1000 / Double(max(1, metricDraws)), metricDrawPeak * 1000,
                      metricEntryHeadroom * 1000 / Double(max(1, metricTicks)),
                      metricCaptureHeadroom * 1000 / Double(max(1, metricTicks)),
                      metricUpdateHeadroom * 1000 / Double(max(1, metricUpdateCount)), metricUpdateCount,
-                     metricLongFrames, producerView == nil ? "UI" : "Carousel+UI"))
+                     metricLongFrames,
+                     metricAcquisitionCost * 1000 / Double(max(1, metricSubmissions)), metricAcquisitionPeak * 1000,
+                     metricEncodingCost * 1000 / Double(max(1, metricSubmissions)),
+                     metricAppearanceResets, metricGeometryResets, ProcessInfo.processInfo.thermalState.rawValue,
+                     producerView == nil ? "UI" : "Carousel+UI"))
         metricStart = now
         metricTicks = 0; metricFrames = 0; metricCaptures = 0
         metricCaptureCost = 0; metricCapturePeak = 0; metricGPUCost = 0; metricLongFrames = 0
         metricDrawCost = 0; metricDrawPeak = 0; metricEntryHeadroom = 0; metricCaptureHeadroom = 0
+        metricDraws = 0
         metricUpdateHeadroom = 0; metricUpdateCount = 0
+        metricAcquisitionCost = 0; metricAcquisitionPeak = 0; metricEncodingCost = 0; metricSubmissions = 0
+        metricAppearanceResets = 0; metricGeometryResets = 0
     }
     #endif
 }

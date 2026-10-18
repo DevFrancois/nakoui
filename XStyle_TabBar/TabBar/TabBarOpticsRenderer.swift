@@ -4,7 +4,7 @@ import MetalKit
 /// Borrowed Carousel textures are copied on their producer's command buffer;
 /// only bounded, consumer-owned crops survive that submission.
 @MainActor
-final class TabBarOpticsRenderer: NSObject, MTKViewDelegate {
+final class TabBarOpticsRenderer: NSObject {
     private struct Uniforms {
         var geometry: SIMD4<Float>
         var capture: SIMD4<Float>
@@ -13,6 +13,9 @@ final class TabBarOpticsRenderer: NSObject, MTKViewDelegate {
         var previousCapture: SIMD4<Float>
         var sceneRect: SIMD4<Float>
         var feed: SIMD4<Float>
+        var reflection: SIMD4<Float>
+        var surface: SIMD4<Float>
+        var lighting: SIMD4<Float>
     }
 
     private final class SceneSlot {
@@ -39,13 +42,22 @@ final class TabBarOpticsRenderer: NSObject, MTKViewDelegate {
     var darkMode = false
     var reduceTransparency = false
     var presentationTime: CFTimeInterval = 0
+    var settings: TabBarReflectionSettings {
+        get { settingsValue }
+        set { settingsValue = newValue.sanitized() }
+    }
     var onGPUFrame: ((Double) -> Void)?
+    #if DEBUG
+    var onCPUFrame: ((_ drawableAcquisition: Double, _ encoding: Double) -> Void)?
+    #endif
 
     private let device: MTLDevice
     private let queue: MTLCommandQueue
     private let opticsPipeline: MTLRenderPipelineState
     private let copyPipeline: MTLRenderPipelineState
     private let prepareUIPipeline: MTLRenderPipelineState
+    private let washPipeline: MTLRenderPipelineState
+    private let washTexture: MTLTexture
     private let emptyTexture: MTLTexture
     private let slots = (0..<3).map { _ in SceneSlot() }
     // Two visible UI frames plus two possible in-flight readers. Never wait or
@@ -56,6 +68,7 @@ final class TabBarOpticsRenderer: NSObject, MTKViewDelegate {
     private var sequence: UInt64 = 0
     private var completedSequence: UInt64 = 0
     private var framesInFlight = 0
+    private var settingsValue = TabBarReflectionSettings.defaults
 
     init?(view: MTKView) {
         guard let device = view.device, let queue = device.makeCommandQueue(),
@@ -63,7 +76,8 @@ final class TabBarOpticsRenderer: NSObject, MTKViewDelegate {
               let vertex = library.makeFunction(name: "tabBarOpticsVertex"),
               let optics = library.makeFunction(name: "tabBarOpticsFragment"),
               let copy = library.makeFunction(name: "tabBarSceneCopyFragment"),
-              let prepareUI = library.makeFunction(name: "tabBarPrepareUIFragment") else { return nil }
+              let prepareUI = library.makeFunction(name: "tabBarPrepareUIFragment"),
+              let wash = library.makeFunction(name: "tabBarWashFragment") else { return nil }
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = vertex
         descriptor.colorAttachments[0].pixelFormat = view.colorPixelFormat
@@ -78,6 +92,9 @@ final class TabBarOpticsRenderer: NSObject, MTKViewDelegate {
             descriptor.fragmentFunction = prepareUI
             descriptor.colorAttachments[0].pixelFormat = .rgba16Float
             prepareUIPipeline = try device.makeRenderPipelineState(descriptor: descriptor)
+            descriptor.label = "Tab bar soft face color field"
+            descriptor.fragmentFunction = wash
+            washPipeline = try device.makeRenderPipelineState(descriptor: descriptor)
         } catch {
             NSLog("Tab bar optics pipeline failed: %@", String(describing: error))
             return nil
@@ -91,10 +108,20 @@ final class TabBarOpticsRenderer: NSObject, MTKViewDelegate {
         empty.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0,
                       withBytes: &transparent, bytesPerRow: 4)
         emptyTexture = empty
+        // This scratch field is written then sampled within each command on
+        // this renderer's one Metal 3 queue. Tracked resource hazards order its
+        // reuse between frames; no extra queue, CPU wait or per-frame allocation.
+        let washDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba16Float, width: 64, height: 1, mipmapped: false)
+        washDescriptor.storageMode = .private
+        washDescriptor.hazardTrackingMode = .tracked
+        washDescriptor.usage = [.renderTarget, .shaderRead]
+        guard let washTexture = device.makeTexture(descriptor: washDescriptor) else { return nil }
+        washTexture.label = "Tab bar 64-sample soft face tint"
+        self.washTexture = washTexture
         self.device = device
         self.queue = queue
         super.init()
-        view.delegate = self
     }
 
     func clearScene() {
@@ -156,17 +183,16 @@ final class TabBarOpticsRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
-
-    func draw(in view: MTKView) {
+    func draw(in view: MTKView, drawable: CAMetalDrawable,
+              submit: (MTLCommandBuffer, @escaping () -> Void) -> Void) -> Bool {
         // Drop rather than block the main thread when the GPU is behind.
         guard framesInFlight < 2, view.bounds.width > 0, view.bounds.height > 0,
-              let command = queue.makeCommandBuffer() else { return }
+              let command = queue.makeCommandBuffer() else { return false }
         let current = reduceTransparency ? nil : currentUI
         let previous = reduceTransparency ? nil : (previousUI ?? current)
         let scene = latestScene
         let captureRect = current?.rectInWindow ?? capsuleInWindow.insetBy(dx: -104, dy: -104)
-        guard captureRect.width > 0, captureRect.height > 0 else { return }
+        guard captureRect.width > 0, captureRect.height > 0 else { return false }
         let oldRect = previous?.rectInWindow ?? captureRect
         let duration = min(1.0 / 30, max(1.0 / 120,
             (current?.captureTime ?? 0) - (previous?.captureTime ?? 0)))
@@ -174,18 +200,35 @@ final class TabBarOpticsRenderer: NSObject, MTKViewDelegate {
             (presentationTime - (current?.captureTime ?? 0)) / duration))
         var uniforms = Uniforms(
             geometry: SIMD4(Float(view.bounds.width), Float(view.bounds.height),
-                            Float(view.drawableSize.width / view.bounds.width), darkMode ? 1 : 0),
+                            Float(CGFloat(drawable.texture.width) / view.bounds.width), darkMode ? 1 : 0),
             capture: SIMD4(Float(capsuleInWindow.minX - captureRect.minX),
                            Float(capsuleInWindow.minY - captureRect.minY),
                            Float(captureRect.width), Float(captureRect.height)),
-            material: SIMD4(-25 * .pi / 180, 2, 96, reduceTransparency ? 1 : 0),
+            material: SIMD4(Float(settings.lightDirectionDegrees) * .pi / 180,
+                            Float(settings.sharpHighlight), Float(settings.samplingDistance),
+                            reduceTransparency ? 1 : 0),
             visibleRect: current == nil ? .zero : SIMD4(0, 0, Float(captureRect.width), Float(captureRect.height)),
             previousCapture: vector(oldRect), sceneRect: vector(scene?.rect ?? .zero),
-            feed: SIMD4(Float(captureRect.minX), Float(captureRect.minY), Float(blend), scene == nil ? 0 : 1))
-        // Acquire the drawable before encoding preparation, so an unavailable
-        // drawable cannot leave an unsubmitted decoded frame in the cache.
-        guard let descriptor = view.currentRenderPassDescriptor,
-              let drawable = view.currentDrawable else { return }
+            feed: SIMD4(Float(captureRect.minX), Float(captureRect.minY), Float(blend), scene == nil ? 0 : 1),
+            reflection: SIMD4(Float(settings.reflectionStrength), Float(settings.reflectionWidth),
+                              Float(settings.saturation), Float(settings.softness)),
+            surface: SIMD4(Float(settings.surfaceOpacity), Float(settings.faceWash),
+                           settings.mode == .faceAndEdges ? 1 : 0, Float(settings.edgeDarkening)),
+            lighting: SIMD4(Float(settings.softGlow), Float(settings.sharpHighlightWidth),
+                            Float(settings.softGlowWidth), Float(settings.warmCoolBalance)))
+        // Carousel's broker supplies the drawable without blocking UIKit.
+        // Encoding uses the latest capture and settings after that handoff.
+        let descriptor = MTLRenderPassDescriptor()
+        descriptor.colorAttachments[0].texture = drawable.texture
+        descriptor.colorAttachments[0].loadAction = .clear
+        descriptor.colorAttachments[0].storeAction = .store
+        descriptor.colorAttachments[0].clearColor = view.clearColor
+        #if DEBUG
+        let encodingStart = onCPUFrame == nil ? 0 : CACurrentMediaTime()
+        defer {
+            onCPUFrame?(0, CACurrentMediaTime() - encodingStart)
+        }
+        #endif
         var prepared: [PreparedUI] = []
         var submitted = false
         defer {
@@ -196,16 +239,22 @@ final class TabBarOpticsRenderer: NSObject, MTKViewDelegate {
         let currentDecoded: DecodedUI?
         if let current {
             guard let decoded = prepare(current, keeping: [current, previous].compactMap { $0 },
-                                        command: command, prepared: &prepared) else { return }
+                                        command: command, prepared: &prepared) else { return false }
             currentDecoded = decoded
         } else { currentDecoded = nil }
         let previousDecoded: DecodedUI?
         if let previous {
             guard let decoded = prepare(previous, keeping: [current, previous].compactMap { $0 },
-                                        command: command, prepared: &prepared) else { return }
+                                        command: command, prepared: &prepared) else { return false }
             previousDecoded = decoded
         } else { previousDecoded = nil }
-        guard let encoder = command.makeRenderCommandEncoder(descriptor: descriptor) else { return }
+        if !reduceTransparency, settings.mode == .faceAndEdges, settings.faceWash > 0 {
+            guard encodeWash(command: command, uniforms: &uniforms,
+                             previous: previousDecoded?.texture ?? emptyTexture,
+                             current: currentDecoded?.texture ?? emptyTexture,
+                             scene: scene?.texture ?? emptyTexture) else { return false }
+        }
+        guard let encoder = command.makeRenderCommandEncoder(descriptor: descriptor) else { return false }
         // Only new captures are read by the GPU. Later display frames reuse the
         // decoded textures without leasing or reading Core Video storage again.
         for item in prepared { item.frame.retainGPURead() }
@@ -219,9 +268,9 @@ final class TabBarOpticsRenderer: NSObject, MTKViewDelegate {
         encoder.setFragmentTexture(previousDecoded?.texture ?? emptyTexture, index: 0)
         encoder.setFragmentTexture(currentDecoded?.texture ?? emptyTexture, index: 1)
         encoder.setFragmentTexture(scene?.texture ?? emptyTexture, index: 2)
+        encoder.setFragmentTexture(washTexture, index: 3)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
-        command.present(drawable)
         command.addCompletedHandler { [weak self, prepared, currentDecoded, previousDecoded, scene] completed in
             let duration = completed.gpuEndTime - completed.gpuStartTime
             let succeeded = completed.status == .completed
@@ -241,7 +290,34 @@ final class TabBarOpticsRenderer: NSObject, MTKViewDelegate {
         // Preparation and optics share this queue/submission. Subsequent cached
         // reads on the same queue are ordered after the preparing command too.
         submitted = true
-        command.commit()
+        command.enqueue()
+        submit(command) {
+            // presentsWithTransaction requires direct presentation on main
+            // after scheduling; the broker never waits for scheduling here.
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            drawable.present()
+            CATransaction.commit()
+        }
+        return true
+    }
+
+    private func encodeWash(command: MTLCommandBuffer, uniforms: inout Uniforms,
+                            previous: MTLTexture, current: MTLTexture, scene: MTLTexture) -> Bool {
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = washTexture
+        pass.colorAttachments[0].loadAction = .dontCare
+        pass.colorAttachments[0].storeAction = .store
+        guard let encoder = command.makeRenderCommandEncoder(descriptor: pass) else { return false }
+        encoder.label = "Prepare 64 soft face colors, nine feed samples each"
+        encoder.setRenderPipelineState(washPipeline)
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+        encoder.setFragmentTexture(previous, index: 0)
+        encoder.setFragmentTexture(current, index: 1)
+        encoder.setFragmentTexture(scene, index: 2)
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        encoder.endEncoding()
+        return true
     }
 
     private func prepare(_ frame: TabBarUITextureCapture.Frame,

@@ -9,6 +9,10 @@ final class GlassTabBarView: UIView {
         get { optics.reflectionSource }
         set { optics.reflectionSource = newValue }
     }
+    var reflectionSettings: TabBarReflectionSettings {
+        get { optics.reflectionSettings }
+        set { optics.reflectionSettings = newValue }
+    }
 
     private let surface = UIView()
     private let optics = TabBarOpticalSurface(frame: .zero)
@@ -16,6 +20,8 @@ final class GlassTabBarView: UIView {
     private let items = RootTab.allCases.map { GlassTabBarItemView(tab: $0) }
     private var selection: RootTab?
     private var axis: Axis = .horizontal
+    private var locale: Locale?
+    private var layoutDirection: UIUserInterfaceLayoutDirection?
 
     init() {
         super.init(frame: .zero)
@@ -51,11 +57,18 @@ final class GlassTabBarView: UIView {
     }
 
     func update(selection: RootTab, axis: Axis, locale: Locale, animated: Bool) {
+        let direction = effectiveUserInterfaceLayoutDirection
+        // Tuning updates only change uniforms. Keep labels and layout untouched
+        // unless the actual tab configuration has changed.
+        guard self.selection != selection || self.axis != axis || self.locale != locale
+                || layoutDirection != direction else { return }
         let selectionChanged = self.selection != selection
         let shouldAnimate = animated && self.axis == axis && self.selection != nil && selectionChanged && window != nil
         layoutIfNeeded()
         self.selection = selection
         self.axis = axis
+        self.locale = locale
+        layoutDirection = direction
 
         let changes = {
             for item in self.items {

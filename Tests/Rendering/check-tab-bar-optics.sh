@@ -11,5 +11,6 @@ trap 'rm -rf "$temp_dir"' EXIT HUP INT TERM
 xcrun -sdk iphoneos metal -c "$repo_dir/XStyle_TabBar/TabBar/TabBarOptics.metal" -o "$temp_dir/TabBarOptics-iOS.air"
 xcrun -sdk macosx metal -c "$repo_dir/XStyle_TabBar/TabBar/TabBarOptics.metal" -o "$temp_dir/TabBarOptics-macOS.air"
 xcrun -sdk macosx metallib "$temp_dir/TabBarOptics-macOS.air" -o "$temp_dir/TabBarOptics-macOS.metallib"
-xcrun -sdk macosx swiftc -O "$test_dir/TabBarOpticsGPUChecks.swift" -o "$temp_dir/checks"
+cp "$test_dir/TabBarOpticsGPUChecks.swift" "$temp_dir/main.swift"
+xcrun -sdk macosx swiftc -O "$repo_dir/XStyle_TabBar/TabBar/TabBarReflectionSettings.swift" "$temp_dir/main.swift" -o "$temp_dir/checks"
 "$temp_dir/checks" "$temp_dir/TabBarOptics-macOS.metallib"

@@ -10,6 +10,22 @@ struct Uniforms {
     var previousCapture: SIMD4<Float>
     var sceneRect: SIMD4<Float>
     var feed: SIMD4<Float>
+    var reflection = SIMD4<Float>.zero
+    var surface = SIMD4<Float>.zero
+    var lighting = SIMD4<Float>.zero
+
+    mutating func apply(_ settings: TabBarReflectionSettings) {
+        let settings = settings.sanitized()
+        material.x = Float(settings.lightDirectionDegrees) * .pi / 180
+        material.y = Float(settings.sharpHighlight)
+        material.z = Float(settings.samplingDistance)
+        reflection = SIMD4(Float(settings.reflectionStrength), Float(settings.reflectionWidth),
+                           Float(settings.saturation), Float(settings.softness))
+        surface = SIMD4(Float(settings.surfaceOpacity), Float(settings.faceWash),
+                        settings.mode == .faceAndEdges ? 1 : 0, Float(settings.edgeDarkening))
+        lighting = SIMD4(Float(settings.softGlow), Float(settings.sharpHighlightWidth),
+                         Float(settings.softGlowWidth), Float(settings.warmCoolBalance))
+    }
 }
 struct Scene {
     var name: String
@@ -45,10 +61,18 @@ let opticsPipeline = try makePipeline("tabBarOpticsFragment")
 let drawablePipeline = try makePipeline("tabBarOpticsFragment", format: .bgra8Unorm_srgb)
 let copyPipeline = try makePipeline("tabBarSceneCopyFragment")
 let prepareUIPipeline = try makePipeline("tabBarPrepareUIFragment", format: .rgba16Float)
+let washPipeline = try makePipeline("tabBarWashFragment", format: .rgba16Float)
+let washDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float,
+    width: 64, height: 1, mipmapped: false)
+washDescriptor.storageMode = .private
+washDescriptor.hazardTrackingMode = .tracked
+washDescriptor.usage = [.renderTarget, .shaderRead]
+let washTexture = device.makeTexture(descriptor: washDescriptor)!
 let colors: [SIMD4<Float>] = [SIMD4(1, 0, 0, 1), SIMD4(0, 1, 0, 1), SIMD4(0, 0, 1, 1)]
 var checks = 0
 var frameCount = 0
 var preparationPasses = 0
+var washPasses = 0
 func check(_ condition: @autoclosure () -> Bool, _ message: String) {
     checks += 1
     guard condition() else { print("FAIL: \(message)"); exit(1) }
@@ -78,6 +102,24 @@ func prepareUI(_ source: MTLTexture, command: MTLCommandBuffer) -> MTLTexture {
     preparationPasses += 1
     return output
 }
+func prepareWash(_ uniforms: Uniforms, previous: MTLTexture, current: MTLTexture,
+                 scene: MTLTexture, command: MTLCommandBuffer) {
+    guard uniforms.material.w < 0.5, uniforms.surface.z > 0.5, uniforms.surface.y > 0 else { return }
+    let pass = MTLRenderPassDescriptor()
+    pass.colorAttachments[0].texture = washTexture
+    pass.colorAttachments[0].loadAction = .dontCare
+    pass.colorAttachments[0].storeAction = .store
+    let encoder = command.makeRenderCommandEncoder(descriptor: pass)!
+    encoder.setRenderPipelineState(washPipeline)
+    var uniforms = uniforms
+    encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
+    encoder.setFragmentTexture(previous, index: 0)
+    encoder.setFragmentTexture(current, index: 1)
+    encoder.setFragmentTexture(scene, index: 2)
+    encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+    encoder.endEncoding()
+    washPasses += 1
+}
 func execute(_ output: MTLTexture, _ source: MTLTexture, _ pipeline: MTLRenderPipelineState, uniforms: Uniforms?, current: MTLTexture? = nil, scene: MTLTexture? = nil, copyRect: SIMD4<Float>? = nil) throws -> Result {
     let pass = MTLRenderPassDescriptor()
     pass.colorAttachments[0].texture = output
@@ -90,6 +132,10 @@ func execute(_ output: MTLTexture, _ source: MTLTexture, _ pipeline: MTLRenderPi
     if pipeline === opticsPipeline, let current, current !== source {
         preparedCurrent = prepareUI(current, command: command)
     } else { preparedCurrent = preparedSource }
+    if pipeline === opticsPipeline, let uniforms {
+        prepareWash(uniforms, previous: preparedSource, current: preparedCurrent,
+                    scene: scene ?? source, command: command)
+    }
     let encoder = command.makeRenderCommandEncoder(descriptor: pass)!
     encoder.setRenderPipelineState(pipeline)
     if var uniforms {
@@ -101,6 +147,7 @@ func execute(_ output: MTLTexture, _ source: MTLTexture, _ pipeline: MTLRenderPi
     encoder.setFragmentTexture(preparedSource, index: 0)
     encoder.setFragmentTexture(preparedCurrent, index: 1)
     encoder.setFragmentTexture(scene ?? source, index: 2)
+    encoder.setFragmentTexture(washTexture, index: 3)
     encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
     encoder.endEncoding()
     command.commit()
@@ -152,17 +199,20 @@ func texture(_ size: SIMD2<Int>, onePixel: Bool = false, gpuPremultiplied: Bool 
     source.replace(region: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0, withBytes: bytes, bytesPerRow: width * 4)
     return source
 }
-func render(_ scene: Scene, reduce: Bool = false, dark: Bool = false, onePixelSource: Bool = false, color: (SIMD2<Float>) -> SIMD4<Float>) throws -> Result {
+func render(_ scene: Scene, reduce: Bool = false, dark: Bool = false, onePixelSource: Bool = false,
+            overrides: ((inout Uniforms) -> Void)? = nil, color: (SIMD2<Float>) -> SIMD4<Float>) throws -> Result {
     let source = texture(scene.sourceSize, onePixel: onePixelSource, color: color)
-    let uniforms = Uniforms(
+    var uniforms = Uniforms(
         geometry: SIMD4(Float(scene.width), Float(scene.height), 2, dark ? 1 : 0),
         capture: SIMD4(scene.origin.x, scene.origin.y, Float(scene.sourceSize.x), Float(scene.sourceSize.y)),
-        material: SIMD4(-25 * .pi / 180, 2, 96, reduce ? 1 : 0),
+        material: SIMD4(-25 * .pi / 180, 1.5, 96, reduce ? 1 : 0),
         visibleRect: scene.visibleRect,
         previousCapture: SIMD4(0, 0, Float(scene.sourceSize.x), Float(scene.sourceSize.y)),
         sceneRect: .zero,
         feed: SIMD4(0, 0, 1, 0)
     )
+    uniforms.apply(.defaults)
+    overrides?(&uniforms)
     return try execute(target(scene.width * 2, scene.height * 2), source, opticsPipeline, uniforms: uniforms)
 }
 func distance(_ image: Result, x: Int, y: Int) -> Float {
@@ -251,12 +301,6 @@ var hidden = vertical
 hidden.visible = SIMD4(120, 160, 120, 160)
 let hiddenFrame = try render(hidden) { _ in colors[0] }
 check(difference(hiddenFrame, noSource) == 0, "empty visible rectangle contributes no scene pixels")
-let underBar = try render(vertical) { point in
-    let p = point - vertical.origin
-    return p.x >= 0 && p.x <= Float(vertical.width) && p.y >= 0 && p.y <= Float(vertical.height) ? colors[1] : .zero
-}
-let underPixel = underBar.pixel(6, 103), absentPixel = noSource.pixel(6, 103)
-check(underPixel.y - absentPixel.y > 0.005 && underPixel.x <= absentPixel.x, "valid scene pixels underneath the capsule contribute (no old exclusion)")
 let fullRed = try render(vertical) { _ in colors[0] }
 let quarterRed = try render(vertical) { _ in SIMD4(0.25, 0, 0, 0.25) }
 let fullDifference = fullRed.pixel(2, 103).x - noSource.pixel(2, 103).x
@@ -273,7 +317,7 @@ for scene in [vertical, horizontal] {
         let inside = lighting.values.enumerated().filter {
             distance(lighting, x: $0.offset % lighting.width, y: $0.offset / lighting.width) < -12.01
         }
-        let expectedAlpha: Float = dark ? 0.90 : 0.88
+        let expectedAlpha: Float = 0.88
         check(!inside.isEmpty && inside.allSatisfy { abs($0.element.w - expectedAlpha) < 1e-6 },
               "\(scene.name) \(appearance): no-source interior retains custom neutral thickness")
         check(lighting.values.contains { $0.x - $0.z > 0.005 },
@@ -291,8 +335,8 @@ for scene in [vertical, horizontal] {
         let colored = try render(scene, dark: dark) { _ in colors[0] }
         let coloredCenter = colored.pixel(Float(scene.width) / 2, Float(scene.height) / 2)
         let neutralCenter = lighting.pixel(Float(scene.width) / 2, Float(scene.height) / 2)
-        check(coloredCenter.x > neutralCenter.x && coloredCenter.w > neutralCenter.w,
-              "\(scene.name) \(appearance): valid texture pixels tint the custom frosted body")
+        check(coloredCenter.x > neutralCenter.x && abs(coloredCenter.w - neutralCenter.w) < 1e-6,
+              "\(scene.name) \(appearance): nearby colors wash the face without changing its uniform opacity")
         let opaqueRed = try render(scene, reduce: true, dark: dark) { _ in colors[0] }
         let opaqueBlue = try render(scene, reduce: true, dark: dark) { _ in colors[2] }
         validate(opaqueRed, name: "\(scene.name) \(appearance) reduced transparency")
@@ -304,23 +348,33 @@ for scene in [vertical, horizontal] {
 
     }
 }
-func renderFeeds(_ scene: Scene = vertical, previous: MTLTexture, current: MTLTexture, live: MTLTexture, interpolation: Float = 1, hasScene: Bool = true, previousRect: SIMD4<Float>? = nil, sceneRect: SIMD4<Float>? = nil, cropOrigin: SIMD2<Float> = .zero, reduce: Bool = false) throws -> Result {
+func renderFeeds(_ scene: Scene = vertical, previous: MTLTexture, current: MTLTexture, live: MTLTexture, interpolation: Float = 1, hasScene: Bool = true, previousRect: SIMD4<Float>? = nil, sceneRect: SIMD4<Float>? = nil, cropOrigin: SIMD2<Float> = .zero, reduce: Bool = false, overrides: ((inout Uniforms) -> Void)? = nil) throws -> Result {
     let fullRect = SIMD4(cropOrigin.x, cropOrigin.y, Float(scene.sourceSize.x), Float(scene.sourceSize.y))
-    let uniforms = Uniforms(
+    var uniforms = Uniforms(
         geometry: SIMD4(Float(scene.width), Float(scene.height), 2, 0),
         capture: SIMD4(scene.origin.x, scene.origin.y, Float(scene.sourceSize.x), Float(scene.sourceSize.y)),
-        material: SIMD4(-25 * .pi / 180, 2, 96, reduce ? 1 : 0),
+        material: SIMD4(-25 * .pi / 180, 1.5, 96, reduce ? 1 : 0),
         visibleRect: scene.visibleRect,
         previousCapture: previousRect ?? fullRect,
         sceneRect: sceneRect ?? fullRect,
         feed: SIMD4(cropOrigin.x, cropOrigin.y, interpolation, hasScene ? 1 : 0)
     )
+    uniforms.apply(.defaults)
+    overrides?(&uniforms)
     return try execute(target(scene.width * 2, scene.height * 2), previous, opticsPipeline, uniforms: uniforms, current: current, scene: live)
 }
 let redTexture = texture(vertical.sourceSize) { _ in colors[0] }
 let blueTexture = texture(vertical.sourceSize) { _ in colors[2] }
 let greenTexture = texture(vertical.sourceSize) { _ in colors[1] }
 let clearTexture = texture(SIMD2(1, 1)) { _ in .zero }
+let underBarTexture = texture(vertical.sourceSize, gpuPremultiplied: true) { point in
+    let p = point - vertical.origin
+    return p.x >= 0 && p.x <= Float(vertical.width) && p.y >= 0 && p.y <= Float(vertical.height) ? colors[1] : .zero
+}
+let underBar = try renderFeeds(previous: clearTexture, current: clearTexture, live: underBarTexture)
+let underPixel = underBar.pixel(6, 103), absentPixel = noSource.pixel(6, 103)
+check(underPixel.y - absentPixel.y > 0.005 && underPixel.x <= absentPixel.x,
+      "valid direct Carousel pixels underneath the capsule contribute independently of UI exclusion")
 let interpolationStart = try renderFeeds(previous: redTexture, current: blueTexture, live: clearTexture, interpolation: 0, hasScene: false)
 let interpolationMid = try renderFeeds(previous: redTexture, current: blueTexture, live: clearTexture, interpolation: 0.5, hasScene: false)
 let interpolationEnd = try renderFeeds(previous: redTexture, current: blueTexture, live: clearTexture, interpolation: 1, hasScene: false)
@@ -359,9 +413,11 @@ let maskedUI = texture(vertical.sourceSize) { p in
     return colors[2]
 }
 let maskedFrame = try renderFeeds(previous: maskedUI, current: maskedUI, live: clearTexture, hasScene: false)
-check(maskedFrame.pixel(2, 103).z > noSource.pixel(2, 103).z + 0.1, "whole-UI neighbors still light the rim when the entire bar plus six points is excluded")
-let maskedCenter = maskedFrame.pixel(22, 103), neutralCenter = noSource.pixel(22, 103)
-check(maskedCenter == neutralCenter, "cleared bar pixels cannot feed back into the frosted interior")
+let maskedRim = maskedFrame.pixel(2, 103)
+check(maskedRim.z > max(maskedRim.x, maskedRim.y) + 0.25,
+      "whole-UI neighbors strongly tint the rim when the entire bar plus six points is excluded")
+check(difference(maskedFrame, interpolationEnd) < 1e-6,
+      "changing excluded UI bar pixels cannot feed back into either the rim or face wash")
 let opaqueFeeds = try renderFeeds(previous: redTexture, current: blueTexture, live: greenTexture, reduce: true)
 let opaqueAbsent = try renderFeeds(previous: clearTexture, current: clearTexture, live: clearTexture, hasScene: false, reduce: true)
 check(difference(opaqueFeeds, opaqueAbsent) == 0, "Reduce Transparency suppresses both UI and Carousel feeds")
@@ -396,7 +452,8 @@ struct RawDrawable {
     }
 }
 func renderDrawable(dark: Bool, reduce: Bool = false, ui: MTLTexture = clearTexture,
-                    hasUI: Bool = false, live: MTLTexture = clearTexture, hasLive: Bool = false) throws -> RawDrawable {
+                    hasUI: Bool = false, live: MTLTexture = clearTexture, hasLive: Bool = false,
+                    overrides: ((inout Uniforms) -> Void)? = nil) throws -> RawDrawable {
     let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm_srgb,
         width: vertical.width * 2, height: vertical.height * 2, mipmapped: false)
     descriptor.storageMode = .shared
@@ -409,19 +466,23 @@ func renderDrawable(dark: Bool, reduce: Bool = false, ui: MTLTexture = clearText
     var uniforms = Uniforms(
         geometry: SIMD4(Float(vertical.width), Float(vertical.height), 2, dark ? 1 : 0),
         capture: SIMD4(vertical.origin.x, vertical.origin.y, Float(vertical.sourceSize.x), Float(vertical.sourceSize.y)),
-        material: SIMD4(-25 * .pi / 180, 2, 96, reduce ? 1 : 0),
+        material: SIMD4(-25 * .pi / 180, 1.5, 96, reduce ? 1 : 0),
         visibleRect: hasUI ? vertical.visibleRect : .zero,
         previousCapture: SIMD4(0, 0, Float(vertical.sourceSize.x), Float(vertical.sourceSize.y)),
         sceneRect: SIMD4(0, 0, Float(vertical.sourceSize.x), Float(vertical.sourceSize.y)),
         feed: SIMD4(0, 0, 1, hasLive ? 1 : 0))
+    uniforms.apply(.defaults)
+    overrides?(&uniforms)
     let command = queue.makeCommandBuffer()!
     let preparedUI = prepareUI(ui, command: command)
+    prepareWash(uniforms, previous: preparedUI, current: preparedUI, scene: live, command: command)
     let encoder = command.makeRenderCommandEncoder(descriptor: pass)!
     encoder.setRenderPipelineState(drawablePipeline)
     encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 0)
     encoder.setFragmentTexture(preparedUI, index: 0)
     encoder.setFragmentTexture(preparedUI, index: 1)
     encoder.setFragmentTexture(live, index: 2)
+    encoder.setFragmentTexture(washTexture, index: 3)
     encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
     encoder.endEncoding()
     command.commit()
@@ -461,7 +522,7 @@ func compositeInCoreGraphics(_ image: RawDrawable, over gray: CGFloat) -> SIMD4<
 for dark in [false, true] {
     let image = try renderDrawable(dark: dark)
     let center = image.pixel(image.width / 2, image.height / 2)
-    let alpha: Float = dark ? 0.90 : 0.88
+    let alpha: Float = 0.88
     let encoded = srgb(dark ? 0.018 : 0.90) * alpha
     check(validEncodedPremultiplication(image), "actual BGRA8_sRGB \(dark ? "dark" : "light") drawable: every encoded RGB channel is bounded by alpha")
     check(abs(center.x - encoded) < 0.005 && abs(center.w - alpha) < 0.005,
@@ -492,8 +553,8 @@ for dark in [false, true] {
     let rimContrast = whiteRim.x + 1 - whiteRim.w - blackRim.x
     check(centerContrast >= 0 && centerContrast < 0.22,
           "\(dark ? "dark" : "light") labels: center suppresses sampled and transmitted background text contrast")
-    check(rimContrast > 0.4 && centerContrast < rimContrast * 0.5,
-          "\(dark ? "dark" : "light") glass: translucent rim retains more background color than the readable center")
+    check(rimContrast > centerContrast * 1.3,
+          "\(dark ? "dark" : "light") material: stronger rim color retains uniform body opacity (center contrast \(centerContrast), rim \(rimContrast))")
 }
 let mixedDrawable = try renderDrawable(dark: false, ui: blueTexture, hasUI: true,
                                        live: halfGreenTexture, hasLive: true)
@@ -510,8 +571,18 @@ let edgeUI = texture(vertical.sourceSize) { point in
 let edgeScene = texture(vertical.sourceSize, gpuPremultiplied: true) { point in
     point.x < 119.3 ? SIMD4(0.25, 0.1, 0.04, 1) : .zero
 }
-let uiEdgeResult = try renderFeeds(previous: edgeUI, current: edgeUI, live: clearTexture, hasScene: false)
-let sceneEdgeResult = try renderFeeds(previous: clearTexture, current: clearTexture, live: edgeScene)
+// Compare the prepared source fields before UI's intentional feedback hole is
+// applied. That hole is not present in a direct scene, so a clear/colored edge
+// crossing the capsule is intentionally different in the final optical pass.
+let edgePrepareCommand = queue.makeCommandBuffer()!
+let preparedEdge = prepareUI(edgeUI, command: edgePrepareCommand)
+edgePrepareCommand.commit()
+edgePrepareCommand.waitUntilCompleted()
+if let error = edgePrepareCommand.error { throw error }
+let uiEdgeResult = try execute(target(321, 501), preparedEdge, copyPipeline,
+                              uniforms: nil, copyRect: SIMD4(0, 0, 1, 1))
+let sceneEdgeResult = try execute(target(321, 501), edgeScene, copyPipeline,
+                                 uniforms: nil, copyRect: SIMD4(0, 0, 1, 1))
 check(difference(uiEdgeResult, sceneEdgeResult) < 0.006,
       "prepared linear UI preserves dim premultiplied color at bilinear clear-mask edges")
 let tinyRawDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm,
@@ -540,4 +611,136 @@ check(abs(tinyLinear[6] - linear(0.5) * (128.0 / 255)) < 0.001 && tinyLinear[4] 
 check(abs(tinyLinear[9] - linear(64.0 / 255)) < 0.001 && tinyLinear[11] == 1,
       "prepare UI pass: pixel rows retain top-left orientation")
 check(tinyLinear[12..<16].allSatisfy { $0 == 0 }, "prepare UI pass: cleared feedback hole stays exactly transparent")
-print("SUCCESS: \(checks) checks passed, \(frameCount) optics/copy frames on \(device.name), uniforms=\(MemoryLayout<Uniforms>.stride) bytes, UI preparation passes=\(preparationPasses). Exact production shader; no simulator/UI launched.")
+
+// Material shape and modes: the face is a slightly transparent solid, not a
+// clear outline around an unrelated opaque fill. These fixtures disable only
+// additive lighting so every fully covered pixel has the same declared alpha.
+check(MemoryLayout<Uniforms>.stride == 160, "Swift/Metal uniform contract is exactly ten SIMD4 values")
+for scene in [vertical, horizontal] {
+    for mode in TabBarReflectionSettings.Mode.allCases {
+        var tuning = TabBarReflectionSettings.defaults
+        tuning.mode = mode
+        tuning.reflectionStrength = 0
+        tuning.sharpHighlight = 0
+        tuning.softGlow = 0
+        tuning.edgeDarkening = 0
+        let material = try render(scene, overrides: { $0.apply(tuning) }) { _ in colors[2] }
+        let solidPixels = material.values.enumerated().filter {
+            distance(material, x: $0.offset % material.width, y: $0.offset / material.width) < -0.26
+        }
+        check(solidPixels.allSatisfy { abs($0.element.w - 0.88) < 1e-6 },
+              "\(scene.name) \(mode.rawValue): uniform 88% opacity reaches the rim and center")
+        let center = material.pixel(Float(scene.width) / 2, Float(scene.height) / 2)
+        if mode == .mostlyEdges {
+            check(abs(center.x - center.z) < 1e-6 && abs(center.x - 0.90 * 0.88) < 1e-5,
+                  "\(scene.name): edge-only mode leaves a neutral face")
+        } else {
+            check(center.z > center.x + 0.10,
+                  "\(scene.name): Face + Edges adds a soft nearby-color wash to the same solid face")
+        }
+    }
+    let colorBands = try render(scene, dark: true) { bandColor(scene, $0) }
+    for channel in 0..<3 {
+        let fraction = Float(channel * 2 + 1) / 6
+        let point = scene.height > scene.width
+            ? colorBands.pixel(Float(scene.width) / 2, Float(scene.height) * fraction)
+            : colorBands.pixel(Float(scene.width) * fraction, Float(scene.height) / 2)
+        check(point[channel] > max(point[(channel + 1) % 3], point[(channel + 2) % 3]) + 0.01,
+              "\(scene.name): 64-texel face field keeps longitudinal color band \(channel)")
+    }
+}
+
+// The outward side of a screen-edge capsule must retain nearby inward colors.
+// This specifically fails the previous normalization by all requested rays.
+var duoEdge = vertical
+duoEdge.origin.x = Float(duoEdge.sourceSize.x - duoEdge.width - 8)
+let duoBlue = try render(duoEdge) { _ in colors[2] }
+let outward = duoBlue.pixel(Float(duoEdge.width) - 2, 103)
+check(outward.z - max(outward.x, outward.y) > 0.25,
+      "Duo outward rim remains strongly blue when outward sampling rays leave the screen")
+var bottomEdge = horizontal
+bottomEdge.origin.y = Float(bottomEdge.sourceSize.y - bottomEdge.height - 8)
+let bottomGreen = try render(bottomEdge) { _ in colors[1] }
+let bottom = bottomGreen.pixel(180, Float(bottomEdge.height) - 2)
+check(bottom.y - max(bottom.x, bottom.z) > 0.25,
+      "bottom phone rim remains strongly green when lower sampling rays leave the screen")
+
+// Boundary onset: translate a tiny available source footprint through the
+// filter. Eligibility comes from geometry, never an alpha threshold. Uniform
+// translucent content remains proportional even at the screen edge.
+let duoQuarter = try render(duoEdge) { _ in SIMD4(0, 0, 0.25, 0.25) }
+let quarterOutward = duoQuarter.pixel(Float(duoEdge.width) - 2, 103)
+let fullChroma = outward.z - outward.x
+let quarterChroma = quarterOutward.z - quarterOutward.x
+check(quarterChroma > 0 && quarterChroma < fullChroma * 0.4,
+      "screen-edge normalization preserves actual fractional source alpha")
+var previousBoundary: SIMD4<Float>?
+var boundaryPeak: Float = 0
+var boundaryFirst: SIMD4<Float>?
+var boundaryLast: SIMD4<Float> = .zero
+for step in 0...250 {
+    var boundary = vertical
+    boundary.origin.x = 280 - Float(step) * 0.1
+    let frame = try render(boundary, dark: true, overrides: { $0.surface.z = 0 }) { _ in colors[2] }
+    let pixel = frame.pixel(2, 103)
+    if let previousBoundary {
+        let delta = abs(pixel.z - previousBoundary.z)
+        boundaryPeak = max(boundaryPeak, delta)
+    } else { boundaryFirst = pixel }
+    previousBoundary = pixel
+    boundaryLast = pixel
+}
+check(boundaryLast.z - boundaryFirst!.z > 0.15 && boundaryPeak < 0.12,
+      "source footprint enters smoothly rather than popping to full reflection (peak step \(boundaryPeak))")
+
+// Every public slider affects its expected mode and remains finite at both
+// endpoints. Use varied, unsaturated colors rather than pure RGB that would
+// hide saturation, reach and softness changes through clipping.
+func tuningColor(_ p: SIMD2<Float>) -> SIMD4<Float> {
+    let x = p.x / Float(vertical.sourceSize.x), y = p.y / Float(vertical.sourceSize.y)
+    return SIMD4(0.12 + 0.35 * y, 0.13 + 0.35 * x, 0.55 - 0.3 * y, 1)
+}
+for mode in TabBarReflectionSettings.Mode.allCases {
+    for parameter in TabBarReflectionSettings.Parameter.allCases {
+        var lower = TabBarReflectionSettings.defaults
+        lower.mode = mode
+        lower[keyPath: parameter.keyPath] = parameter.range.lowerBound
+        var upper = lower
+        upper[keyPath: parameter.keyPath] = parameter == .lightDirectionDegrees
+            ? 90 : parameter.range.upperBound // -180 and +180 are the same direction.
+        let low = try render(vertical, dark: true, overrides: { $0.apply(lower) }, color: tuningColor)
+        let high = try render(vertical, dark: true, overrides: { $0.apply(upper) }, color: tuningColor)
+        validate(low, name: "\(mode.rawValue) \(parameter.rawValue) minimum")
+        validate(high, name: "\(mode.rawValue) \(parameter.rawValue) maximum")
+        let delta = difference(low, high)
+        if mode == .mostlyEdges && parameter == .faceWash {
+            check(delta == 0, "edge-only mode ignores stored wash strength without changing shared values")
+        } else {
+            check(delta > 1e-5, "\(mode.rawValue): \(parameter.rawValue) reaches the shader and changes its material")
+        }
+    }
+}
+for mode in TabBarReflectionSettings.Mode.allCases {
+    for dark in [false, true] {
+        for maximum in [false, true] {
+            var extremes = TabBarReflectionSettings.defaults
+            extremes.mode = mode
+            for parameter in TabBarReflectionSettings.Parameter.allCases {
+                extremes[keyPath: parameter.keyPath] = maximum ? parameter.range.upperBound : parameter.range.lowerBound
+            }
+            let drawable = try renderDrawable(dark: dark, ui: blueTexture, hasUI: true,
+                                               live: halfGreenTexture, hasLive: true,
+                                               overrides: { $0.apply(extremes) })
+            check(validEncodedPremultiplication(drawable),
+                  "\(mode.rawValue) \(dark ? "dark" : "light") combined slider \(maximum ? "maxima" : "minima") remain valid encoded-premultiplied bytes")
+        }
+    }
+}
+let washCount = washPasses
+_ = try render(vertical, overrides: { $0.surface.z = 0 }) { _ in colors[0] }
+_ = try render(vertical, overrides: { $0.surface.y = 0 }) { _ in colors[0] }
+_ = try render(vertical, reduce: true) { _ in colors[0] }
+check(washPasses == washCount, "edge-only, zero wash and Reduce Transparency skip the field pass")
+_ = try render(vertical) { _ in colors[0] }
+check(washPasses == washCount + 1, "Face + Edges encodes one tiny field pass, independent of capsule pixel count")
+print("SUCCESS: \(checks) checks passed, \(frameCount) optics/copy frames on \(device.name), uniforms=\(MemoryLayout<Uniforms>.stride) bytes, UI preparation passes=\(preparationPasses), wash passes=\(washPasses). Exact production shader; no simulator/UI launched.")
