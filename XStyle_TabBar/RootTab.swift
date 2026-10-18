@@ -25,6 +25,15 @@ enum RootTab: Hashable, CaseIterable {
         }
     }
 
+    var accessibilityIdentifier: String {
+        switch self {
+        case .home: "rootTab.home"
+        case .scanner: "rootTab.scanner"
+        case .profile: "rootTab.profile"
+        case .search: "rootTab.search"
+        }
+    }
+
     /// What a tab will offer, shown until it's built.
     var placeholderDescription: LocalizedStringResource {
         switch self {
@@ -35,7 +44,6 @@ enum RootTab: Hashable, CaseIterable {
         }
     }
 
-    /// Tabs that only show a placeholder for now, in tab bar order. Search is
-    /// left out: its role places it apart, at the end of the bar.
+    /// Placeholder tabs between Scan and the final Search tab.
     static let placeholderTabs: [RootTab] = [.profile]
 }

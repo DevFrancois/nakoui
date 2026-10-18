@@ -71,7 +71,7 @@ struct ContentView: View {
         NavigationStack(path: $navigationPath) {
             // Inside the stack, so articles, quizzes and sidebar pages
             // cover the tab bar when pushed.
-            RootTabContent(selection: $rootTab, scanner: scanner) {
+            RootTabContent(selection: $rootTab, scanner: scanner, isTabBarVisible: navigationPath.isEmpty) {
                 HomeRootView(
                     title: mainTitle,
                     pager: pager,
