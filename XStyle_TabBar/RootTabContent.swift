@@ -3,6 +3,7 @@ import SwiftUI
 /// Root destinations share one selection while the enclosing stack owns pushes.
 struct RootTabContent<Home: View>: View {
     @Binding var selection: RootTab
+    var navigationPathIsEmpty = true
     let scanner: ScannerModel
     @ViewBuilder let home: Home
     @State private var reflections = TabBarReflectionSource()
@@ -53,6 +54,11 @@ struct RootTabContent<Home: View>: View {
         }
         // Inside the navigation root, so pushed pages cover the custom menu.
         .modifier(GlassTabBarInset(selection: $selection))
+        .background {
+            TabBarRootLifecycleObserver(source: reflections, pathIsEmpty: navigationPathIsEmpty)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
         .environment(\.tabBarReflectionSource, reflections)
         .onChange(of: selection) { reflections.clear() }
         #if DEBUG

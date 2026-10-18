@@ -40,6 +40,17 @@ final class TabBarOpticsRenderer: NSObject {
     var capsuleInWindow: CGRect = .zero
     var darkMode = false
     var reduceTransparency = false
+    /// Scales sampled reflection colors only, from 0 to 1, while they fade in.
+    var presence: Double = 1
+    /// Frozen inputs travel with the capsule while navigation moves its root.
+    /// No texture copy or successive-capture interpolation is involved.
+    private var anchors = TabBarReflectionAnchors()
+
+    func retainInputCoordinates() {
+        anchors.suspend(at: capsuleInWindow.origin, hasUI: currentUI != nil, hasScene: latestScene != nil)
+    }
+
+    func didCaptureUI() { anchors.replaceUI() }
     var settings: TabBarReflectionSettings {
         get { settingsValue }
         set { settingsValue = newValue.sanitized() }
@@ -64,6 +75,7 @@ final class TabBarOpticsRenderer: NSObject {
     // allocate beyond this bounded pool when a capture arrives ahead of the GPU.
     private let decodedUI = (0..<4).map { _ in DecodedUI() }
     private var latestScene: SceneSlot?
+    var hasScene: Bool { latestScene != nil }
     private var revision: UInt64 = 0
     private var sequence: UInt64 = 0
     private var completedSequence: UInt64 = 0
@@ -127,7 +139,13 @@ final class TabBarOpticsRenderer: NSObject {
     func clearScene() {
         revision &+= 1
         latestScene = nil
+        anchors.replaceScene()
         // In-flight slots keep their leases until both queues finish using them.
+    }
+
+    func invalidateScenePublications() {
+        revision &+= 1
+        // Retain latestScene; outstanding writes/readers release normally.
     }
 
     func encodeScene(texture: MTLTexture, commandBuffer: MTLCommandBuffer,
@@ -179,6 +197,7 @@ final class TabBarOpticsRenderer: NSObject {
                       frameSequence > self.completedSequence, canPublish() else { return }
                 self.completedSequence = frameSequence
                 self.latestScene = slot
+                self.anchors.replaceScene()
                 self.onSceneUpdate?()
             }
         }
@@ -195,9 +214,12 @@ final class TabBarOpticsRenderer: NSObject {
         // The shader's completed-blend path also avoids the old texture's taps.
         let previous = current
         let scene = latestScene
-        let captureRect = current?.rectInWindow ?? capsuleInWindow.insetBy(dx: -TabBarReflectionSettings.captureMargin, dy: -TabBarReflectionSettings.captureMargin)
+        let offset = anchors.uiOffset(at: capsuleInWindow.origin)
+        let sceneOffset = anchors.sceneOffset(at: capsuleInWindow.origin)
+        let captureRect = current?.rectInWindow.offsetBy(dx: offset.x, dy: offset.y)
+            ?? capsuleInWindow.insetBy(dx: -TabBarReflectionSettings.captureMargin, dy: -TabBarReflectionSettings.captureMargin)
         guard captureRect.width > 0, captureRect.height > 0 else { return false }
-        let oldRect = previous?.rectInWindow ?? captureRect
+        let oldRect = captureRect
         var uniforms = Uniforms(
             geometry: SIMD4(Float(view.bounds.width), Float(view.bounds.height),
                             Float(CGFloat(drawable.texture.width) / view.bounds.width), darkMode ? 1 : 0),
@@ -208,11 +230,11 @@ final class TabBarOpticsRenderer: NSObject {
                             Float(settings.sharpHighlight), Float(settings.samplingDistance),
                             reduceTransparency ? 1 : 0),
             visibleRect: current == nil ? .zero : SIMD4(0, 0, Float(captureRect.width), Float(captureRect.height)),
-            previousCapture: vector(oldRect), sceneRect: vector(scene?.rect ?? .zero),
+            previousCapture: vector(oldRect), sceneRect: vector(scene?.rect.offsetBy(dx: sceneOffset.x, dy: sceneOffset.y) ?? .zero),
             feed: SIMD4(Float(captureRect.minX), Float(captureRect.minY), 1, scene == nil ? 0 : 1),
-            reflection: SIMD4(Float(settings.reflectionStrength), Float(settings.reflectionWidth),
+            reflection: SIMD4(Float(settings.reflectionStrength * presence), Float(settings.reflectionWidth),
                               Float(settings.saturation), Float(settings.softness)),
-            surface: SIMD4(Float(settings.surfaceOpacity), Float(settings.faceWash),
+            surface: SIMD4(Float(settings.surfaceOpacity), Float(settings.faceWash * presence),
                            settings.mode == .faceAndEdges ? 1 : 0, Float(settings.edgeDarkening)),
             lighting: SIMD4(Float(settings.softGlow), Float(settings.sharpHighlightWidth),
                             Float(settings.softGlowWidth), Float(settings.warmCoolBalance)))

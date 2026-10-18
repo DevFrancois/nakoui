@@ -71,7 +71,7 @@ struct ContentView: View {
         NavigationStack(path: $navigationPath) {
             // Inside the stack, so articles, quizzes and sidebar pages
             // cover the tab bar when pushed.
-            RootTabContent(selection: $rootTab, scanner: scanner) {
+            RootTabContent(selection: $rootTab, navigationPathIsEmpty: navigationPath.isEmpty, scanner: scanner) {
                 HomeRootView(
                     title: mainTitle,
                     pager: pager,
@@ -89,6 +89,11 @@ struct ContentView: View {
                 }
             }
             .onChange(of: rootTab, rootTabDidChange)
+            #if DEBUG
+            .onAppear { traceReflectionRoot("appear") }
+            .onDisappear { traceReflectionRoot("disappear") }
+            .onChange(of: navigationPath.count) { traceReflectionRoot("path") }
+            #endif
             .onChange(of: voiceOverEnabled, voiceOverDidChange)
             .navigationTitle(mainTitle)
             .navigationBarTitleDisplayMode(.inline)
@@ -112,6 +117,13 @@ struct ContentView: View {
     private func canOpenSidebarFromAnywhere() -> Bool {
         AppFeatures.sideMenuEnabled && pager.isAtFirstPage
     }
+
+    #if DEBUG
+    private func traceReflectionRoot(_ event: String) {
+        guard ProcessInfo.processInfo.environment["TABBAR_LIFECYCLE"] == "1" else { return }
+        print("TABBAR_ROOT time=\(CACurrentMediaTime()) event=\(event) depth=\(navigationPath.count)")
+    }
+    #endif
 
     /// Asked as a touch begins. Pager position and motion are checked by the
     /// gesture against the live scroll view; the pager's recorded phase and

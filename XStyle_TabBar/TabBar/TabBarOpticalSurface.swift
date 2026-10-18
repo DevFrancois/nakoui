@@ -24,9 +24,10 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     weak var reflectionSource: TabBarReflectionSource? {
         didSet {
             guard oldValue !== reflectionSource else { return }
-            oldValue?.disconnect(self)
-            if window != nil { reflectionSource?.connect(self) }
-            resetAppearance()
+            oldValue?.stopObserving(self)
+            reflectionSource?.observe(self)
+            resetAppearance(reason: "source")
+            rootLifecycleChanged()
         }
     }
 
@@ -89,7 +90,26 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     private var needsProducerFrame = false
     // Hit tested once per tick, then reused by Carousel callbacks.
     private var isCapsuleOccluded = false
+    // The window this view left, while its last reflection is kept for return.
+    private weak var suspendedWindow: UIWindow?
+    // True while a navigation transition returns this view to its window.
+    private var holdsCaptureUntilSettled = true
+    private var isSuspended = true
+    private var wasHardInvalidated = true
+    private var retainedCompatibility: TabBarReflectionCompatibility?
+    private var stableCompatibility: TabBarReflectionCompatibility?
+    private var presence = TabBarReflectionPresence()
     #if DEBUG
+    private let tracesLifecycle = ProcessInfo.processInfo.environment["TABBAR_LIFECYCLE"] == "1"
+    private var tracedDraws = 0
+    private var tracedCaptures = 0
+
+    private func traceLifecycle(_ event: String, _ detail: String = "") {
+        guard tracesLifecycle else { return }
+        let frame = capture?.current
+        print("TABBAR_LIFECYCLE time=\(CACurrentMediaTime()) surface=\(ObjectIdentifier(self)) event=\(event) window=\(window.map { String(describing: ObjectIdentifier($0)) } ?? "nil") ui=\(frame?.captureTime ?? 0) uiID=\(frame.map { String(describing: ObjectIdentifier($0.texture)) } ?? "nil") uiRect=\(frame?.rectInWindow ?? .zero) scene=\(renderer?.hasScene ?? false) revision=\(contentRevision) capsule=\(convert(bounds, to: window)) viewport=\(window?.bounds ?? .zero) scale=\(traitCollection.displayScale) style=\(traitCollection.userInterfaceStyle.rawValue) hold=\(holdsCaptureUntilSettled) suspended=\(isSuspended) presence=\(presence.value(at: max(presentationTime, CACurrentMediaTime()))) \(detail)")
+    }
+
     private var uiMotionReason = "initial"
     private let logsMetrics = ProcessInfo.processInfo.environment["TABBAR_METRICS"] == "1"
     private let skipsUICapture = ProcessInfo.processInfo.environment["TABBAR_SKIP_UI_CAPTURE"] == "1"
@@ -148,16 +168,23 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         renderer = TabBarOpticsRenderer(view: view)
         capture = view.device.flatMap { TabBarUITextureCapture(device: $0) }
         super.init(frame: frame)
+        #if DEBUG
+        traceLifecycle("init")
+        #endif
         isUserInteractionEnabled = false
         isAccessibilityElement = false
         backgroundColor = .clear
         addSubview(metalView)
         renderer?.onSceneUpdate = { [weak self] in
-            self?.interactionWarmupEnds = 0
+            guard let self else { return }
+            self.interactionWarmupEnds = 0
+            self.presence.noteContent()
+            if self.stableCompatibility == nil { self.stableCompatibility = self.compatibility() }
+            self.wasHardInvalidated = false
             #if DEBUG
             TabBarPerformanceProbe.shared.scenePublished()
             #endif
-            self?.markContentChanged()
+            self.markContentChanged()
         }
         #if DEBUG
         renderer?.onGPUFrame = { [weak self] duration in
@@ -175,14 +202,18 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
             }
         }
         #endif
-        NotificationCenter.default.addObserver(self, selector: #selector(resetAppearance),
+        NotificationCenter.default.addObserver(self, selector: #selector(appearanceNotification(_:)),
                                               name: UIApplication.didBecomeActiveNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(resetAppearance),
+        NotificationCenter.default.addObserver(self, selector: #selector(appearanceNotification(_:)),
                                               name: UIApplication.willResignActiveNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(resetAppearance),
+        NotificationCenter.default.addObserver(self, selector: #selector(appearanceNotification(_:)),
                                               name: UIAccessibility.reduceTransparencyStatusDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(reduceMotionChanged),
+                                              name: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(dropSuspendedReflection),
+                                              name: UIApplication.didReceiveMemoryWarningNotification, object: nil)
         registerForTraitChanges([UITraitUserInterfaceStyle.self, UITraitDisplayScale.self]) {
-            (view: TabBarOpticalSurface, _: UITraitCollection) in view.resetAppearance()
+            (view: TabBarOpticalSurface, _: UITraitCollection) in view.resetAppearance(reason: "traits")
         }
     }
 
@@ -190,6 +221,9 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
 
     deinit {
         displayLink?.invalidate()
+        #if DEBUG
+        if tracesLifecycle { print("TABBAR_LIFECYCLE surface=\(ObjectIdentifier(self)) event=deinit") }
+        #endif
     }
 
     override func layoutSubviews() {
@@ -202,38 +236,162 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         if layer.cornerRadius != radius { layer.cornerRadius = radius }
         if previousSize != bounds.size {
             previousSize = bounds.size
-            resetAppearance()
+            resetAppearance(reason: "size")
         }
+        rootLifecycleChanged()
     }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        if interactionObserver.view !== window {
-            interactionObserver.view?.removeGestureRecognizer(interactionObserver)
-            activity.isInteracting = false
-            window?.addGestureRecognizer(interactionObserver)
-        }
-        if window == nil { reflectionSource?.disconnect(self) }
-        else { reflectionSource?.connect(self) }
-        resetAppearance()
+        #if DEBUG
+        tracedDraws = 0
+        tracedCaptures = 0
+        traceLifecycle("didMoveToWindow")
+        #endif
+        if window == nil { suspend() }
+        else { rootLifecycleChanged() }
     }
 
-    @objc private func resetAppearance() {
+    override func willMove(toWindow newWindow: UIWindow?) {
         #if DEBUG
+        traceLifecycle("willMoveToWindow", "newWindow=\(newWindow.map { String(describing: ObjectIdentifier($0)) } ?? "nil")")
+        #endif
+        // Save identity and freeze before UIKit removes the old coordinate space.
+        if newWindow !== window, window != nil {
+            if !isSuspended { suspendedWindow = window }
+            suspend()
+        }
+        super.willMove(toWindow: newWindow)
+    }
+
+    func rootLifecycleChanged() {
+        guard let source = reflectionSource else { return }
+        guard source.lifecycle.canRestore,
+              source.lifecycle.phase != .appeared || source.lifecycle.pathIsEmpty else {
+            suspend()
+            return
+        }
+        guard window != nil else { return }
+        if isSuspended { resume() }
+        else if !holdsCaptureUntilSettled, let stableCompatibility,
+                let current = compatibility(), current != stableCompatibility {
+            resetAppearance(reason: "root-layout")
+        }
+        if holdsCaptureUntilSettled, source.lifecycle.canCapture {
+            activity.noteChange(at: CACurrentMediaTime())
+            setLinkIdle(false)
+        }
+        // Only a display tick may open fresh capture/publication after didAppear.
+        // Layout callbacks can restore saved inputs but cannot sample a transition.
+    }
+
+    private func compatibility() -> TabBarReflectionCompatibility? {
+        guard let window, let source = reflectionSource, let root = source.rootView,
+              root.window === window, bounds.width > 0, bounds.height > 0,
+              root.bounds.width > 0, root.bounds.height > 0,
+              let capsule = TabBarStableLayout.rect(of: self, in: root) else { return nil }
+        let scale = traitCollection.displayScale
+        func aligned(_ rect: CGRect) -> CGRect {
+            CGRect(x: (rect.minX * scale).rounded() / scale,
+                   y: (rect.minY * scale).rounded() / scale,
+                   width: (rect.width * scale).rounded() / scale,
+                   height: (rect.height * scale).rounded() / scale)
+        }
+        return TabBarReflectionCompatibility(context: source.contentContext,
+            capsule: aligned(capsule), viewport: aligned(root.bounds),
+            windowBounds: window.bounds, scale: scale,
+            appearance: traitCollection.userInterfaceStyle.rawValue,
+            reduceTransparency: UIAccessibility.isReduceTransparencyEnabled)
+    }
+
+    /// Stop acquisition and publication, keeping the last settled inputs and
+    /// their bounded pools. Already committed draws/leases finish normally.
+    private func suspend() {
+        guard !isSuspended else { return }
+        #if DEBUG
+        traceLifecycle("suspend")
+        #endif
+        suspendedWindow = window
+        retainedCompatibility = stableCompatibility ?? compatibility()
+        renderer?.retainInputCoordinates()
+        isSuspended = true
+        holdsCaptureUntilSettled = true
+        reflectionSource?.disconnect(self)
+        renderer?.invalidateScenePublications()
+        // A soft suspension is not a hard presentation-generation reset.
+        drawableBroker.invalidate()
+        presentationState.invalidate()
+        interactionObserver.view?.removeGestureRecognizer(interactionObserver)
+        activity = TabBarRenderActivity()
+        interactionWarmupEnds = 0
+        startDisplayLinkIfNeeded()
+    }
+
+    private func resume() {
+        guard let window, let current = compatibility() else { return }
+        #if DEBUG
+        traceLifecycle("resume-check", "sameWindow=\(suspendedWindow === window) invalidated=\(wasHardInvalidated) saved=\(String(describing: retainedCompatibility)) current=\(current)")
+        #endif
+        let compatible = retainedCompatibility?.permitsResume(current,
+            sameWindow: suspendedWindow === window, invalidated: wasHardInvalidated) == true
+        isSuspended = false
+        holdsCaptureUntilSettled = true
+        if !compatible { resetAppearance(reason: "incompatible-resume") }
+        if interactionObserver.view !== window {
+            interactionObserver.view?.removeGestureRecognizer(interactionObserver)
+            window.addGestureRecognizer(interactionObserver)
+        }
+        // Initialize the presentation timeline before an immediate returning draw.
+        presentationTime = CACurrentMediaTime() + 1 / Double(window.screen.maximumFramesPerSecond)
+        contentRevision &+= 1
+        activity.noteChange(at: CACurrentMediaTime())
+        #if DEBUG
+        tracedDraws = 0
+        tracedCaptures = 0
+        traceLifecycle("resume", "compatible=\(compatible)")
+        #endif
+        startDisplayLinkIfNeeded()
+        if canDraw { requestDraw() }
+    }
+
+    @objc private func dropSuspendedReflection() {
+        if isSuspended { resetAppearance(reason: "memory") }
+    }
+
+    @objc private func appearanceNotification(_ notification: Notification) {
+        resetAppearance(reason: notification.name.rawValue)
+    }
+
+    @objc private func reduceMotionChanged() { markContentChanged() }
+
+    private func resetAppearance(reason: String) {
+        #if DEBUG
+        traceLifecycle("reset", "reason=\(reason)")
         metricAppearanceResets += 1
         #endif
+        wasHardInvalidated = true
+        retainedCompatibility = nil
+        stableCompatibility = nil
         invalidatePresentation()
         contentRevision &+= 1
         activity = TabBarRenderActivity()
         interactionWarmupEnds = 0
         activity.noteChange(at: CACurrentMediaTime())
+        presence.reset()
+        renderer?.didCaptureUI()
         renderer?.clearScene()
         renderer?.currentUI = nil
         capture?.reset()
         cadence.reset()
         previousCapsule = .zero
+        startDisplayLinkIfNeeded()
+        if !isSuspended, !holdsCaptureUntilSettled { reflectionSource?.requestFrame() }
+    }
+
+    /// Runs the display link only while this view has an active window.
+    private func startDisplayLinkIfNeeded() {
         let scene = window?.windowScene
-        let shouldAnimate = window != nil && UIApplication.shared.applicationState == .active
+        let shouldAnimate = !isSuspended && window != nil && UIApplication.shared.applicationState == .active
         if !shouldAnimate || displayLinkScene !== scene {
             displayLink?.invalidate()
             displayLink = nil
@@ -258,7 +416,6 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
             isLinkIdle = true
             setLinkIdle(false)
         }
-        reflectionSource?.requestFrame()
     }
 
     private func markContentChanged() {
@@ -298,7 +455,8 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     }
 
     private var canDraw: Bool {
-        window?.windowScene?.activationState == .foregroundActive && isVisibleInWindow(self)
+        !isSuspended && reflectionSource?.lifecycle.canRestore == true &&
+            window?.windowScene?.activationState == .foregroundActive && isVisibleInWindow(self)
     }
 
     private var desiredDrawableSize: CGSize {
@@ -320,7 +478,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     /// Content already submitted needs no new frame, except to warm an
     /// interaction that has not moved yet.
     private var needsEncoding: Bool {
-        presentationState.needsEncoding(contentRevision) || isWarmingInteraction
+        presentationState.needsEncoding(contentRevision) || isWarmingInteraction || presence.needsSubmission
     }
 
     private func requestDraw() {
@@ -349,6 +507,8 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         synchronizeGeometry(window: window, renderer: renderer)
         guard needsEncoding else { finish(); return }
         renderer.currentUI = capture?.current
+        presentationTime = max(presentationTime, CACurrentMediaTime())
+        renderer.presence = presence.value(at: presentationTime, reduceMotion: UIAccessibility.isReduceMotionEnabled)
         renderer.darkMode = traitCollection.userInterfaceStyle == .dark
         renderer.reduceTransparency = UIAccessibility.isReduceTransparencyEnabled
         #if DEBUG
@@ -358,12 +518,22 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         let revision = gate.current
         let encodedRevision = contentRevision
         let encodedTime = presentationTime
+        #if DEBUG
+        let tracesSubmission = tracesLifecycle && (tracedDraws < 8 || presence.needsSubmission)
+        let encodedCapture = capture?.current?.captureTime ?? 0
+        let encodedPresence = renderer.presence
+        #endif
         let broker = drawableBroker
         let submitted = autoreleasepool {
             renderer.draw(in: metalView, drawable: drawable) { [weak self] command in
                 guard let self else { finish(); return }
                 let ticket = self.presentationState.submit(encodedRevision, at: CACurrentMediaTime())
+                self.presence.didSubmit(at: encodedTime, reduceMotion: UIAccessibility.isReduceMotionEnabled)
                 #if DEBUG
+                if tracesSubmission {
+                    self.traceLifecycle("submit", "ticket=\(ticket.id) target=\(encodedTime) encodedPresence=\(encodedPresence) state=\(self.presence.state)")
+                    self.tracedDraws += 1
+                }
                 let recordPresentation = TabBarPerformanceProbe.shared.presentationRecorder(
                     current: self.capture?.current, previous: self.capture?.current, targetTime: encodedTime)
                 let forcedDrop = self.faultRevision == encodedRevision && !self.faultSubmitted
@@ -387,6 +557,11 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
                 let acknowledge: (CFTimeInterval) -> Void = { [weak self] time in
                     guard let self else { return }
                     let presented = time.isFinite && time > 0
+                    #if DEBUG
+                    if tracesSubmission {
+                        self.traceLifecycle("acknowledge", "ticket=\(ticket.id) shown=\(time) encodedUI=\(encodedCapture) encodedPresence=\(encodedPresence)")
+                    }
+                    #endif
                     let retry = self.presentationState.resolve(ticket, presented: presented)
                     #if DEBUG
                     if self.faultRevision == encodedRevision, presented, !self.faultConfirmed,
@@ -465,6 +640,19 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         #if DEBUG
         let tickStart = CACurrentMediaTime()
         #endif
+        if holdsCaptureUntilSettled, reflectionSource?.lifecycle.canCapture == true {
+            if let current = compatibility(), let retainedCompatibility,
+               !retainedCompatibility.permitsResume(current, sameWindow: suspendedWindow === window,
+                                                     invalidated: wasHardInvalidated) {
+                resetAppearance(reason: "settled-geometry")
+            }
+            holdsCaptureUntilSettled = false
+            reflectionSource?.connect(self)
+            reflectionSource?.requestFrame()
+            #if DEBUG
+            traceLifecycle("capture-enabled")
+            #endif
+        }
         updateOcclusion(window: window)
         synchronizeGeometry(window: window, renderer: renderer)
         if needsProducerFrame, producerView != nil { requestProducerFrameIfSettled() }
@@ -495,7 +683,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
             }
         }
         #endif
-        var shouldCaptureUI = !renderer.reduceTransparency
+        var shouldCaptureUI = !renderer.reduceTransparency && !holdsCaptureUntilSettled
         #if DEBUG
         shouldCaptureUI = shouldCaptureUI && !skipsUICapture
         #endif
@@ -522,7 +710,15 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
                 contentRevision &+= 1
                 activity.noteChange(at: now)
             }
+            if capture.lastCaptureWasComplete, capture.current != nil { presence.noteContent() }
+            renderer.didCaptureUI()
+            if stableCompatibility == nil { stableCompatibility = compatibility() }
+            wasHardInvalidated = false
             #if DEBUG
+            if tracedCaptures < 6 {
+                traceLifecycle("capture", "changed=\(capture.lastCaptureChanged)")
+                tracedCaptures += 1
+            }
             TabBarPerformanceProbe.shared.captureMeasured(duration: capture.lastCaptureDuration,
                 isIdle: isIdleCapture,
                 reason: uiMotionReason, changed: capture.lastCaptureChanged)
@@ -533,6 +729,11 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
             metricCaptureCost += capture.lastCaptureDuration
             metricCapturePeak = max(metricCapturePeak, capture.lastCaptureDuration)
             #endif
+        }
+        // Each step of a fade-in is new content for the revision dedupe.
+        if presence.needsSubmission {
+            contentRevision &+= 1
+            activity.noteChange(at: now)
         }
         // Keep the broker supplied throughout motion, including clean ticks
         // between asynchronous producer callbacks. Static content still idles.
@@ -546,7 +747,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
             print("TABBAR_PRESENTATION_FAULT event=armed revision=\(contentRevision)")
         }
         #endif
-        let needsDraw = contentRevision != presentationState.presentedRevision || activity.isActive(at: now)
+        let needsDraw = contentRevision != presentationState.presentedRevision || activity.isActive(at: now) || presence.needsSubmission
         setLinkIdle(!needsDraw)
         if needsDraw { requestDraw() }
         #if DEBUG
@@ -572,6 +773,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     /// so a producer that pauses right after a geometry change still recrops.
     private func requestProducerFrameIfSettled() {
         needsProducerFrame = true
+        guard !isSuspended, !holdsCaptureUntilSettled else { return }
         guard CACurrentMediaTime() - lastSceneDelivery > 0.1 else { return }
         needsProducerFrame = false
         reflectionSource?.requestFrame()
@@ -580,6 +782,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     private func synchronizeGeometry(window: UIWindow, renderer: TabBarOpticsRenderer) {
         let capsule = convert(bounds, to: window)
         if capsule != previousCapsule {
+            if !holdsCaptureUntilSettled { stableCompatibility = nil }
             #if DEBUG
             metricGeometryResets += 1
             #endif
@@ -594,7 +797,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
             requestProducerFrameIfSettled()
         }
         renderer.capsuleInWindow = capsule
-        if let producerView {
+        if !holdsCaptureUntilSettled, let producerView {
             let geometry = reflectionGeometry(from: producerView)
             if geometry != producerGeometry {
                 producerGeometry = geometry
@@ -607,6 +810,9 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
 
     func clearReflection(from view: UIView?) {
         guard view == nil || producerView === view else { return }
+        if view == nil, isSuspended || holdsCaptureUntilSettled {
+            resetAppearance(reason: "content-context")
+        }
         invalidatePresentation()
         producerView = nil
         producerGeometry = nil
@@ -618,6 +824,8 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     }
 
     func receive(texture: MTLTexture, commandBuffer: MTLCommandBuffer, from view: UIView) {
+        guard !isSuspended, !holdsCaptureUntilSettled,
+              reflectionSource?.lifecycle.canCapture == true else { return }
         guard let window, let renderer, let geometry = reflectionGeometry(from: view) else {
             clearReflection(from: view)
             return
@@ -636,11 +844,15 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         renderer.capsuleInWindow = convert(bounds, to: window)
         let source = view.convert(view.bounds, to: window)
         let visible = geometry.visibleRect.offsetBy(dx: source.minX, dy: source.minY)
+        let generation = reflectionSource?.lifecycle.generation
         renderer.encodeScene(texture: texture, commandBuffer: commandBuffer,
                              sourceInWindow: source, visibleInWindow: visible) { [weak self, weak view] in
             guard let self, let view else { return false }
             // Losing the producer clears it; renderer revisions reject stale copies.
-            return self.producerView === view && !self.isCapsuleOccluded
+            return !self.isSuspended && !self.holdsCaptureUntilSettled &&
+                self.reflectionSource?.lifecycle.canCapture == true &&
+                self.reflectionSource?.lifecycle.generation == generation &&
+                self.producerView === view && !self.isCapsuleOccluded
         }
     }
 
