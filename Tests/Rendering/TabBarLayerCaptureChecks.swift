@@ -74,6 +74,24 @@ struct Checks {
     let red = CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)
     let green = CGColor(srgbRed: 0, green: 1, blue: 0, alpha: 1)
     let blue = CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1)
+    do {
+        let window = UIWindow(); window.layer.frame = CGRect(x: 0, y: 0, width: 128, height: 128)
+        window.layer.addSublayer(layer(window.bounds, blue))
+        let region = window.bounds
+        let baseline = pixels(window, region: region, excluded: .null, scoped: true)
+        let observer = CALayer(); observer.frame = region; observer.isHidden = true
+        window.layer.addSublayer(observer)
+        let observed = pixels(window, region: region, excluded: .null, scoped: true)
+        precondition(observed.0 == baseline.0, "lifecycle observer changed reflected pixels")
+        precondition(observed.1 == baseline.1, "lifecycle observer reached native rasterization")
+        // Ordinary empty-looking custom layers must still render their pixels.
+        let gradient = CAGradientLayer(); gradient.frame = region; gradient.colors = [red, green]
+        window.layer.addSublayer(gradient)
+        let custom = pixels(window, region: region, excluded: .null, scoped: true)
+        precondition(custom.0 != observed.0 && custom.1 > observed.1, "custom drawing was incorrectly excluded")
+        tests += 1
+        print("PASS nonvisual lifecycle observer adds no raster work")
+    }
     await check("plain backgrounds") { root in root.addSublayer(layer(CGRect(x: 10, y: 20, width: 60, height: 50), red)) }
     await check("scroll origin and 200 offscreen rows", region: CGRect(x: 0, y: 80, width: 128, height: 48)) { root in
         let scroll = CALayer(); scroll.frame = root.bounds; scroll.bounds.origin.y = 300; scroll.masksToBounds = true; root.addSublayer(scroll)

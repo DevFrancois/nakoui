@@ -30,6 +30,9 @@ struct TabBarRootLifecycleObserver: UIViewControllerRepresentable {
         override func loadView() {
             view = UIView()
             view.backgroundColor = .clear
+            // Retain full-size layout and controller appearance callbacks, but
+            // exclude this nonvisual observer from native reflection capture.
+            view.isHidden = true
             view.isUserInteractionEnabled = false
             view.accessibilityElementsHidden = true
         }
