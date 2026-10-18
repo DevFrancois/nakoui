@@ -424,7 +424,7 @@ struct HomePagerLayoutTests {
             insets.append(inset)
             origins.append(origin)
             contentHeights.append(contentHeight)
-            let observation = "x=\(x), y=\(offset), inset=\(inset), origin=\(origin), height=\(contentHeight)"
+            let observation = "x=\(x), y=\(offset), inset=\(inset), origin=\(origin), height=\(contentHeight), width=\(incoming.contentSize.width), bounds=\(incoming.bounds.size), adjusted=\(incoming.adjustedContentInset), safe=\(incoming.safeAreaInsets)"
             if observations.last != observation {
                 observations.append(observation)
             }

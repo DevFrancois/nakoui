@@ -9,6 +9,7 @@ struct ScannerView: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var resultPresentation = ScannerResultPresentation()
     /// The zoom a pinch started from; nil between pinches, including ones
     /// cut short, such as by a code being found.
     @GestureState private var pinchStartZoom: Double?
@@ -84,7 +85,16 @@ struct ScannerView: View {
             }
             .environment(\.colorScheme, .dark)
         }
-        .sheet(item: $model.scannedCode, onDismiss: model.resultDidClose, content: ScannedCodeSheet.init)
+        .sheet(item: $resultPresentation.sheetItem, onDismiss: resultSheetDidDismiss) { code in
+            ScannedCodeSheet(code: code)
+                .onAppear { resultPresentation.didPresent(code.id) }
+        }
+        .onChange(of: isActive, initial: true) {
+            updateResultPresentation()
+        }
+        .onChange(of: model.scannedCode, initial: true) {
+            updateResultPresentation()
+        }
         .sensoryFeedback(.success, trigger: model.reveal?.code) { _, newCode in
             newCode != nil
         }
@@ -102,6 +112,16 @@ struct ScannerView: View {
 
     private var isCameraActive: Bool {
         isActive && scenePhase == .active
+    }
+
+    private func updateResultPresentation() {
+        resultPresentation.update(isActive: isActive, pendingCode: model.scannedCode)
+    }
+
+    private func resultSheetDidDismiss() {
+        guard let consumedID = resultPresentation.didDismiss(), model.scannedCode?.id == consumedID else { return }
+        model.scannedCode = nil
+        model.resultDidClose()
     }
 
     /// The camera controls show while aiming, not while a found code is

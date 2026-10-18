@@ -5,12 +5,13 @@ import UIKit
 /// Duo's shared vertical region. The item supplies its own single glass surface.
 struct GlassTabBarToolbar: ToolbarContent {
     @Binding var selection: RootTab
+    @Binding var layoutAxis: NSLayoutConstraint.Axis
 
     var body: some ToolbarContent {
         ToolbarSpacer(.flexible, placement: .bottomBar)
         if #available(iOS 27.1, *) {
             ToolbarItem(placement: .bottomBar) {
-                AdaptiveGlassTabBar(selection: $selection)
+                AdaptiveGlassTabBar(selection: $selection, layoutAxis: $layoutAxis)
             }
             .axisBehavior(.verticalPreferred)
             .sharedBackgroundVisibility(.hidden)
@@ -29,10 +30,14 @@ struct GlassTabBarToolbar: ToolbarContent {
 @available(iOS 27.1, *)
 private struct AdaptiveGlassTabBar: View {
     @Binding var selection: RootTab
+    @Binding var layoutAxis: NSLayoutConstraint.Axis
     @Environment(\.toolbarVerticalEdge) private var verticalEdge
 
     var body: some View {
         GlassTabBar(selection: $selection, layoutAxis: verticalEdge == nil ? .horizontal : .vertical)
+            .onChange(of: verticalEdge == nil, initial: true) {
+                layoutAxis = verticalEdge == nil ? .horizontal : .vertical
+            }
     }
 }
 

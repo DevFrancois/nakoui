@@ -22,7 +22,7 @@ struct ContentView: View {
     /// construct a throwaway one.
     @State private var scanner = ScannerModel()
     /// Holds sidebar routes and articles, so either can be pushed.
-    @State private var navigationPath = NavigationPath()
+    @State private var navigation = RootNavigation()
     @State private var isSidebarExpanded = false
     @State private var pendingSidebarOpen = false
     @State private var revealingRoute: SidebarRoute?
@@ -47,7 +47,7 @@ struct ContentView: View {
     private var contentWithSidebar: some View {
         CustomSideMenu(
             // Home only: the other tabs, and anything pushed, have no side menu.
-            isEnabled: rootTab == .home && navigationPath.isEmpty && revealingRoute == nil,
+            isEnabled: rootTab == .home && navigation.path.isEmpty && revealingRoute == nil,
             canBeginOpening: canBeginSidebarOpening,
             canOpenFromAnywhere: canOpenSidebarFromAnywhere,
             isExpanded: $isSidebarExpanded,
@@ -68,10 +68,10 @@ struct ContentView: View {
 
     /// Keep the same navigation, tab and page ownership in either menu mode.
     private var appContent: some View {
-        NavigationStack(path: $navigationPath) {
+        NavigationStack(path: $navigation.path) {
             // Inside the stack, so articles, quizzes and sidebar pages
             // cover the tab bar when pushed.
-            RootTabContent(selection: $rootTab, scanner: scanner, isTabBarVisible: navigationPath.isEmpty) {
+            RootTabContent(selection: $rootTab, scanner: scanner, isTabBarVisible: navigation.path.isEmpty) {
                 HomeRootView(
                     title: mainTitle,
                     pager: pager,
@@ -104,6 +104,7 @@ struct ContentView: View {
                 QuizDestination(kind: kind)
             }
         }
+        .environment(\.rootNavigation, navigation)
         .opacity(isRouteContentVisible ? 1 : 0)
     }
 
@@ -117,25 +118,25 @@ struct ContentView: View {
     /// gesture against the live scroll view; the pager's recorded phase and
     /// geometry can lag behind it.
     private func canBeginSidebarOpening() -> Bool {
-        AppFeatures.sideMenuEnabled && navigationPath.isEmpty && revealingRoute == nil && pager.tapTransition == nil && pager.pendingTab == nil
+        AppFeatures.sideMenuEnabled && navigation.path.isEmpty && revealingRoute == nil && pager.tapTransition == nil && pager.pendingTab == nil
     }
 
     private func openPendingSidebar() {
         guard AppFeatures.sideMenuEnabled, pendingSidebarOpen,
-              rootTab == .home, navigationPath.isEmpty, revealingRoute == nil,
+              rootTab == .home, navigation.path.isEmpty, revealingRoute == nil,
               pager.isAtRest else { return }
         pendingSidebarOpen = false
         isSidebarExpanded = true
     }
 
     private func selectSidebarRoute(_ route: SidebarRoute) {
-        guard revealingRoute == nil, navigationPath.isEmpty else { return }
+        guard revealingRoute == nil, navigation.path.isEmpty else { return }
         // Replace the contents while the foreground is still shifted right.
         // Suppress only the push; the stack still owns Back and interactive pop.
         withoutAnimation {
             revealingRoute = route
             isRouteContentVisible = false
-            navigationPath = NavigationPath([route])
+            navigation.path = NavigationPath([route])
         }
     }
 
@@ -154,7 +155,7 @@ struct ContentView: View {
     private func sidebarDidDismiss() {
         revealingRoute = nil
         // A collapsed logo row hides the menu button from VoiceOver.
-        if navigationPath.isEmpty && logoCollapse.isShown {
+        if navigation.path.isEmpty && logoCollapse.isShown {
             isMenuButtonFocused = true
         }
     }

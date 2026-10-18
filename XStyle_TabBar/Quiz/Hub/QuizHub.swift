@@ -13,7 +13,7 @@ struct QuizHub: View {
             GlassEffectContainer(spacing: QuizMetrics.sectionSpacing) {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: QuizMetrics.sectionSpacing) {
                     ForEach(QuizKind.allCases) { kind in
-                        NavigationLink(value: kind) {
+                        RootNavigationLink(value: kind) {
                             QuizCard(kind: kind)
                         }
                         .buttonStyle(QuizCardButtonStyle())

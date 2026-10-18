@@ -15,6 +15,8 @@ final class GlassTabBarButton: UIControl {
     private let symbolView = UIImageView()
     private let titleLabel = UILabel()
     private var symbolSize = GlassTabBarMetrics.symbolSize
+    // A finger candidate changes emphasis, never the committed accessibility selection.
+    private var trackingCandidate: Bool?
 
     override var isSelected: Bool {
         didSet { updateAppearance() }
@@ -35,13 +37,18 @@ final class GlassTabBarButton: UIControl {
         cornerConfiguration = .capsule()
         isAccessibilityElement = true
         accessibilityIdentifier = tab.accessibilityIdentifier
+        // Expose only this named control. SF Symbols can otherwise contribute
+        // their own automatic image descriptions to accessibility snapshots.
+        accessibilityElements = []
 
         symbolView.contentMode = .scaleAspectFit
         symbolView.isAccessibilityElement = false
+        symbolView.accessibilityElementsHidden = true
         titleLabel.textAlignment = .center
         titleLabel.numberOfLines = 0
         titleLabel.lineBreakMode = .byWordWrapping
         titleLabel.isAccessibilityElement = false
+        titleLabel.accessibilityElementsHidden = true
         addSubview(symbolView)
         addSubview(titleLabel)
 
@@ -64,6 +71,12 @@ final class GlassTabBarButton: UIControl {
         titleLabel.text = text
         accessibilityLabel = text
         invalidateSize()
+    }
+
+    func updateTrackingCandidate(_ isCandidate: Bool?) {
+        guard trackingCandidate != isCandidate else { return }
+        trackingCandidate = isCandidate
+        updateAppearance()
     }
 
     override func accessibilityActivate() -> Bool {
@@ -112,7 +125,11 @@ final class GlassTabBarButton: UIControl {
     }
 
     private func updateFonts() {
-        titleLabel.font = .preferredFont(forTextStyle: .caption2, compatibleWith: traitCollection)
+        let fontWeight: UIFont.Weight = traitCollection.legibilityWeight == .bold ? .semibold : .regular
+        titleLabel.font = UIFontMetrics(forTextStyle: .caption2).scaledFont(
+            for: .systemFont(ofSize: GlassTabBarMetrics.labelSize, weight: fontWeight),
+            compatibleWith: traitCollection
+        )
         symbolSize = min(
             GlassTabBarMetrics.maximumSymbolSize,
             UIFontMetrics(forTextStyle: .body).scaledValue(for: GlassTabBarMetrics.symbolSize, compatibleWith: traitCollection)
@@ -129,10 +146,11 @@ final class GlassTabBarButton: UIControl {
     }
 
     private func updateAppearance() {
-        let foreground: UIColor = !isEnabled ? .tertiaryLabel : (isSelected || isHighlighted ? .label : .secondaryLabel)
+        let isEmphasized = trackingCandidate ?? (isSelected || isHighlighted)
+        let foreground: UIColor = !isEnabled ? .tertiaryLabel : (isEmphasized ? .label : .secondaryLabel)
         symbolView.tintColor = foreground
         titleLabel.textColor = foreground
-        backgroundColor = isHighlighted ? .tertiarySystemFill : .clear
+        backgroundColor = .clear
         accessibilityTraits = [.button]
         if isSelected { accessibilityTraits.insert(.selected) }
         if !isEnabled { accessibilityTraits.insert(.notEnabled) }

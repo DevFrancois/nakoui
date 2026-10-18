@@ -7,7 +7,7 @@ struct ArticleRow: View {
     let namespace: Namespace.ID
 
     var body: some View {
-        NavigationLink(value: article) {
+        RootNavigationLink(value: article) {
             HStack(alignment: .top) {
                 Circle()
                     .fill(article.tint.tertiary)
