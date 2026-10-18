@@ -39,17 +39,11 @@ final class TabBarLayerRegionRenderer {
     private var clipUse: UInt64 = 0
 
 
-    private struct PreparedImageEntry {
-        let source: CGImage
-        let image: CGImage
-        let rasterBytes: Int
-        var lastUse: UInt64
+    private let imageCache: TabBarPreparedImageCache
+
+    init(imageCache: TabBarPreparedImageCache? = nil) {
+        self.imageCache = imageCache ?? .shared
     }
-    // Retain the immutable source while using its identity as the cache key.
-    // Account for source raster bytes as well as the smaller decoded bitmap.
-    private var preparedImages: [PreparedImageEntry] = []
-    private var preparedImageBytes = 0
-    private var imageUse: UInt64 = 0
 
     private struct ChildPlacement {
         let layer: CALayer
@@ -412,7 +406,7 @@ final class TabBarLayerRegionRenderer {
             .concatenating(CGAffineTransform(translationX: pivot.x, y: pivot.y))
     }
 
-    private func preparedImage(_ model: CALayer, shown layer: CALayer) -> CGImage? {
+    private func preparedImage(_ model: CALayer, shown layer: CALayer) -> TabBarPreparedImageCache.Result {
         guard type(of: model) == CALayer.self, layer.sublayers?.isEmpty ?? true,
               layer.mask == nil, layer.shadowOpacity == 0, layer.borderWidth == 0,
               layer.cornerRadius == 0, (layer.backgroundColor?.alpha ?? 0) == 0,
@@ -423,65 +417,12 @@ final class TabBarLayerRegionRenderer {
               layer.contentsRect == CGRect(x: 0, y: 0, width: 1, height: 1),
               layer.contentsCenter == CGRect(x: 0, y: 0, width: 1, height: 1),
               layer.contentsGravity == .resize || layer.contentsGravity == .resizeAspect || layer.contentsGravity == .resizeAspectFill,
-              let contents = layer.contents, CFGetTypeID(contents as CFTypeRef) == CGImage.typeID else { return nil }
+              let contents = layer.contents, CFGetTypeID(contents as CFTypeRef) == CGImage.typeID else { return .unsupported }
         if let view = model.delegate as? UIImageView,
-           view.image?.renderingMode == .alwaysTemplate || view.image?.isSymbolImage == true { return nil }
+           view.image?.renderingMode == .alwaysTemplate || view.image?.isSymbolImage == true { return .unsupported }
         let source = contents as! CGImage
-        guard !source.isMask, source.alphaInfo != .alphaOnly else { return nil }
-        imageUse &+= 1
-        var index = 0
-        while index < preparedImages.count {
-            if preparedImages[index].source === source {
-                preparedImages[index].lastUse = imageUse
-                return preparedImages[index].image
-            }
-            index += 1
-        }
-        let (sourceBytes, sourceOverflow) = source.bytesPerRow.multipliedReportingOverflow(by: source.height)
-        let byteLimit = 32 * 1024 * 1024
-        guard !sourceOverflow, sourceBytes < byteLimit else { return nil }
-        // Preserve the original aspect exactly. Arbitrary independent rounding
-        // would alter aspect-fill cropping; coprime large sizes keep native draw.
-        var divisor = source.width
-        var remainder = source.height
-        while remainder != 0 {
-            let next = divisor % remainder
-            divisor = remainder
-            remainder = next
-        }
-        let unitWidth = source.width / divisor
-        let unitHeight = source.height / divisor
-        let units = min(divisor, 256 / max(unitWidth, unitHeight))
-        guard units > 0 else { return nil }
-        let width = unitWidth * units
-        let height = unitHeight * units
-        let rasterBytes = sourceBytes + width * height * 4
-        guard rasterBytes <= byteLimit,
-              let space = CGColorSpace(name: CGColorSpace.sRGB),
-              let bitmap = CGContext(data: nil, width: width, height: height,
-                                     bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
-                                     bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue) else { return nil }
-        #if DEBUG
-        let started = CACurrentMediaTime()
-        #endif
-        bitmap.interpolationQuality = .high
-        bitmap.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
-        guard let image = bitmap.makeImage() else { return nil }
-        while preparedImages.count >= 16 || preparedImageBytes + rasterBytes > byteLimit {
-            guard let oldest = preparedImages.indices.min(by: { preparedImages[$0].lastUse < preparedImages[$1].lastUse }) else { break }
-            preparedImageBytes -= preparedImages.remove(at: oldest).rasterBytes
-        }
-        preparedImages.append(PreparedImageEntry(source: source, image: image,
-                                                rasterBytes: rasterBytes, lastUse: imageUse))
-        preparedImageBytes += rasterBytes
-        #if DEBUG
-        if diagnostics {
-            NSLog("TabBarCapture image prepared %ldx%ld -> %ldx%ld %.3fms cached=%ld rasterBytes=%ld",
-                  source.width, source.height, width, height,
-                  (CACurrentMediaTime() - started) * 1000, preparedImages.count, preparedImageBytes)
-        }
-        #endif
-        return image
+        guard !source.isMask, source.alphaInfo != .alphaOnly else { return .unsupported }
+        return imageCache.image(for: source)
     }
 
     private func renderOriginal(_ model: CALayer, shown layer: CALayer, localToWindow: CGAffineTransform,
@@ -490,10 +431,18 @@ final class TabBarLayerRegionRenderer {
         let start = CACurrentMediaTime()
         #endif
         let prepared = preparedImage(model, shown: layer)
+        switch prepared {
+        case .pending, .unavailable:
+            // Keep capturing current surrounding UI while this immutable photo
+            // is prepared. Never decode it here or substitute an older photo.
+            skippedSubtrees += 1
+            return
+        case .ready, .unsupported: break
+        }
         context.saveGState()
         context.concatenate(localToWindow)
         traits.performAsCurrent {
-            if let prepared {
+            if case .ready(let prepared) = prepared {
                 let imageLayer = CALayer()
                 imageLayer.bounds = layer.bounds
                 imageLayer.contents = prepared

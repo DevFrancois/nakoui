@@ -13,6 +13,11 @@ trap 'rm -rf "$temp_dir"' EXIT HUP INT TERM
 awk '{ if ($0 == "import UIKit") { print "import Foundation"; print "import CoreGraphics" } else print }' \
     "$repo_dir/XStyle_TabBar/TabBar/TabBarLayerRegionRenderer.swift" > "$temp_dir/TabBarLayerRegionRenderer.swift"
 xcrun -sdk macosx swiftc -O -parse-as-library \
+    "$repo_dir/XStyle_TabBar/TabBar/TabBarPreparedImageCache.swift" \
     "$temp_dir/TabBarLayerRegionRenderer.swift" "$test_dir/TabBarLayerCaptureChecks.swift" \
     -o "$temp_dir/checks"
+xcrun -sdk macosx swiftc -O -parse-as-library \
+    "$repo_dir/XStyle_TabBar/TabBar/TabBarPreparedImageCache.swift" \
+    "$test_dir/TabBarPreparedImageCacheChecks.swift" -o "$temp_dir/cache-checks"
+"$temp_dir/cache-checks"
 "$temp_dir/checks"

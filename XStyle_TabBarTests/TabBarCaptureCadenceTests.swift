@@ -2,6 +2,34 @@ import Testing
 @testable import XStyle_TabBar
 
 struct TabBarCaptureCadenceTests {
+    @Test("A stale presentation target does not starve a valid UIKit update")
+    func uiSubmissionDeadline() {
+        var cadence = TabBarCaptureCadence()
+        cadence.recordCapture(duration: 0.004, at: 1)
+        let deadline = TabBarCaptureCadence.submissionDeadline(
+            displayTarget: 1.0494, uiCompletion: 1.066)
+        let canCapture = cadence.shouldCapture(at: 1.05, deadline: deadline)
+        #expect(canCapture)
+    }
+
+    @Test("An exhausted UIKit update is respected even with a future presentation target")
+    func expiredUIUpdateIsNotExtended() {
+        var cadence = TabBarCaptureCadence()
+        cadence.recordCapture(duration: 0.004, at: 1)
+        let deadline = TabBarCaptureCadence.submissionDeadline(
+            displayTarget: 1.066, uiCompletion: 1.049)
+        #expect(deadline == 1.049)
+        let canCapture = cadence.shouldCapture(at: 1.05, deadline: deadline)
+        #expect(!canCapture)
+    }
+
+    @Test("Missing or invalid UIKit timing retains the display target without adding time")
+    func missingUIUpdateUsesDisplayTarget() {
+        for value: Double? in [nil, .nan, .infinity, 0, -1] {
+            #expect(TabBarCaptureCadence.submissionDeadline(displayTarget: 1.05, uiCompletion: value) == 1.05)
+        }
+    }
+
     @Test("Small display callback jitter does not halve a cheap capture's refresh rate")
     func callbackJitter() {
         var cadence = TabBarCaptureCadence()

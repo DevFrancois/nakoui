@@ -22,6 +22,18 @@ nonisolated struct TabBarCaptureCadence {
         max(1 / Self.maximumRate, estimatedCaptureDuration / Self.cpuBudgetFraction)
     }
 
+    /// UI capture participates in UIKit's current update. Its submission
+    /// deadline is distinct from a display link's presentation target, which
+    /// can already be past when the simulator delivers the callback. Use the
+    /// view-specific system deadline without inventing another frame of time.
+    static func submissionDeadline(displayTarget: CFTimeInterval,
+                                   uiCompletion: CFTimeInterval?) -> CFTimeInterval {
+        guard let uiCompletion, uiCompletion.isFinite, uiCompletion > 0 else {
+            return displayTarget
+        }
+        return uiCompletion
+    }
+
     mutating func shouldCapture(at time: CFTimeInterval, deadline: CFTimeInterval,
                                 force: Bool = false) -> Bool {
         guard time.isFinite else { return false }

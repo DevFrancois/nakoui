@@ -23,6 +23,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     private let capture: TabBarUITextureCapture?
     private var cadence = TabBarCaptureCadence()
     private var displayLink: CADisplayLink?
+    private weak var displayLinkScene: UIWindowScene?
     private weak var producerView: UIView?
     private var producerGeometry: TabBarReflectionGeometry?
     private var previousSize: CGSize = .zero
@@ -39,6 +40,12 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     private var metricGPUCost: Double = 0
     private var metricLongFrames = 0
     private var metricLastTick: CFTimeInterval = 0
+    private var metricDrawCost: Double = 0
+    private var metricDrawPeak: Double = 0
+    private var metricEntryHeadroom: Double = 0
+    private var metricCaptureHeadroom: Double = 0
+    private var metricUpdateHeadroom: Double = 0
+    private var metricUpdateCount = 0
     #endif
 
     override init(frame: CGRect) {
@@ -112,17 +119,31 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         capture?.reset()
         cadence.reset()
         previousCapsule = .zero
-        if window == nil || UIApplication.shared.applicationState != .active {
+        let scene = window?.windowScene
+        let shouldAnimate = window != nil && UIApplication.shared.applicationState == .active
+        if !shouldAnimate || displayLinkScene !== scene {
             displayLink?.invalidate()
             displayLink = nil
-        } else if displayLink == nil {
+            displayLinkScene = nil
+        }
+        if shouldAnimate, displayLink == nil {
             let target = DisplayTarget()
             target.surface = self
-            let link = CADisplayLink(target: target, selector: #selector(DisplayTarget.tick(_:)))
+            let selector = #selector(DisplayTarget.tick(_:))
+            let link: CADisplayLink
+            if #available(iOS 27.0, *), let scene {
+                // Target this view's display and follow its scene between
+                // displays instead of assuming the main display's timeline.
+                link = scene.displayLink(target: target, selector: selector)
+                    ?? CADisplayLink(target: target, selector: selector)
+            } else {
+                link = CADisplayLink(target: target, selector: selector)
+            }
             let maximum = Float(window?.screen.maximumFramesPerSecond ?? 60)
             link.preferredFrameRateRange = CAFrameRateRange(minimum: min(60, maximum), maximum: maximum, preferred: maximum)
             link.add(to: .main, forMode: .common)
             displayLink = link
+            displayLinkScene = scene
         }
         reflectionSource?.requestFrame()
     }
@@ -130,6 +151,9 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     private func tick(_ link: CADisplayLink) {
         guard let window, let renderer, isVisibleInWindow(self),
               window.windowScene?.activationState == .foregroundActive else { return }
+        #if DEBUG
+        let tickStart = CACurrentMediaTime()
+        #endif
         let capsule = convert(bounds, to: window)
         if capsule != previousCapsule {
             previousCapsule = capsule
@@ -153,14 +177,33 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         renderer.darkMode = traitCollection.userInterfaceStyle == .dark
         renderer.reduceTransparency = UIAccessibility.isReduceTransparencyEnabled
         // Submit the optical pass first; UI capture cannot delay this submission.
+        #if DEBUG
+        let drawStart = CACurrentMediaTime()
+        #endif
         metalView.draw()
         let now = CACurrentMediaTime()
+        let updateDeadline = UIUpdateInfo.current(for: self)?.completionDeadlineTime
+        let captureDeadline = TabBarCaptureCadence.submissionDeadline(
+            displayTarget: link.targetTimestamp, uiCompletion: updateDeadline)
+        #if DEBUG
+        if logsMetrics {
+            let drawCost = now - drawStart
+            metricDrawCost += drawCost
+            metricDrawPeak = max(metricDrawPeak, drawCost)
+            metricEntryHeadroom += link.targetTimestamp - tickStart
+            metricCaptureHeadroom += link.targetTimestamp - now
+            if let updateDeadline {
+                metricUpdateHeadroom += updateDeadline - now
+                metricUpdateCount += 1
+            }
+        }
+        #endif
         var shouldCaptureUI = !renderer.reduceTransparency
         #if DEBUG
         shouldCaptureUI = shouldCaptureUI && !skipsUICapture
         #endif
         if shouldCaptureUI, let capture,
-           cadence.shouldCapture(at: now, deadline: link.targetTimestamp, force: capture.current == nil),
+           cadence.shouldCapture(at: now, deadline: captureDeadline, force: capture.current == nil),
            capture.capture(window: window, rect: capsule.insetBy(dx: -104, dy: -104), excluding: capsule, at: link.targetTimestamp) {
             cadence.recordCapture(duration: capture.lastCaptureDuration, at: now)
             #if DEBUG
@@ -246,14 +289,20 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         metricTicks += 1
         let elapsed = now - metricStart
         guard elapsed >= 2 else { return }
-        print(String(format: "TABBAR_METRICS ticks=%.1f gpuFPS=%.1f captures=%.1f captureMeanMS=%.2f captureMaxMS=%.2f gpuMS=%.2f longFrames=%d scene=%@",
+        print(String(format: "TABBAR_METRICS ticks=%.1f gpuFPS=%.1f captures=%.1f captureMeanMS=%.2f captureMaxMS=%.2f gpuMS=%.2f drawMeanMS=%.2f drawMaxMS=%.2f entryHeadroomMS=%.2f captureHeadroomMS=%.2f updateHeadroomMS=%.2f updateSamples=%d longFrames=%d scene=%@",
                      Double(metricTicks) / elapsed, Double(metricFrames) / elapsed,
                      Double(metricCaptures) / elapsed, metricCaptureCost * 1000 / Double(max(1, metricCaptures)),
                      metricCapturePeak * 1000, metricGPUCost * 1000 / Double(max(1, metricFrames)),
+                     metricDrawCost * 1000 / Double(max(1, metricTicks)), metricDrawPeak * 1000,
+                     metricEntryHeadroom * 1000 / Double(max(1, metricTicks)),
+                     metricCaptureHeadroom * 1000 / Double(max(1, metricTicks)),
+                     metricUpdateHeadroom * 1000 / Double(max(1, metricUpdateCount)), metricUpdateCount,
                      metricLongFrames, producerView == nil ? "UI" : "Carousel+UI"))
         metricStart = now
         metricTicks = 0; metricFrames = 0; metricCaptures = 0
         metricCaptureCost = 0; metricCapturePeak = 0; metricGPUCost = 0; metricLongFrames = 0
+        metricDrawCost = 0; metricDrawPeak = 0; metricEntryHeadroom = 0; metricCaptureHeadroom = 0
+        metricUpdateHeadroom = 0; metricUpdateCount = 0
     }
     #endif
 }

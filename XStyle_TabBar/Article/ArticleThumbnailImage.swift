@@ -34,7 +34,13 @@ struct ArticleThumbnailImage: View {
 
         func updateUIView(_ view: UIImageView, context: Context) {
             guard context.coordinator.image != image else { return }
-            view.image = UIImage(resource: image)
+            let uiImage = UIImage(resource: image)
+            view.image = uiImage
+            if let pixels = uiImage.cgImage {
+                // Warm the same immutable source that the reflection capture
+                // sees later. The shared cache schedules all decoding off-main.
+                TabBarPreparedImageCache.shared.image(for: pixels, priority: .prewarm)
+            }
             context.coordinator.image = image
         }
 
