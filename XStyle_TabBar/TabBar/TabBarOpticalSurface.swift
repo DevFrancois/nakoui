@@ -1,4 +1,5 @@
 import MetalKit
+import os
 import UIKit
 
 /// A single custom Metal surface. Ordinary UI uses a small reusable shared
@@ -9,7 +10,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         set {
             let value = newValue.sanitized()
             guard renderer?.settings != value else { return }
-            isPreparingInteraction = false
+            interactionWarmupEnds = 0
             // The existing display link picks up the snapshot next frame.
             // Capture history, cadence, and Carousel leases remain intact.
             renderer?.settings = value
@@ -41,7 +42,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     private var displayLink: CADisplayLink?
     private let drawableBroker = CarouselDrawableBroker<CAMetalDrawable>(
         worker: DispatchQueue(label: "tabbar.drawable-broker", qos: .userInteractive))
-    private var presentationRevision: UInt64 = 0
+    private let presentationGate = TabBarPresentationGate()
     private var presentationTime: CFTimeInterval = 0
     private weak var displayLinkScene: UIWindowScene?
     private weak var producerView: UIView?
@@ -51,9 +52,12 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     // Changed inputs bump contentRevision. Input preparation can also warm the
     // layer before a gesture moves; steady rendering deduplicates revisions.
     private var contentRevision: UInt64 = 1
-    private var presentedRevision: UInt64 = 0
-    private var submittedRevision: UInt64?
-    private var isPreparingInteraction = false
+    private var presentationState = TabBarPresentationState()
+    // Until this time, a touch that has not scrolled yet re-encodes identical
+    // content to keep Metal awake. Bounded so a long press cannot hold
+    // full-rate GPU work for content that never changes.
+    private var interactionWarmupEnds: CFTimeInterval = 0
+    private static let interactionWarmup: CFTimeInterval = 0.5
     private var isLinkIdle = false
     private var activity = TabBarRenderActivity()
     private lazy var interactionObserver: TabBarInteractionObserver = {
@@ -64,7 +68,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         observer.onActivity = { [weak self] touching, beganAt in
             guard let self else { return }
             self.activity.isInteracting = touching
-            if !touching { self.isPreparingInteraction = false }
+            if !touching { self.interactionWarmupEnds = 0 }
             guard self.canDraw else { return }
             if let beganAt {
                 #if DEBUG
@@ -72,7 +76,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
                 #endif
                 // Keep Metal awake while UIKit waits for the scroll threshold.
                 // A single warm frame can age out during a slow held gesture.
-                self.isPreparingInteraction = true
+                self.interactionWarmupEnds = CACurrentMediaTime() + Self.interactionWarmup
                 self.markContentChanged()
             } else {
                 self.wakeForActivity()
@@ -111,6 +115,14 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     private var metricSubmissions = 0
     private var metricAppearanceResets = 0
     private var metricGeometryResets = 0
+    // Opt-in fault injection waits for static content, then drops one new
+    // revision of those same inputs. It never changes saved tuning or captures.
+    private let presentationFault = ProcessInfo.processInfo.environment["TABBAR_TEST_DROP_FINAL_FRAME"]
+    private let presentationFaultStart = CACurrentMediaTime()
+    private var faultRevision: UInt64?
+    private var faultSubmitted = false
+    private var faultConfirmed = false
+    private var faultSettled = false
     #endif
 
     override init(frame: CGRect) {
@@ -141,7 +153,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         backgroundColor = .clear
         addSubview(metalView)
         renderer?.onSceneUpdate = { [weak self] in
-            self?.isPreparingInteraction = false
+            self?.interactionWarmupEnds = 0
             #if DEBUG
             TabBarPerformanceProbe.shared.scenePublished()
             #endif
@@ -213,7 +225,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         invalidatePresentation()
         contentRevision &+= 1
         activity = TabBarRenderActivity()
-        isPreparingInteraction = false
+        interactionWarmupEnds = 0
         activity.noteChange(at: CACurrentMediaTime())
         renderer?.clearScene()
         renderer?.currentUI = nil
@@ -256,7 +268,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
 
     func uiDidMove() {
         guard canDraw else { return }
-        isPreparingInteraction = false
+        interactionWarmupEnds = 0
         cadence.noteUIMotion(at: CACurrentMediaTime())
         #if DEBUG
         uiMotionReason = "scroll"
@@ -296,16 +308,29 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     }
 
     private func invalidatePresentation() {
-        presentationRevision &+= 1
-        submittedRevision = nil
+        presentationGate.advance()
+        presentationState.invalidate()
         drawableBroker.invalidate()
+    }
+
+    private var isWarmingInteraction: Bool {
+        CACurrentMediaTime() < interactionWarmupEnds
+    }
+
+    /// Content already submitted needs no new frame, except to warm an
+    /// interaction that has not moved yet.
+    private var needsEncoding: Bool {
+        presentationState.needsEncoding(contentRevision) || isWarmingInteraction
     }
 
     private func requestDraw() {
         // Carousel's bounded broker replaces pending requests. A blocked driver
         // can neither block UIKit nor accumulate obsolete reflection frames.
         drawableBroker.request(prepare: { [weak self] in
-            guard let self, self.canDraw, let layer = self.metalView.layer as? CAMetalLayer else { return nil }
+            // Reject duplicate requests before acquiring a drawable, so ticks
+            // that only keep the clock awake cost no driver work.
+            guard let self, self.canDraw, self.needsEncoding,
+                  let layer = self.metalView.layer as? CAMetalLayer else { return nil }
             let size = self.desiredDrawableSize
             if layer.drawableSize != size { layer.drawableSize = size }
             return { layer.nextDrawable() }
@@ -322,53 +347,108 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         // The UI may move while acquisition waits. Use the latest textures,
         // geometry and tuning at handoff, never the request's older snapshot.
         synchronizeGeometry(window: window, renderer: renderer)
-        guard submittedRevision != contentRevision || isPreparingInteraction else { finish(); return }
+        guard needsEncoding else { finish(); return }
         renderer.currentUI = capture?.current
         renderer.darkMode = traitCollection.userInterfaceStyle == .dark
         renderer.reduceTransparency = UIAccessibility.isReduceTransparencyEnabled
         #if DEBUG
         let started = CACurrentMediaTime()
         #endif
-        let revision = presentationRevision
+        let gate = presentationGate
+        let revision = gate.current
         let encodedRevision = contentRevision
         let encodedTime = presentationTime
         let broker = drawableBroker
         let submitted = autoreleasepool {
             renderer.draw(in: metalView, drawable: drawable) { [weak self] command in
+                guard let self else { finish(); return }
+                let ticket = self.presentationState.submit(encodedRevision, at: CACurrentMediaTime())
                 #if DEBUG
-                let recordScheduledPresentation = TabBarPerformanceProbe.shared.trackPresentation(
-                    drawable: drawable, current: self?.capture?.current,
-                    previous: self?.capture?.current, targetTime: encodedTime)
-                #endif
-                var resolved = false
-                let resolve: (Bool) -> Void = { [weak self] scheduled in
-                    guard !resolved else { return }
-                    resolved = true
-                    defer { finish() }
-                    guard let self, scheduled, self.canDraw,
-                          self.presentationRevision == revision else { return }
-                    #if DEBUG
-                    recordScheduledPresentation?()
-                    #endif
-                    self.presentedRevision = max(self.presentedRevision, encodedRevision)
+                let recordPresentation = TabBarPerformanceProbe.shared.presentationRecorder(
+                    current: self.capture?.current, previous: self.capture?.current, targetTime: encodedTime)
+                let forcedDrop = self.faultRevision == encodedRevision && !self.faultSubmitted
+                let silentDrop = forcedDrop && self.presentationFault == "silent"
+                if forcedDrop {
+                    self.faultSubmitted = true
+                    print("TABBAR_PRESENTATION_FAULT event=dropped revision=\(encodedRevision) ticket=\(ticket.id) mode=\(self.presentationFault ?? "")")
                 }
-                command.addScheduledHandler { _ in DispatchQueue.main.async { resolve(true) } }
-                command.addCompletedHandler { buffer in
-                    if buffer.status != .completed {
-                        DispatchQueue.main.async { [weak self] in
-                            if let self, self.submittedRevision == encodedRevision {
-                                self.submittedRevision = nil
-                                self.markContentChanged()
-                            }
-                            resolve(false)
+                #else
+                let forcedDrop = false
+                let silentDrop = false
+                #endif
+                // Release acquisition on scheduling, not display acknowledgement:
+                // waiting for presentation would serialize the rendering pipeline.
+                var released = false
+                let release = {
+                    guard !released else { return }
+                    released = true
+                    finish()
+                }
+                let acknowledge: (CFTimeInterval) -> Void = { [weak self] time in
+                    guard let self else { return }
+                    let presented = time.isFinite && time > 0
+                    let retry = self.presentationState.resolve(ticket, presented: presented)
+                    #if DEBUG
+                    if self.faultRevision == encodedRevision, presented, !self.faultConfirmed,
+                       self.presentationGate.current == revision {
+                        self.faultConfirmed = true
+                        print("TABBAR_PRESENTATION_FAULT event=confirmed revision=\(encodedRevision) ticket=\(ticket.id) sameContent=\(self.contentRevision == encodedRevision) time=\(time)")
+                    }
+                    #endif
+                    if retry { self.wakeForActivity(drawChangedContent: true) }
+                }
+                #if !targetEnvironment(simulator)
+                if !forcedDrop {
+                    drawable.addPresentedHandler { presented in
+                        let time = presented.presentedTime
+                        DispatchQueue.main.async {
+                            #if DEBUG
+                            // Count the drawable callback once, independently
+                            // of earlier generation/command failure reports.
+                            recordPresentation?(time)
+                            #endif
+                            acknowledge(time)
                         }
                     }
+                }
+                #endif
+                command.addScheduledHandler { _ in
+                    // Present from Metal's scheduling thread: no main-thread hop
+                    // or Core Animation transaction delays a rendered frame, and
+                    // a frame encoded before a reset never reaches the screen.
+                    let accepted = !forcedDrop && gate.present(drawable, ifCurrent: revision)
+                    DispatchQueue.main.async {
+                        #if DEBUG
+                        #if targetEnvironment(simulator)
+                        if accepted { recordPresentation?(CACurrentMediaTime()) }
+                        #endif
+                        #endif
+                        if !accepted, !forcedDrop { acknowledge(0) }
+                        release()
+                    }
+                }
+                command.addCompletedHandler { buffer in
+                    if buffer.status != .completed || (forcedDrop && !silentDrop) {
+                        DispatchQueue.main.async {
+                            acknowledge(0)
+                            release()
+                        }
+                        return
+                    }
+                    #if targetEnvironment(simulator)
+                    if !silentDrop {
+                        // Simulator lacks drawable presentation callbacks. Its
+                        // fallback acknowledges GPU completion after the gated
+                        // present request, not verified onscreen presentation.
+                        let accepted = gate.current == revision
+                        DispatchQueue.main.async { acknowledge(accepted ? CACurrentMediaTime() : 0) }
+                    }
+                    #endif
                 }
                 broker.submit { command.commit() }
             }
         }
-        if submitted { submittedRevision = encodedRevision }
-        else { finish() }
+        if !submitted { finish() }
         #if DEBUG
         if logsMetrics {
             let duration = CACurrentMediaTime() - started
@@ -394,6 +474,14 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         // One scene clock drives both capture and rendering. Capture is admitted
         // before requesting a drawable, and all driver waits stay on the worker.
         let now = CACurrentMediaTime()
+        if let timedOut = presentationState.retryUnacknowledged(at: now) {
+            activity.noteChange(at: now)
+            #if DEBUG
+            if faultRevision == timedOut.revision {
+                print("TABBAR_PRESENTATION_FAULT event=timeout revision=\(timedOut.revision) ticket=\(timedOut.id)")
+            }
+            #endif
+        }
         let updateDeadline = UIUpdateInfo.current(for: self)?.completionDeadlineTime
         let captureDeadline = TabBarCaptureCadence.submissionDeadline(
             displayTarget: link.targetTimestamp, uiCompletion: updateDeadline)
@@ -448,10 +536,24 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         }
         // Keep the broker supplied throughout motion, including clean ticks
         // between asynchronous producer callbacks. Static content still idles.
-        let needsDraw = contentRevision != presentedRevision || activity.isActive(at: now)
+        #if DEBUG
+        if (presentationFault == "drop" || presentationFault == "silent"), faultRevision == nil,
+           now - presentationFaultStart > 2, !activity.isActive(at: now),
+           presentationState.presentedRevision == contentRevision {
+            contentRevision &+= 1
+            faultRevision = contentRevision
+            activity.noteChange(at: now)
+            print("TABBAR_PRESENTATION_FAULT event=armed revision=\(contentRevision)")
+        }
+        #endif
+        let needsDraw = contentRevision != presentationState.presentedRevision || activity.isActive(at: now)
         setLinkIdle(!needsDraw)
         if needsDraw { requestDraw() }
         #if DEBUG
+        if faultConfirmed, !needsDraw, !faultSettled {
+            faultSettled = true
+            print("TABBAR_PRESENTATION_FAULT event=settled revision=\(contentRevision) sameContent=\(contentRevision == faultRevision)")
+        }
         logMetrics(link)
         #endif
     }
@@ -648,5 +750,24 @@ private final class TabBarInteractionObserver: UIGestureRecognizer {
         touchCount = max(0, touchCount - touches.count)
         onActivity?(touchCount > 0, nil)
         if touchCount == 0 { state = .failed }
+    }
+}
+
+/// The presentation revision, readable from Metal's scheduling thread. A reset
+/// advances it on main; frames encoded under an older revision are dropped.
+nonisolated private final class TabBarPresentationGate: Sendable {
+    private let revision = OSAllocatedUnfairLock(initialState: UInt64(0))
+
+    var current: UInt64 { revision.withLock { $0 } }
+
+    func advance() { revision.withLock { $0 &+= 1 } }
+
+    /// Holding the lock keeps a reset from landing between the check and present.
+    func present(_ drawable: MTLDrawable, ifCurrent expected: UInt64) -> Bool {
+        revision.withLockUnchecked { current in
+            guard current == expected else { return false }
+            drawable.present()
+            return true
+        }
     }
 }

@@ -51,6 +51,21 @@ struct TabBarCaptureCadenceTests {
         #expect(schedule.estimatedDuration(isIdle: false) == 0.012)
     }
 
+    @Test("Idle checks keep an expensive first active capture behind the retry delay")
+    func idleChecksDelayOverDeadlineRetry() {
+        var schedule = TabBarCaptureSchedule()
+        schedule.recordCapture(duration: 0.012, at: 1, isIdle: false)
+        for sample in 0...12 {
+            schedule.recordCapture(duration: 0.001, at: 1.1 + Double(sample) / 30, isIdle: true)
+        }
+        // 6ms of headroom cannot fit a 12ms capture. The active history last
+        // ran 520ms ago, but the latest capture was only 20ms ago.
+        let tooSoon = schedule.shouldCapture(at: 1.52, deadline: 1.526, isIdle: false)
+        #expect(!tooSoon)
+        let retry = schedule.shouldCapture(at: 1.76, deadline: 1.766, isIdle: false)
+        #expect(retry)
+    }
+
     @Test("Clean ticks between producer frames do not lower the active display cadence")
     func producerActivitySurvivesCallbackGaps() {
         var activity = TabBarRenderActivity()

@@ -290,10 +290,8 @@ final class TabBarOpticsRenderer: NSObject {
         // Preparation and optics share this queue/submission. Subsequent cached
         // reads on the same queue are ordered after the preparing command too.
         submitted = true
-        // Let Metal present after this command's rendering completes. A separate
-        // scheduled-handler hop and Core Animation transaction delayed/coalesced
-        // already-rendered frames while UIKit was processing the next update.
-        command.present(drawable)
+        // `submit` presents `drawable` from this command's scheduled handler,
+        // where it can still drop a frame encoded before a reset.
         command.enqueue()
         submit(command)
         return true

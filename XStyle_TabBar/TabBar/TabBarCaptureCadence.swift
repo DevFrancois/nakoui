@@ -50,8 +50,15 @@ nonisolated struct TabBarCaptureSchedule {
         if !force, let lastCaptureTime, time - lastCaptureTime + 1.0 / 600 < 1.0 / 60 {
             return false
         }
-        if isIdle { return idle.shouldCapture(at: time, deadline: deadline, force: force) }
-        return active.shouldCapture(at: time, deadline: deadline, force: force)
+        // Retry relative to the latest capture of either kind. A history's own
+        // timestamp goes stale while the other one runs, which would admit its
+        // first over-deadline capture immediately instead of after the retry delay.
+        if isIdle {
+            return idle.shouldCapture(at: time, deadline: deadline, force: force,
+                                      latestCapture: lastCaptureTime)
+        }
+        return active.shouldCapture(at: time, deadline: deadline, force: force,
+                                    latestCapture: lastCaptureTime)
     }
 
     mutating func recordCapture(duration: CFTimeInterval, at time: CFTimeInterval, isIdle: Bool) {
@@ -98,8 +105,11 @@ nonisolated struct TabBarCaptureCadence {
         return uiCompletion
     }
 
+    /// `latestCapture` is a capture recorded elsewhere, such as another cost
+    /// history; it delays the over-deadline retry but not the regular cadence.
     mutating func shouldCapture(at time: CFTimeInterval, deadline: CFTimeInterval,
-                                force: Bool = false) -> Bool {
+                                force: Bool = false,
+                                latestCapture: CFTimeInterval? = nil) -> Bool {
         guard time.isFinite else { return false }
         if let lastCaptureTime, time < lastCaptureTime { reset() }
         if force { return true }
@@ -121,7 +131,8 @@ nonisolated struct TabBarCaptureCadence {
         // The budget-derived interval may exceed 100 ms: enforcing a 10 Hz floor
         // could exceed the main-thread budget on slower devices.
         if firstDeferredTime == nil { firstDeferredTime = time }
-        let reference = lastCaptureTime ?? firstDeferredTime ?? time
+        let latest = [lastCaptureTime, latestCapture].compactMap { $0 }.max()
+        let reference = latest ?? firstDeferredTime ?? time
         return time - reference >= max(Self.retryDelay, captureInterval)
     }
 

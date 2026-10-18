@@ -191,10 +191,10 @@ final class TabBarPerformanceProbe {
         wake?.precedingSlowCapture = lastSlowMovingCapture
     }
 
-    /// Call only for a successfully encoded frame, before presenting the drawable.
-    @discardableResult
-    func trackPresentation(drawable: CAMetalDrawable, current: Frame?, previous: Frame?,
-                           targetTime: CFTimeInterval) -> (() -> Void)? {
+    /// Scalar-only snapshot for the production acknowledgement. Sharing its
+    /// callback avoids a second main-queue hop just for instrumentation.
+    func presentationRecorder(current: Frame?, previous: Frame?,
+                              targetTime: CFTimeInterval) -> ((CFTimeInterval) -> Void)? {
         guard isEnabled else { return nil }
         let previous = previous ?? current
         let duration = min(1.0 / 30, max(1.0 / 120,
@@ -205,17 +205,7 @@ final class TabBarPerformanceProbe {
             current: current.flatMap { captures[$0.captureTime] } ?? Revision(),
             previous: previous.flatMap { captures[$0.captureTime] } ?? Revision(),
             blend: blend, gesture: wake?.id ?? 0)
-        #if targetEnvironment(simulator)
-        // Simulator Metal does not expose actual drawable presentation callbacks.
-        // The caller invokes this scalar-only snapshot after scheduling present.
-        return { [weak self] in self?.didPresent(encoded, at: CACurrentMediaTime()) }
-        #else
-        drawable.addPresentedHandler { [weak self] presented in
-            let time = presented.presentedTime
-            DispatchQueue.main.async { [weak self] in self?.didPresent(encoded, at: time) }
-        }
-        return nil
-        #endif
+        return { [weak self] time in self?.didPresent(encoded, at: time) }
     }
 
     private func didPresent(_ encoded: Encoded, at time: CFTimeInterval) {
