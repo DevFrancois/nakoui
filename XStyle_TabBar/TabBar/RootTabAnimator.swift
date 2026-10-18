@@ -32,8 +32,8 @@ final class RootTabAnimator: NSObject, UIViewControllerAnimatedTransitioning {
 
     private var outgoingSnapshot: UIView?
     private var transitionContext: (any UIViewControllerContextTransitioning)?
-    private var translationAnimator: UIViewPropertyAnimator?
-    private var opacityAnimator: UIViewPropertyAnimator?
+    private let animationKeyPrefix = "rootTabTransition.\(UUID().uuidString)."
+    private var ownedAnimations: [(layer: CALayer, key: String)] = []
     private weak var fromView: UIView?
     private weak var toView: UIView?
     private var didComplete = false
@@ -49,32 +49,21 @@ final class RootTabAnimator: NSObject, UIViewControllerAnimatedTransitioning {
         isAnimated && !finishWhenStarted ? Self.slideDuration : 0
     }
 
-    func animateTransition(using transitionContext: any UIViewControllerContextTransitioning) {
-        let animator = interruptibleAnimator(using: transitionContext)
-        if finishWhenStarted {
-            finishImmediately()
-            return
-        }
-        opacityAnimator?.startAnimation()
-        animator.startAnimation()
-    }
-
-    func interruptibleAnimator(using context: any UIViewControllerContextTransitioning) -> any UIViewImplicitlyAnimating {
-        if let translationAnimator { return translationAnimator }
+    func animateTransition(using context: any UIViewControllerContextTransitioning) {
+        guard transitionContext == nil, !didComplete else { return }
         transitionContext = context
         let shouldAnimate = isAnimated && !finishWhenStarted
-        let translation = UIViewPropertyAnimator(duration: shouldAnimate ? Self.slideDuration : 0, curve: .easeOut)
-        translationAnimator = translation
-
         guard let from = context.view(forKey: .from),
               let to = context.view(forKey: .to),
               let toController = context.viewController(forKey: .to) else {
-            translation.addCompletion { [weak self] _ in self?.complete() }
-            return translation
+            complete()
+            return
         }
 
         fromView = from
         toView = to
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         let container = context.containerView
         container.clipsToBounds = true
         to.frame = context.finalFrame(for: toController)
@@ -92,25 +81,51 @@ final class RootTabAnimator: NSObject, UIViewControllerAnimatedTransitioning {
         } else {
             outgoing = from
         }
+        CATransaction.commit()
 
-        UIView.performWithoutAnimation {
-            to.transform = shouldAnimate ? self.motion.incomingTransform : .identity
-            to.alpha = shouldAnimate ? 0 : 1
+        guard shouldAnimate else {
+            complete()
+            return
         }
 
-        let outgoingTransform = shouldAnimate ? motion.outgoingTransform : .identity
-        translation.addAnimations {
-            to.transform = .identity
-            outgoing.transform = outgoingTransform
+        // Model values describe the settled destination. Only these four
+        // explicit animations supply the presentation between the endpoints.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        CATransaction.setCompletionBlock { [weak self] in
+            // Core Animation invokes this on the main thread after this
+            // group's animations finish or are removed. Early settlement may
+            // already have completed UIKit and started a newer transition.
+            self?.complete()
         }
-        let opacity = UIViewPropertyAnimator(duration: shouldAnimate ? Self.fadeDuration : 0, curve: .easeOut)
-        opacity.addAnimations {
-            to.alpha = 1
-            outgoing.alpha = 0
-        }
-        opacityAnimator = opacity
-        translation.addCompletion { [weak self] _ in self?.complete() }
-        return translation
+        to.transform = .identity
+        to.alpha = 1
+        outgoing.transform = motion.outgoingTransform
+        outgoing.alpha = 0
+        addAnimation(to.layer, name: "incoming.transform", keyPath: "transform",
+                     from: NSValue(caTransform3D: CATransform3DMakeAffineTransform(motion.incomingTransform)),
+                     to: NSValue(caTransform3D: CATransform3DIdentity), duration: Self.slideDuration)
+        addAnimation(outgoing.layer, name: "outgoing.transform", keyPath: "transform",
+                     from: NSValue(caTransform3D: CATransform3DIdentity),
+                     to: NSValue(caTransform3D: CATransform3DMakeAffineTransform(motion.outgoingTransform)),
+                     duration: Self.slideDuration)
+        addAnimation(to.layer, name: "incoming.opacity", keyPath: "opacity",
+                     from: 0, to: 1, duration: Self.fadeDuration)
+        addAnimation(outgoing.layer, name: "outgoing.opacity", keyPath: "opacity",
+                     from: 1, to: 0, duration: Self.fadeDuration)
+        CATransaction.commit()
+    }
+
+    private func addAnimation(_ layer: CALayer, name: String, keyPath: String,
+                              from: Any, to: Any, duration: TimeInterval) {
+        let animation = CABasicAnimation(keyPath: keyPath)
+        animation.fromValue = from
+        animation.toValue = to
+        animation.duration = duration
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        let key = animationKeyPrefix + name
+        ownedAnimations.append((layer, key))
+        layer.add(animation, forKey: key)
     }
 
     /// End the current UIKit transition before changing its destination. A
@@ -129,29 +144,33 @@ final class RootTabAnimator: NSObject, UIViewControllerAnimatedTransitioning {
         // complete the native context when it arrives, never orphan it here.
         finishWhenStarted = true
         guard transitionContext != nil else { return }
-        if translationAnimator?.state == .active { translationAnimator?.stopAnimation(true) }
-        if opacityAnimator?.state == .active { opacityAnimator?.stopAnimation(true) }
         complete()
     }
 
     private func complete() {
-        guard !didComplete else { return }
+        guard !didComplete, let context = transitionContext else { return }
+        // Mark completion before removing keys: removal can deliver the old
+        // transaction's callback while a newer animator uses these same layers.
         didComplete = true
-        if opacityAnimator?.state == .active { opacityAnimator?.stopAnimation(true) }
-        UIView.performWithoutAnimation {
-            self.fromView?.transform = .identity
-            self.fromView?.alpha = 1
-            self.toView?.transform = .identity
-            self.toView?.alpha = 1
-            self.outgoingSnapshot?.removeFromSuperview()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (layer, key) in ownedAnimations {
+            layer.removeAnimation(forKey: key)
         }
-        if let context = transitionContext {
-            context.completeTransition(!context.transitionWasCancelled)
-        }
+        fromView?.transform = .identity
+        fromView?.alpha = 1
+        toView?.transform = .identity
+        toView?.alpha = 1
+        outgoingSnapshot?.removeFromSuperview()
+        CATransaction.commit()
+        ownedAnimations.removeAll()
         transitionContext = nil
         outgoingSnapshot = nil
-        translationAnimator = nil
-        opacityAnimator = nil
-        onCompletion?(self)
+        fromView = nil
+        toView = nil
+        let completion = onCompletion
+        onCompletion = nil
+        context.completeTransition(!context.transitionWasCancelled)
+        completion?(self)
     }
 }

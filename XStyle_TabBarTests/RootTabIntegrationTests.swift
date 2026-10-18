@@ -6,19 +6,22 @@ import UIKit
 @MainActor
 @Suite(.serialized)
 struct RootTabIntegrationTests {
-    @Test("Tab changes and outer navigation preserve Home state and its real scroll views")
-    func retainsHomeAcrossTabsAndNavigation() async throws {
+    @Test("Tab changes and outer navigation preserve Home state and its real scroll views", arguments: [false, true])
+    func retainsHomeAcrossTabsAndNavigation(animationEnabled: Bool) async throws {
         let scene = try #require(UIApplication.shared.connectedScenes.first as? UIWindowScene)
         let window = UIWindow(windowScene: scene)
         let state = TabIntegrationState()
         let record = HomeIdentityRecord()
-        let host = UIHostingController(rootView: TabIntegrationFixture(state: state, record: record))
+        let host = UIHostingController(rootView: TabIntegrationFixture(
+            state: state, record: record, animationEnabled: animationEnabled
+        ))
         window.rootViewController = host
         window.isHidden = false
         defer { window.isHidden = true }
 
         try #require(await eventually { record.token != nil && self.findTabs(in: host) != nil })
         let tabs = try #require(findTabs(in: host))
+        let originalHosts = tabs.viewControllers?.map(ObjectIdentifier.init)
         let home = try #require(tabs.viewControllers?.first)
         try #require(await eventually { self.scrolls(in: home.view).count >= AppTab.allCases.count + 1 })
         try #require(await eventually {
@@ -45,7 +48,14 @@ struct RootTabIntegrationTests {
         try #require(await eventually { abs(videos.contentOffset.y - 320) < 0.5 })
 
         for selection: RootTab in [.profile, .search, .scanner, .home] {
+            let requestCount = tabs.transitionRequestCount
             state.selection = selection
+            if animationEnabled {
+                try #require(await eventually {
+                    tabs.committedSelection == selection && tabs.activeAnimator?.isAnimated == true
+                }, "The animated fixture must exercise the delegate's real page animator")
+                #expect(tabs.transitionRequestCount == requestCount + 1)
+            }
             try #require(await eventually { tabs.committedSelection == selection && tabs.activeAnimator == nil })
         }
         try #require(await eventually { home.view.window != nil })
@@ -53,14 +63,17 @@ struct RootTabIntegrationTests {
         #expect(record.token == originalToken)
         #expect(state.pager.selectedTab == .videos)
         #expect(abs(videos.contentOffset.y - 320) < 0.5)
+        #expect(tabs.viewControllers?.map(ObjectIdentifier.init) == originalHosts)
 
         state.navigation.push(QuizKind.classic)
         try #require(await eventually { self.hasMarker("test.tabDestination", in: host.view) })
+        if animationEnabled { try await Task.sleep(for: .milliseconds(450)) }
         state.navigation.path.removeLast()
         try #require(await eventually {
             !self.hasMarker("test.tabDestination", in: host.view) && home.view.window != nil
         })
         #expect(findTabs(in: host) === tabs)
+        #expect(tabs.viewControllers?.map(ObjectIdentifier.init) == originalHosts)
         #expect(Set(scrolls(in: home.view).map(ObjectIdentifier.init)) == originalIDs)
         #expect(record.token == originalToken)
         #expect(state.pager.selectedTab == .videos)
@@ -102,6 +115,7 @@ private final class TabIntegrationState {
 private struct TabIntegrationFixture: View {
     @Bindable var state: TabIntegrationState
     let record: HomeIdentityRecord
+    let animationEnabled: Bool
     @Namespace private var zoom
 
     var body: some View {
@@ -122,7 +136,7 @@ private struct TabIntegrationFixture: View {
             }
         }
         .environment(\.rootNavigation, state.navigation)
-        .transaction { $0.disablesAnimations = true }
+        .transaction { $0.disablesAnimations = !animationEnabled }
     }
 }
 

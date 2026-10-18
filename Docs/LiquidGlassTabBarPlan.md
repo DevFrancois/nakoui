@@ -44,3 +44,15 @@ Only committed content receives interaction and accessibility. Camera activity d
 - [Tab controller transition delegate](https://developer.apple.com/documentation/uikit/uitabbarcontrollerdelegate/tabbarcontroller(_:animationcontrollerfortransitionfrom:to:))
 - [UIHostingController](https://developer.apple.com/documentation/swiftui/uihostingcontroller)
 - [Raise the bar with iPhone Duo](https://developer.apple.com/videos/play/tech-talks/111462/)
+
+## Core Animation trial — 19 October 2026
+
+The experimental branch `codex/core-animation-tab-transitions` starts at `a9d6a25`. Keep `codex/native-tab-transitions` at that commit and do not merge the experiment automatically.
+
+- Limit production changes to `RootTabAnimator`. Preserve the native tab delegate, retained hosts, navigation stack, glass toolbar, camera gating, and existing interruption/snapshot policy.
+- Start four explicit `CABasicAnimation`s from `animateTransition(using:)`: incoming/outgoing translation for 0.30 seconds and opacity for 0.20 seconds, all ease-out. Preserve 30-point travel, RTL, vertical motion and unscaled content. Remove the optional property-animator method.
+- Set model endpoints with implicit actions disabled. Give every transition unique keys and remove only its own animations. Complete UIKit exactly once through guarded cleanup, including cancellation, early removal and settlement before the context arrives. Use a weak transaction completion so delayed callbacks cannot retain the animator or alter a newer transition.
+- Capture the original implementation before replacing it. Run the same opt-in harness for three repetitions on each implementation and actual Duo toolbar axis, recording the active display and sampling presentation layers. Include nominal 450 ms ordinary changes, 60/40 ms rapid changes, same-run-loop bursts, axis changes and Reduce Motion changes.
+- Add lifecycle regression coverage and an animated Home-retention integration variant. Build for a generic iOS device without signing; retain iOS 26 support.
+
+Completed: four captures, frame inspection, 81 passing regression tests, four targeted recording-test passes, and the unsigned device build. Ordinary timing is equivalent. Rapid-interruption page flashes remain in both implementations; a reduction in vertical burst flashes did not repeat horizontally, so no consistent motion-quality advantage is established. Keep the candidate available for physical-device comparison. See [the comparison report](CoreAnimationComparison.md) for recordings, measurements, limitations and reproduction steps.
