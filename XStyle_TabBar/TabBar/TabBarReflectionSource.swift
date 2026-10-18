@@ -4,6 +4,7 @@ import UIKit
 
 @MainActor
 protocol TabBarReflectionConsumer: AnyObject {
+    func uiDidMove()
     func receive(texture: MTLTexture, commandBuffer: MTLCommandBuffer, from view: UIView)
     func clearReflection(from view: UIView?)
 }
@@ -15,6 +16,12 @@ final class TabBarReflectionSource {
     private weak var consumer: (any TabBarReflectionConsumer)?
     private weak var producerView: MTKView?
     private var frameRequested = false
+
+    /// Existing scroll geometry callbacks notify the native receiver without
+    /// publishing state or invalidating the SwiftUI tree.
+    func uiDidMove() {
+        consumer?.uiDidMove()
+    }
 
     /// Pass this method to CardCarousel.onRenderTexture when placing Carousel.
     /// The consumer appends its optical pass to Carousel's current submission.

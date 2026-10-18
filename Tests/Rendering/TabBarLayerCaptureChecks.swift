@@ -87,6 +87,43 @@ struct Checks {
         let group = CALayer(); group.frame = root.bounds; group.opacity = 0.5; root.addSublayer(group)
         group.addSublayer(layer(CGRect(x: 10, y: 10, width: 80, height: 80), red)); group.addSublayer(layer(CGRect(x: 40, y: 40, width: 80, height: 80), green))
     }
+    await check("fractional group opacity over transparent background") { root in
+        root.backgroundColor = nil
+        let group = CALayer(); group.frame = root.bounds; group.opacity = 0.37; root.addSublayer(group)
+        group.addSublayer(layer(CGRect(x: 10, y: 10, width: 80, height: 80), red))
+        group.addSublayer(layer(CGRect(x: 40, y: 40, width: 80, height: 80), green))
+    }
+    await check("group opacity combines shell and translucent overlapping children") { root in
+        let group = layer(CGRect(x: 10, y: 10, width: 100, height: 100), blue)
+        group.opacity = 0.43; root.addSublayer(group)
+        let first = layer(CGRect(x: 0, y: 0, width: 70, height: 70), red); first.opacity = 0.61
+        let second = layer(CGRect(x: 30, y: 30, width: 70, height: 70), green); second.opacity = 0.29
+        group.addSublayer(first); group.addSublayer(second)
+    }
+    await check("nested fractional opacity groups") { root in
+        root.backgroundColor = nil
+        let outer = CALayer(); outer.frame = root.bounds; outer.opacity = 0.73; root.addSublayer(outer)
+        outer.addSublayer(layer(CGRect(x: 10, y: 10, width: 80, height: 80), blue))
+        let inner = CALayer(); inner.frame = root.bounds; inner.opacity = 0.41; outer.addSublayer(inner)
+        inner.addSublayer(layer(CGRect(x: 20, y: 20, width: 80, height: 80), red))
+        let overlap = layer(CGRect(x: 40, y: 40, width: 80, height: 80), green); overlap.opacity = 0.67
+        inner.addSublayer(overlap)
+    }
+    await check("disabled group opacity keeps native fallback") { root in
+        let group = CALayer(); group.frame = root.bounds; group.opacity = 0.37
+        group.allowsGroupOpacity = false; root.addSublayer(group)
+        group.addSublayer(layer(CGRect(x: 10, y: 10, width: 80, height: 80), red))
+        group.addSublayer(layer(CGRect(x: 40, y: 40, width: 80, height: 80), green))
+    }
+    await check("rounded nested opacity overlap keeps native fallback") { root in
+        root.backgroundColor = nil
+        let group = CALayer(); group.frame = CGRect(x: 10, y: 10, width: 100, height: 100)
+        group.opacity = 0.53; group.cornerRadius = 20; group.cornerCurve = .continuous
+        group.masksToBounds = true; root.addSublayer(group)
+        let inner = CALayer(); inner.frame = group.bounds; inner.opacity = 0.71; group.addSublayer(inner)
+        inner.addSublayer(layer(CGRect(x: 0, y: 0, width: 80, height: 80), red))
+        inner.addSublayer(layer(CGRect(x: 30, y: 30, width: 70, height: 70), green))
+    }
     await check("border overlays children") { root in
         let group = layer(CGRect(x: 10, y: 10, width: 100, height: 100), red); group.borderWidth = 8; group.borderColor = blue; root.addSublayer(group)
         group.addSublayer(layer(group.bounds, green))
@@ -214,6 +251,21 @@ struct Checks {
         return bitmap.makeImage()!
     }
     let largeImage=rampImage(width:600,height:400)
+    await check("prepared image and translucent overlap inside fractional opacity group") { root in
+        let group = CALayer(); group.frame = root.bounds; group.opacity = 0.63; root.addSublayer(group)
+        let image = CALayer(); image.frame = CGRect(x: 12, y: 18, width: 94, height: 72)
+        image.contents = largeImage; image.contentsGravity = .resizeAspectFill; image.masksToBounds = true
+        group.addSublayer(image)
+        let overlap = layer(CGRect(x: 40, y: 40, width: 70, height: 70), green); overlap.opacity = 0.43
+        group.addSublayer(overlap)
+    }
+    await check("fractional opacity and single rounded prepared image") { root in
+        let group = CALayer(); group.frame = CGRect(x: 10, y: 20, width: 100, height: 80)
+        group.opacity = 0.53; group.cornerRadius = 20; group.cornerCurve = .continuous
+        group.masksToBounds = true; root.addSublayer(group)
+        let image = CALayer(); image.frame = group.bounds; image.contents = largeImage
+        image.contentsGravity = .resizeAspectFill; image.masksToBounds = true; group.addSublayer(image)
+    }
     for gravity: CALayerContentsGravity in [.resize, .resizeAspect, .resizeAspectFill] {
         await check("prepared large image \(gravity.rawValue) with nonzero bounds") { root in
             let image=CALayer();image.bounds=CGRect(x:7,y:11,width:92,height:74);image.position=CGPoint(x:64,y:64)
@@ -224,7 +276,7 @@ struct Checks {
         let image=CALayer();image.frame=CGRect(x:12,y:18,width:94,height:72);image.isGeometryFlipped=true
         image.contents=largeImage;image.contentsGravity = .resizeAspectFill;image.masksToBounds=true;root.addSublayer(image)
     }
-    await check("coprime photo aspect keeps native fallback") { root in
+    await check("coprime photo aspect is prepared") { root in
         let image=CALayer();image.frame=CGRect(x:12,y:18,width:94,height:72)
         image.contents=rampImage(width:643,height:417);image.contentsGravity = .resizeAspectFill;image.masksToBounds=true;root.addSublayer(image)
     }
@@ -289,6 +341,36 @@ struct Checks {
     let expectedReplacement=pixels(coldWindow,region:coldWindow.bounds,excluded:.null,scoped:false).0
     precondition(zip(captureCold(),expectedReplacement).allSatisfy { abs(Int($0)-Int($1)) <= 3 },"ready replacement mismatch")
     print("PASS pending capture stays nonblocking, moves UI and never reuses old photo")
+
+    let groupGate = CapturePreparationGate()
+    let groupCache = TabBarPreparedImageCache(prepare: { groupGate.prepare($0, $1, $2) })
+    let groupRenderer = TabBarLayerRegionRenderer(imageCache: groupCache)
+    let groupWindow = UIWindow(); groupWindow.layer.frame = coldWindow.bounds; groupWindow.layer.backgroundColor = blue
+    let opacityGroup = CALayer(); opacityGroup.frame = groupWindow.bounds; opacityGroup.opacity = 0.37
+    groupWindow.layer.addSublayer(opacityGroup)
+    let groupPhoto = CALayer(); groupPhoto.frame = CGRect(x: 12, y: 18, width: 94, height: 72)
+    groupPhoto.contents = largeImage; groupPhoto.masksToBounds = true; opacityGroup.addSublayer(groupPhoto)
+    opacityGroup.addSublayer(layer(CGRect(x: 40, y: 40, width: 70, height: 70), green))
+    let pendingGroupWindow = UIWindow(); pendingGroupWindow.layer.frame = groupWindow.bounds; pendingGroupWindow.layer.backgroundColor = blue
+    let pendingGroup = CALayer(); pendingGroup.frame = groupWindow.bounds; pendingGroup.opacity = opacityGroup.opacity
+    pendingGroupWindow.layer.addSublayer(pendingGroup)
+    pendingGroup.addSublayer(layer(CGRect(x: 40, y: 40, width: 70, height: 70), green))
+    let pendingGroupPixels = pixels(pendingGroupWindow, region: pendingGroupWindow.bounds, excluded: .null, scoped: false).0
+    for _ in 0..<20 {
+        let actual = pixels(groupWindow, region: groupWindow.bounds, excluded: .null, scoped: true, renderer: groupRenderer).0
+        precondition(zip(actual, pendingGroupPixels).allSatisfy { abs(Int($0)-Int($1)) <= 3 },
+                     "opacity group synchronously rendered a pending photo or applied alpha per child")
+    }
+    precondition(groupCache.statistics.startedJobs == 1, "opacity group duplicated image preparation")
+    groupGate.gate.signal()
+    for _ in 0..<1000 {
+        if case .ready = groupCache.image(for: largeImage) { break }
+        try! await Task.sleep(for: .milliseconds(2))
+    }
+    let groupExpected = pixels(groupWindow, region: groupWindow.bounds, excluded: .null, scoped: false).0
+    let groupActual = pixels(groupWindow, region: groupWindow.bounds, excluded: .null, scoped: true, renderer: groupRenderer).0
+    precondition(zip(groupActual, groupExpected).allSatisfy { abs(Int($0)-Int($1)) <= 3 }, "prepared opacity group mismatch")
+    print("PASS opacity group keeps pending photos asynchronous and composites ready photos once")
 
     let failedCache=TabBarPreparedImageCache(prepare:{ _,_,_ in nil })
     let failedRenderer=TabBarLayerRegionRenderer(imageCache:failedCache)

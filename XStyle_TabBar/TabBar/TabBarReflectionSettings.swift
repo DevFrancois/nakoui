@@ -26,6 +26,10 @@ nonisolated struct TabBarReflectionSettings: Codable, Equatable, Sendable {
 
     static let defaults = Self()
 
+    /// How far UI captures and Carousel crops extend beyond the capsule: the
+    /// longest tunable sampling distance plus a guard for the rim filter.
+    static let captureMargin = CGFloat(Parameter.samplingDistance.range.upperBound + 8)
+
     func sanitized() -> Self {
         var result = self
         for parameter in Parameter.allCases {

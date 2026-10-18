@@ -2,6 +2,90 @@ import Testing
 @testable import XStyle_TabBar
 
 struct TabBarCaptureCadenceTests {
+    @Test("Changing capture histories cannot double the sampling rate")
+    func modeChangesShareRateLimit() {
+        var schedule = TabBarCaptureSchedule()
+        schedule.recordCapture(duration: 0.002, at: 1, isIdle: true)
+        let tooSoon = schedule.shouldCapture(at: 1 + 1.0 / 120, deadline: 1.03, isIdle: false)
+        #expect(!tooSoon)
+        let nextFrame = schedule.shouldCapture(at: 1 + 1.0 / 60, deadline: 1.03, isIdle: false)
+        #expect(nextFrame)
+    }
+
+    @Test("A scroll signal is consumed by its capture and cannot classify later static checks")
+    func motionDoesNotContaminateStaticHistory() {
+        var schedule = TabBarCaptureSchedule()
+        schedule.noteUIMotion(at: 1)
+        #expect(schedule.hasUIMotion(at: 1.01))
+        schedule.recordCapture(duration: 0.003, at: 1.01, isIdle: false)
+        #expect(!schedule.hasUIMotion(at: 1.02))
+        schedule.recordCapture(duration: 0.013, at: 1.05, isIdle: true)
+        schedule.noteUIMotion(at: 2)
+        #expect(schedule.hasUIMotion(at: 2.01))
+        #expect(schedule.estimatedDuration(isIdle: false) == 0.003)
+        #expect(!schedule.hasUIMotion(at: 2.3))
+        schedule.reset()
+        #expect(!schedule.hasUIMotion(at: 2.01))
+    }
+
+    @Test("Slow idle checks cannot starve the first active capture")
+    func idleCostDoesNotDelayWake() {
+        var schedule = TabBarCaptureSchedule()
+        schedule.recordCapture(duration: 0.003, at: 1, isIdle: false)
+        for sample in 0..<30 {
+            schedule.recordCapture(duration: 0.013, at: 2 + Double(sample) / 30, isIdle: true)
+        }
+        #expect(schedule.estimatedDuration(isIdle: true) >= 0.013)
+        #expect(schedule.estimatedDuration(isIdle: false) == 0.003)
+        let admitted = schedule.shouldCapture(at: 3, deadline: 3.006, isIdle: false)
+        #expect(admitted)
+    }
+
+    @Test("Idle transitions never erase a genuinely expensive active capture")
+    func activeCostIsPreservedAcrossIdle() {
+        var schedule = TabBarCaptureSchedule()
+        schedule.recordCapture(duration: 0.012, at: 1, isIdle: false)
+        schedule.recordCapture(duration: 0.001, at: 1.1, isIdle: true)
+        let admitted = schedule.shouldCapture(at: 1.15, deadline: 1.156, isIdle: false)
+        #expect(!admitted)
+        #expect(schedule.estimatedDuration(isIdle: false) == 0.012)
+    }
+
+    @Test("Clean ticks between producer frames do not lower the active display cadence")
+    func producerActivitySurvivesCallbackGaps() {
+        var activity = TabBarRenderActivity()
+        for frame in 0..<120 {
+            let time = 1 + Double(frame) / 60
+            activity.noteChange(at: time)
+            #expect(activity.isActive(at: time + 1.0 / 120))
+        }
+        #expect(!activity.isActive(at: 4))
+    }
+
+    @Test("A held interaction remains active, then settles after release")
+    func interactionAndRelease() {
+        var activity = TabBarRenderActivity()
+        activity.isInteracting = true
+        activity.noteChange(at: 1)
+        #expect(activity.isActive(at: 10))
+        activity.isInteracting = false
+        activity.noteChange(at: 10)
+        #expect(activity.isActive(at: 10.1))
+        #expect(!activity.isActive(at: 10.3))
+    }
+
+    @Test("Rendering unchanged content cannot extend the activity hold")
+    func unchangedFramesEventuallyIdle() {
+        var activity = TabBarRenderActivity()
+        activity.noteChange(at: 1)
+        for frame in 0..<120 {
+            _ = activity.isActive(at: 1 + Double(frame) / 120)
+        }
+        #expect(!activity.isActive(at: 2))
+        activity.noteChange(at: 2)
+        #expect(activity.isActive(at: 2))
+    }
+
     @Test("A stale presentation target does not starve a valid UIKit update")
     func uiSubmissionDeadline() {
         var cadence = TabBarCaptureCadence()

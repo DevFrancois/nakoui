@@ -25,9 +25,13 @@ struct GlassTabBar: UIViewRepresentable {
         #else
         view.reflectionSettings = .defaults
         #endif
+        #if DEBUG
         // The temporary Carousel preview has an intentionally light canvas,
         // including in Dark Mode. Its menu needs matching readable controls.
         let style: UIUserInterfaceStyle = selection == .search ? .light : .unspecified
+        #else
+        let style: UIUserInterfaceStyle = .unspecified
+        #endif
         if view.overrideUserInterfaceStyle != style {
             view.overrideUserInterfaceStyle = style
         }

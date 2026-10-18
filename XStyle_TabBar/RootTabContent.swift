@@ -39,8 +39,14 @@ struct RootTabContent<Home: View>: View {
             }
 
             Tab(value: RootTab.search) {
-                CarouselDebugView(isActive: selection == .search)
-                    .toolbarVisibility(.hidden, for: .tabBar)
+                Group {
+                    #if DEBUG
+                    CarouselDebugView(isActive: selection == .search)
+                    #else
+                    RootTabPlaceholder(tab: .search)
+                    #endif
+                }
+                .toolbarVisibility(.hidden, for: .tabBar)
             } label: {
                 Label(RootTab.search.title, systemImage: RootTab.search.symbol)
             }

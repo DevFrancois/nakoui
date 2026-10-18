@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 
 /// Temporary Search destination for exercising moving-card and video reflections.
@@ -98,3 +99,4 @@ private enum CarouselDebugMedia {
                            width: 0.9982352941176471, height: 0.9993857425949103))
     ]
 }
+#endif

@@ -37,16 +37,16 @@ final class TabBarOpticsRenderer: NSObject {
     }
 
     var currentUI: TabBarUITextureCapture.Frame?
-    var previousUI: TabBarUITextureCapture.Frame?
     var capsuleInWindow: CGRect = .zero
     var darkMode = false
     var reduceTransparency = false
-    var presentationTime: CFTimeInterval = 0
     var settings: TabBarReflectionSettings {
         get { settingsValue }
         set { settingsValue = newValue.sanitized() }
     }
     var onGPUFrame: ((Double) -> Void)?
+    /// Called when a newly copied Carousel crop becomes the latest scene.
+    var onSceneUpdate: (() -> Void)?
     #if DEBUG
     var onCPUFrame: ((_ drawableAcquisition: Double, _ encoding: Double) -> Void)?
     #endif
@@ -137,7 +137,7 @@ final class TabBarOpticsRenderer: NSObject {
               commandBuffer.device.registryID == device.registryID,
               commandBuffer.status == .notEnqueued || commandBuffer.status == .enqueued,
               sourceInWindow.width > 0, sourceInWindow.height > 0 else { return }
-        let crop = visibleInWindow.intersection(capsuleInWindow.insetBy(dx: -104, dy: -104))
+        let crop = visibleInWindow.intersection(capsuleInWindow.insetBy(dx: -TabBarReflectionSettings.captureMargin, dy: -TabBarReflectionSettings.captureMargin))
         guard !crop.isNull, crop.width > 0, crop.height > 0,
               let slot = slots.first(where: { !$0.copying && $0.readers == 0 && $0 !== latestScene }) else { return }
         let scale = min(1, 320 / max(crop.width, crop.height))
@@ -179,25 +179,25 @@ final class TabBarOpticsRenderer: NSObject {
                       frameSequence > self.completedSequence, canPublish() else { return }
                 self.completedSequence = frameSequence
                 self.latestScene = slot
+                self.onSceneUpdate?()
             }
         }
     }
 
     func draw(in view: MTKView, drawable: CAMetalDrawable,
-              submit: (MTLCommandBuffer, @escaping () -> Void) -> Void) -> Bool {
+              submit: (MTLCommandBuffer) -> Void) -> Bool {
         // Drop rather than block the main thread when the GPU is behind.
         guard framesInFlight < 2, view.bounds.width > 0, view.bounds.height > 0,
               let command = queue.makeCommandBuffer() else { return false }
         let current = reduceTransparency ? nil : currentUI
-        let previous = reduceTransparency ? nil : (previousUI ?? current)
+        // Present the newest capture immediately. Fading from the old capture
+        // added a frame of latency during motion and up to 33ms after idle.
+        // The shader's completed-blend path also avoids the old texture's taps.
+        let previous = current
         let scene = latestScene
-        let captureRect = current?.rectInWindow ?? capsuleInWindow.insetBy(dx: -104, dy: -104)
+        let captureRect = current?.rectInWindow ?? capsuleInWindow.insetBy(dx: -TabBarReflectionSettings.captureMargin, dy: -TabBarReflectionSettings.captureMargin)
         guard captureRect.width > 0, captureRect.height > 0 else { return false }
         let oldRect = previous?.rectInWindow ?? captureRect
-        let duration = min(1.0 / 30, max(1.0 / 120,
-            (current?.captureTime ?? 0) - (previous?.captureTime ?? 0)))
-        let blend = current === previous ? 1 : min(1, max(0,
-            (presentationTime - (current?.captureTime ?? 0)) / duration))
         var uniforms = Uniforms(
             geometry: SIMD4(Float(view.bounds.width), Float(view.bounds.height),
                             Float(CGFloat(drawable.texture.width) / view.bounds.width), darkMode ? 1 : 0),
@@ -209,7 +209,7 @@ final class TabBarOpticsRenderer: NSObject {
                             reduceTransparency ? 1 : 0),
             visibleRect: current == nil ? .zero : SIMD4(0, 0, Float(captureRect.width), Float(captureRect.height)),
             previousCapture: vector(oldRect), sceneRect: vector(scene?.rect ?? .zero),
-            feed: SIMD4(Float(captureRect.minX), Float(captureRect.minY), Float(blend), scene == nil ? 0 : 1),
+            feed: SIMD4(Float(captureRect.minX), Float(captureRect.minY), 1, scene == nil ? 0 : 1),
             reflection: SIMD4(Float(settings.reflectionStrength), Float(settings.reflectionWidth),
                               Float(settings.saturation), Float(settings.softness)),
             surface: SIMD4(Float(settings.surfaceOpacity), Float(settings.faceWash),
@@ -290,15 +290,12 @@ final class TabBarOpticsRenderer: NSObject {
         // Preparation and optics share this queue/submission. Subsequent cached
         // reads on the same queue are ordered after the preparing command too.
         submitted = true
+        // Let Metal present after this command's rendering completes. A separate
+        // scheduled-handler hop and Core Animation transaction delayed/coalesced
+        // already-rendered frames while UIKit was processing the next update.
+        command.present(drawable)
         command.enqueue()
-        submit(command) {
-            // presentsWithTransaction requires direct presentation on main
-            // after scheduling; the broker never waits for scheduling here.
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            drawable.present()
-            CATransaction.commit()
-        }
+        submit(command)
         return true
     }
 

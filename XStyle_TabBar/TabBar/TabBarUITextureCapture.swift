@@ -89,6 +89,8 @@ final class TabBarUITextureCapture {
     private(set) var previous: Frame?
     private(set) var lastCaptureDuration: CFTimeInterval = 0
     private(set) var lastCaptureWasComplete = true
+    /// False when the latest capture reproduced `current` exactly.
+    private(set) var lastCaptureChanged = true
 
     private let textureCache: CVMetalTextureCache
     private let layerRenderer = TabBarLayerRegionRenderer()
@@ -126,9 +128,9 @@ final class TabBarUITextureCapture {
     @discardableResult
     func capture(window: UIWindow, rect: CGRect, excluding: CGRect,
                  at time: CFTimeInterval) -> Bool {
-        guard time.isFinite, Self.isValid(rect), Self.isValid(window.bounds) else { return false }
+        guard time.isFinite, rect.hasFiniteArea, window.bounds.hasFiniteArea else { return false }
         let clippedRect = rect.intersection(window.bounds)
-        guard Self.isValid(clippedRect) else { return false }
+        guard clippedRect.hasFiniteArea else { return false }
         // Stable point-aligned bounds avoid changing the sampled region by tiny
         // subpixel amounts while the tab bar settles after a layout update.
         let captureRect = clippedRect.integral.intersection(window.bounds)
@@ -163,9 +165,9 @@ final class TabBarUITextureCapture {
         context.translateBy(x: -captureRect.minX, y: -captureRect.minY)
         let clip = CGMutablePath()
         clip.addRect(captureRect)
-        if Self.isValid(excluding) {
+        if excluding.hasFiniteArea {
             let excluded = excluding.insetBy(dx: -6, dy: -6).intersection(captureRect)
-            if Self.isValid(excluded) { clip.addRect(excluded) }
+            if excluded.hasFiniteArea { clip.addRect(excluded) }
         }
         context.addPath(clip)
         context.clip(using: .evenOdd)
@@ -186,13 +188,17 @@ final class TabBarUITextureCapture {
         UIGraphicsPopContext()
         context.restoreGState()
         context.flush()
+        lastCaptureChanged = !matchesCurrent(buffer, rect: captureRect)
         CVPixelBufferUnlockBaseAddress(buffer.pixelBuffer, [])
         let flushed = CACurrentMediaTime()
 
-        // An incomplete UIKit snapshot can still contain useful ordinary UI;
-        // direct GPU producers supply layers UIKit cannot capture.
-        previous = current?.rectInWindow == captureRect ? current : nil
-        current = Frame(buffer: buffer, rect: captureRect, time: time)
+        // An identical capture keeps the existing frames, so nothing needs to
+        // be decoded or redrawn. An incomplete UIKit snapshot can still contain
+        // useful ordinary UI; direct GPU producers supply layers UIKit cannot capture.
+        if lastCaptureChanged {
+            previous = current?.rectInWindow == captureRect ? current : nil
+            current = Frame(buffer: buffer, rect: captureRect, time: time)
+        }
         capturedCost = CACurrentMediaTime() - started
         #if DEBUG
         if dumpsCapture, flushed - lastStageLogTime >= 2 {
@@ -218,14 +224,22 @@ final class TabBarUITextureCapture {
         previous = nil
         lastCaptureDuration = 0
         lastCaptureWasComplete = true
+        lastCaptureChanged = true
         // Outstanding Frame leases retain their Core Video wrappers. Keep the
         // bounded pool allocated, but never write a leased slot after reset.
     }
 
-    private static func isValid(_ rect: CGRect) -> Bool {
-        !rect.isNull && !rect.isInfinite && rect.origin.x.isFinite && rect.origin.y.isFinite &&
-            rect.width.isFinite && rect.height.isFinite && rect.width > 0 && rect.height > 0 &&
-            rect.maxX.isFinite && rect.maxY.isFinite
+    /// `buffer` must be locked. Compares its pixels with the current frame's.
+    private func matchesCurrent(_ buffer: Buffer, rect: CGRect) -> Bool {
+        guard let other = current?.buffer, current?.rectInWindow == rect, other !== buffer,
+              other.width == buffer.width, other.height == buffer.height,
+              CVPixelBufferLockBaseAddress(other.pixelBuffer, .readOnly) == kCVReturnSuccess else { return false }
+        defer { CVPixelBufferUnlockBaseAddress(other.pixelBuffer, .readOnly) }
+        let rowBytes = CVPixelBufferGetBytesPerRow(buffer.pixelBuffer)
+        guard rowBytes == CVPixelBufferGetBytesPerRow(other.pixelBuffer),
+              let lhs = CVPixelBufferGetBaseAddress(buffer.pixelBuffer),
+              let rhs = CVPixelBufferGetBaseAddress(other.pixelBuffer) else { return false }
+        return memcmp(lhs, rhs, rowBytes * buffer.height) == 0
     }
 
     private func renderLayers(of window: UIWindow, rect: CGRect, excluding: CGRect, into context: CGContext) {

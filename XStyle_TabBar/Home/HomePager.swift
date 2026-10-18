@@ -13,6 +13,7 @@ struct HomePager: View {
 
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.tabBarReflectionSource) private var reflectionSource
 
     var body: some View {
         GeometryReader { geometry in
@@ -81,11 +82,20 @@ struct HomePager: View {
         .allowsHitTesting(pager.tapTransition == nil)
         .onScrollGeometryChange(for: PagerGeometry.self) {
             PagerGeometry($0)
-        } action: { _, newValue in
+        } action: { oldValue, newValue in
+            if oldValue.offset != newValue.offset { reflectionSource?.uiDidMove() }
+            #if DEBUG
+            TabBarPerformanceProbe.shared.sourceMoved(from: oldValue.offset, to: newValue.offset)
+            #endif
             pager.update(newValue)
             onUpdate()
         }
         .onScrollPhaseChange { oldPhase, newPhase, context in
+            #if DEBUG
+            TabBarPerformanceProbe.shared.scrollPhaseChanged(
+                isTracking: newPhase == .tracking || newPhase == .interacting,
+                isIdle: newPhase == .idle)
+            #endif
             pager.scrollPhaseDidChange(from: oldPhase, to: newPhase, geometry: PagerGeometry(context.geometry))
             onUpdate()
         }
@@ -97,6 +107,9 @@ struct HomePager: View {
     /// Only the shown page moves the logo row.
     private func pageDidScroll(_ tab: AppTab, from oldPosition: PageScrollPosition, to newPosition: PageScrollPosition) {
         logoCollapse.record(newPosition, for: tab)
+        if tab == pager.selectedTab, oldPosition.offset != newPosition.offset {
+            reflectionSource?.uiDidMove()
+        }
         guard tab == pager.selectedTab, pager.tapTransition == nil, !voiceOverEnabled else { return }
         logoCollapse.follow(from: oldPosition, to: newPosition)
     }

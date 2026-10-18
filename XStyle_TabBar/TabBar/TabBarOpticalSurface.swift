@@ -9,9 +9,14 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         set {
             let value = newValue.sanitized()
             guard renderer?.settings != value else { return }
+            isPreparingInteraction = false
             // The existing display link picks up the snapshot next frame.
             // Capture history, cadence, and Carousel leases remain intact.
             renderer?.settings = value
+            #if DEBUG
+            TabBarPerformanceProbe.shared.settingsChanged()
+            #endif
+            markContentChanged()
         }
     }
 
@@ -32,7 +37,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     private let metalView: MTKView
     private let renderer: TabBarOpticsRenderer?
     private let capture: TabBarUITextureCapture?
-    private var cadence = TabBarCaptureCadence()
+    private var cadence = TabBarCaptureSchedule()
     private var displayLink: CADisplayLink?
     private let drawableBroker = CarouselDrawableBroker<CAMetalDrawable>(
         worker: DispatchQueue(label: "tabbar.drawable-broker", qos: .userInteractive))
@@ -43,7 +48,45 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
     private var producerGeometry: TabBarReflectionGeometry?
     private var previousSize: CGSize = .zero
     private var previousCapsule: CGRect = .zero
+    // Changed inputs bump contentRevision. Input preparation can also warm the
+    // layer before a gesture moves; steady rendering deduplicates revisions.
+    private var contentRevision: UInt64 = 1
+    private var presentedRevision: UInt64 = 0
+    private var submittedRevision: UInt64?
+    private var isPreparingInteraction = false
+    private var isLinkIdle = false
+    private var activity = TabBarRenderActivity()
+    private lazy var interactionObserver: TabBarInteractionObserver = {
+        let observer = TabBarInteractionObserver()
+        observer.cancelsTouchesInView = false
+        observer.delaysTouchesBegan = false
+        observer.delaysTouchesEnded = false
+        observer.onActivity = { [weak self] touching, beganAt in
+            guard let self else { return }
+            self.activity.isInteracting = touching
+            if !touching { self.isPreparingInteraction = false }
+            guard self.canDraw else { return }
+            if let beganAt {
+                #if DEBUG
+                TabBarPerformanceProbe.shared.interactionBegan(at: beganAt)
+                #endif
+                // Keep Metal awake while UIKit waits for the scroll threshold.
+                // A single warm frame can age out during a slow held gesture.
+                self.isPreparingInteraction = true
+                self.markContentChanged()
+            } else {
+                self.wakeForActivity()
+            }
+        }
+        return observer
+    }()
+    private var lastSceneDelivery: CFTimeInterval = 0
+    // Set when geometry changed after the producer's last delivered frame.
+    private var needsProducerFrame = false
+    // Hit tested once per tick, then reused by Carousel callbacks.
+    private var isCapsuleOccluded = false
     #if DEBUG
+    private var uiMotionReason = "initial"
     private let logsMetrics = ProcessInfo.processInfo.environment["TABBAR_METRICS"] == "1"
     private let skipsUICapture = ProcessInfo.processInfo.environment["TABBAR_SKIP_UI_CAPTURE"] == "1"
     private var metricStart: CFTimeInterval = 0
@@ -76,7 +119,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         if let layer = view.layer as? CAMetalLayer {
             layer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
             layer.maximumDrawableCount = 3
-            layer.presentsWithTransaction = true
+            layer.presentsWithTransaction = false
         }
         view.clearColor = MTLClearColorMake(0, 0, 0, 0)
         view.isOpaque = false
@@ -97,6 +140,13 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         isAccessibilityElement = false
         backgroundColor = .clear
         addSubview(metalView)
+        renderer?.onSceneUpdate = { [weak self] in
+            self?.isPreparingInteraction = false
+            #if DEBUG
+            TabBarPerformanceProbe.shared.scenePublished()
+            #endif
+            self?.markContentChanged()
+        }
         #if DEBUG
         renderer?.onGPUFrame = { [weak self] duration in
             guard let self, self.logsMetrics else { return }
@@ -146,6 +196,11 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
+        if interactionObserver.view !== window {
+            interactionObserver.view?.removeGestureRecognizer(interactionObserver)
+            activity.isInteracting = false
+            window?.addGestureRecognizer(interactionObserver)
+        }
         if window == nil { reflectionSource?.disconnect(self) }
         else { reflectionSource?.connect(self) }
         resetAppearance()
@@ -156,9 +211,12 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         metricAppearanceResets += 1
         #endif
         invalidatePresentation()
+        contentRevision &+= 1
+        activity = TabBarRenderActivity()
+        isPreparingInteraction = false
+        activity.noteChange(at: CACurrentMediaTime())
         renderer?.clearScene()
         renderer?.currentUI = nil
-        renderer?.previousUI = nil
         capture?.reset()
         cadence.reset()
         previousCapsule = .zero
@@ -182,13 +240,49 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
             } else {
                 link = CADisplayLink(target: target, selector: selector)
             }
-            let maximum = Float(window?.screen.maximumFramesPerSecond ?? 60)
-            link.preferredFrameRateRange = CAFrameRateRange(minimum: min(60, maximum), maximum: maximum, preferred: maximum)
             link.add(to: .main, forMode: .common)
             displayLink = link
             displayLinkScene = scene
+            isLinkIdle = true
+            setLinkIdle(false)
         }
         reflectionSource?.requestFrame()
+    }
+
+    private func markContentChanged() {
+        contentRevision &+= 1
+        wakeForActivity(drawChangedContent: true)
+    }
+
+    func uiDidMove() {
+        guard canDraw else { return }
+        isPreparingInteraction = false
+        cadence.noteUIMotion(at: CACurrentMediaTime())
+        #if DEBUG
+        uiMotionReason = "scroll"
+        #endif
+        wakeForActivity()
+    }
+
+    private func wakeForActivity(drawChangedContent: Bool = false) {
+        activity.noteChange(at: CACurrentMediaTime())
+        let wasIdle = isLinkIdle
+        setLinkIdle(false)
+        // Published GPU crops/settings may arrive just after the display tick.
+        // Let the bounded broker consume them immediately; its encoding guard
+        // rejects duplicate tick requests for the same content revision.
+        if wasIdle || drawChangedContent, canDraw { requestDraw() }
+    }
+
+    /// While nothing changes, ticks only look for UI changes at a low rate and
+    /// leave the display free to drop its refresh rate.
+    private func setLinkIdle(_ idle: Bool) {
+        guard let displayLink, idle != isLinkIdle else { return }
+        isLinkIdle = idle
+        let maximum = Float(window?.screen.maximumFramesPerSecond ?? 60)
+        displayLink.preferredFrameRateRange = idle
+            ? CAFrameRateRange(minimum: min(10, maximum), maximum: min(30, maximum), preferred: min(30, maximum))
+            : CAFrameRateRange(minimum: min(60, maximum), maximum: maximum, preferred: maximum)
     }
 
     private var canDraw: Bool {
@@ -203,6 +297,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
 
     private func invalidatePresentation() {
         presentationRevision &+= 1
+        submittedRevision = nil
         drawableBroker.invalidate()
     }
 
@@ -227,35 +322,53 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         // The UI may move while acquisition waits. Use the latest textures,
         // geometry and tuning at handoff, never the request's older snapshot.
         synchronizeGeometry(window: window, renderer: renderer)
+        guard submittedRevision != contentRevision || isPreparingInteraction else { finish(); return }
         renderer.currentUI = capture?.current
-        renderer.previousUI = capture?.previous
-        renderer.presentationTime = presentationTime
         renderer.darkMode = traitCollection.userInterfaceStyle == .dark
         renderer.reduceTransparency = UIAccessibility.isReduceTransparencyEnabled
         #if DEBUG
         let started = CACurrentMediaTime()
         #endif
         let revision = presentationRevision
+        let encodedRevision = contentRevision
+        let encodedTime = presentationTime
         let broker = drawableBroker
         let submitted = autoreleasepool {
-            renderer.draw(in: metalView, drawable: drawable) { [weak self] command, present in
-                var pendingPresentation: (() -> Void)? = present
+            renderer.draw(in: metalView, drawable: drawable) { [weak self] command in
+                #if DEBUG
+                let recordScheduledPresentation = TabBarPerformanceProbe.shared.trackPresentation(
+                    drawable: drawable, current: self?.capture?.current,
+                    previous: self?.capture?.current, targetTime: encodedTime)
+                #endif
+                var resolved = false
                 let resolve: (Bool) -> Void = { [weak self] scheduled in
-                    guard let presentation = pendingPresentation else { return }
-                    pendingPresentation = nil
+                    guard !resolved else { return }
+                    resolved = true
                     defer { finish() }
                     guard let self, scheduled, self.canDraw,
                           self.presentationRevision == revision else { return }
-                    presentation()
+                    #if DEBUG
+                    recordScheduledPresentation?()
+                    #endif
+                    self.presentedRevision = max(self.presentedRevision, encodedRevision)
                 }
                 command.addScheduledHandler { _ in DispatchQueue.main.async { resolve(true) } }
                 command.addCompletedHandler { buffer in
-                    if buffer.status != .completed { DispatchQueue.main.async { resolve(false) } }
+                    if buffer.status != .completed {
+                        DispatchQueue.main.async { [weak self] in
+                            if let self, self.submittedRevision == encodedRevision {
+                                self.submittedRevision = nil
+                                self.markContentChanged()
+                            }
+                            resolve(false)
+                        }
+                    }
                 }
                 broker.submit { command.commit() }
             }
         }
-        if !submitted { finish() }
+        if submitted { submittedRevision = encodedRevision }
+        else { finish() }
         #if DEBUG
         if logsMetrics {
             let duration = CACurrentMediaTime() - started
@@ -272,7 +385,9 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         #if DEBUG
         let tickStart = CACurrentMediaTime()
         #endif
+        updateOcclusion(window: window)
         synchronizeGeometry(window: window, renderer: renderer)
+        if needsProducerFrame, producerView != nil { requestProducerFrameIfSettled() }
         let capsule = renderer.capsuleInWindow
         renderer.reduceTransparency = UIAccessibility.isReduceTransparencyEnabled
         presentationTime = link.targetTimestamp
@@ -296,20 +411,68 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         #if DEBUG
         shouldCaptureUI = shouldCaptureUI && !skipsUICapture
         #endif
-        if shouldCaptureUI, let capture,
-           cadence.shouldCapture(at: now, deadline: captureDeadline, force: capture.current == nil),
-           capture.capture(window: window, rect: capsule.insetBy(dx: -104, dy: -104), excluding: capsule, at: link.targetTimestamp) {
-            cadence.recordCapture(duration: capture.lastCaptureDuration, at: now)
+        // A finger can be held on a static page while the display clock is
+        // active. Its costly idle checks must not overwrite scrolling history.
+        let isIdleCapture = !cadence.hasUIMotion(at: now)
+        let captureAdmitted = shouldCaptureUI && cadence.shouldCapture(
+            at: now, deadline: captureDeadline, isIdle: isIdleCapture, force: capture?.current == nil)
+        #if DEBUG
+        if shouldCaptureUI, !captureAdmitted {
+            TabBarPerformanceProbe.shared.captureDeferred(
+                estimatedDuration: cadence.estimatedDuration(isIdle: isIdleCapture),
+                headroom: captureDeadline - now)
+        }
+        if captureAdmitted { TabBarPerformanceProbe.shared.captureAttemptBegan() }
+        #endif
+        if captureAdmitted, let capture,
+           capture.capture(window: window, rect: capsule.insetBy(dx: -TabBarReflectionSettings.captureMargin,
+                                                                 dy: -TabBarReflectionSettings.captureMargin),
+                           excluding: capsule, at: link.targetTimestamp) {
+            cadence.recordCapture(duration: capture.lastCaptureDuration, at: now,
+                                  isIdle: isIdleCapture)
+            if capture.lastCaptureChanged {
+                contentRevision &+= 1
+                activity.noteChange(at: now)
+            }
             #if DEBUG
+            TabBarPerformanceProbe.shared.captureMeasured(duration: capture.lastCaptureDuration,
+                isIdle: isIdleCapture,
+                reason: uiMotionReason, changed: capture.lastCaptureChanged)
+            if let frame = capture.current {
+                TabBarPerformanceProbe.shared.uiCaptured(frame, changed: capture.lastCaptureChanged)
+            }
             metricCaptures += 1
             metricCaptureCost += capture.lastCaptureDuration
             metricCapturePeak = max(metricCapturePeak, capture.lastCaptureDuration)
             #endif
         }
-        requestDraw()
+        // Keep the broker supplied throughout motion, including clean ticks
+        // between asynchronous producer callbacks. Static content still idles.
+        let needsDraw = contentRevision != presentedRevision || activity.isActive(at: now)
+        setLinkIdle(!needsDraw)
+        if needsDraw { requestDraw() }
         #if DEBUG
         logMetrics(link)
         #endif
+    }
+
+    private func updateOcclusion(window: UIWindow) {
+        // Only a GPU producer needs this check; ordinary UI capture excludes
+        // the capsule itself. Without a hit (for example while a transition
+        // disables hit testing), nothing is known to cover the menu.
+        guard producerView != nil, let menu = superview else { isCapsuleOccluded = false; return }
+        let center = convert(CGPoint(x: bounds.midX, y: bounds.midY), to: window)
+        isCapsuleOccluded = window.hitTest(center, with: nil).map { !$0.isDescendant(of: menu) } ?? false
+    }
+
+    /// A settled producer pauses its clock; one moving on its own needs no extra
+    /// frame. A request deferred while it delivers is retried on later ticks,
+    /// so a producer that pauses right after a geometry change still recrops.
+    private func requestProducerFrameIfSettled() {
+        needsProducerFrame = true
+        guard CACurrentMediaTime() - lastSceneDelivery > 0.1 else { return }
+        needsProducerFrame = false
+        reflectionSource?.requestFrame()
     }
 
     private func synchronizeGeometry(window: UIWindow, renderer: TabBarOpticsRenderer) {
@@ -318,21 +481,24 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
             #if DEBUG
             metricGeometryResets += 1
             #endif
-            invalidatePresentation()
+            // Captures and crops are placed in window space, so they remain
+            // valid while the capsule moves. The cadence keeps its cost budget.
             previousCapsule = capsule
-            renderer.clearScene()
-            capture?.reset()
-            cadence.reset()
-            reflectionSource?.requestFrame()
+            cadence.noteUIMotion(at: CACurrentMediaTime())
+            #if DEBUG
+            uiMotionReason = "capsule"
+            #endif
+            contentRevision &+= 1
+            requestProducerFrameIfSettled()
         }
         renderer.capsuleInWindow = capsule
         if let producerView {
             let geometry = reflectionGeometry(from: producerView)
             if geometry != producerGeometry {
-                invalidatePresentation()
                 producerGeometry = geometry
-                renderer.clearScene()
-                reflectionSource?.requestFrame()
+                contentRevision &+= 1
+                // The window-space crop stays usable while the producer moves.
+                if geometry == nil { renderer.clearScene() } else { requestProducerFrameIfSettled() }
             }
         }
     }
@@ -342,7 +508,9 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         invalidatePresentation()
         producerView = nil
         producerGeometry = nil
+        needsProducerFrame = false
         renderer?.clearScene()
+        contentRevision &+= 1
         // Ordinary UI keeps reflecting when a GPU producer disappears or a tab changes.
         cadence.reset()
     }
@@ -354,23 +522,30 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         }
         producerView = view
         producerGeometry = geometry
+        lastSceneDelivery = CACurrentMediaTime()
+        // A crop may complete just after this display tick. Keep the clock
+        // active while the producer works, not only after its copy is published.
+        wakeForActivity()
+        #if DEBUG
+        TabBarPerformanceProbe.shared.sceneDelivered()
+        #endif
+        // This frame is cropped with the current geometry.
+        needsProducerFrame = false
         renderer.capsuleInWindow = convert(bounds, to: window)
         let source = view.convert(view.bounds, to: window)
         let visible = geometry.visibleRect.offsetBy(dx: source.minX, dy: source.minY)
         renderer.encodeScene(texture: texture, commandBuffer: commandBuffer,
                              sourceInWindow: source, visibleInWindow: visible) { [weak self, weak view] in
             guard let self, let view else { return false }
-            return self.producerView === view && self.reflectionGeometry(from: view) == geometry
+            // Losing the producer clears it; renderer revisions reject stale copies.
+            return self.producerView === view && !self.isCapsuleOccluded
         }
     }
 
     private func reflectionGeometry(from view: UIView) -> TabBarReflectionGeometry? {
         guard let window, view.window === window,
               window.windowScene?.activationState == .foregroundActive,
-              isVisibleInWindow(self), isVisibleInWindow(view),
-              let menu = superview,
-              let hit = window.hitTest(convert(CGPoint(x: bounds.midX, y: bounds.midY), to: window), with: nil),
-              hit.isDescendant(of: menu) else { return nil }
+              isVisibleInWindow(self), isVisibleInWindow(view), !isCapsuleOccluded else { return nil }
         let sourceRect = view.convert(view.bounds, to: window)
         var visibleRect = sourceRect.intersection(window.bounds)
         var ancestor = view.superview
@@ -410,6 +585,7 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         metricTicks += 1
         let elapsed = now - metricStart
         guard elapsed >= 2 else { return }
+        TabBarPerformanceProbe.shared.report(elapsed: elapsed)
         print(String(format: "TABBAR_METRICS ticks=%.1f gpuFPS=%.1f captures=%.1f captureMeanMS=%.2f captureMaxMS=%.2f gpuMS=%.2f drawMeanMS=%.2f drawMaxMS=%.2f entryHeadroomMS=%.2f captureHeadroomMS=%.2f updateHeadroomMS=%.2f updateSamples=%d longFrames=%d acquisitionMeanMS=%.2f acquisitionMaxMS=%.2f encodingMeanMS=%.2f appearanceResets=%d geometryResets=%d thermalState=%d scene=%@",
                      Double(metricTicks) / elapsed, Double(metricFrames) / elapsed,
                      Double(metricCaptures) / elapsed, metricCaptureCost * 1000 / Double(max(1, metricCaptures)),
@@ -433,4 +609,44 @@ final class TabBarOpticalSurface: UIView, TabBarReflectionConsumer {
         metricAppearanceResets = 0; metricGeometryResets = 0
     }
     #endif
+}
+
+/// Observes window input without recognizing, preventing or delaying another
+/// gesture. This wakes the reflection clock before a scroll's first pixel change.
+private final class TabBarInteractionObserver: UIGestureRecognizer {
+    var onActivity: ((_ touching: Bool, _ beganAt: CFTimeInterval?) -> Void)?
+    private var touchCount = 0
+
+    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+    override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        let first = touchCount == 0
+        touchCount += touches.count
+        onActivity?(true, first ? touches.map(\.timestamp).min() : nil)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        onActivity?(true, nil)
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        finish(touches)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        finish(touches)
+    }
+
+    override func reset() {
+        super.reset()
+        if touchCount > 0 { onActivity?(false, nil) }
+        touchCount = 0
+    }
+
+    private func finish(_ touches: Set<UITouch>) {
+        touchCount = max(0, touchCount - touches.count)
+        onActivity?(touchCount > 0, nil)
+        if touchCount == 0 { state = .failed }
+    }
 }

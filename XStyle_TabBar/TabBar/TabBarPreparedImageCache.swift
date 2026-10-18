@@ -194,7 +194,13 @@ final class TabBarPreparedImageCache {
         let unitWidth = source.width / divisor
         let unitHeight = source.height / divisor
         let units = min(divisor, 256 / max(unitWidth, unitHeight))
-        return units > 0 ? (unitWidth * units, unitHeight * units) : nil
+        if units > 0 { return (unitWidth * units, unitHeight * units) }
+        // No exact reduction fits, as with coprime sides. Rounding to 256 on the
+        // long side changes the aspect by under half a pixel in 256.
+        guard source.width > 0, source.height > 0 else { return nil }
+        let scale = 256 / Double(max(source.width, source.height))
+        return (max(1, Int((Double(source.width) * scale).rounded())),
+                max(1, Int((Double(source.height) * scale).rounded())))
     }
 
     nonisolated static func prepareImage(_ source: CGImage, _ width: Int, _ height: Int) -> CGImage? {

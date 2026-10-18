@@ -406,6 +406,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = TM8GM2Y6B8;
 				ENABLE_PREVIEWS = YES;
+				EXCLUDED_SOURCE_FILE_NAMES = (
+					CarouselDebugAssets.xcassets,
+					"hark-*.mov",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Configuration/AppInfo.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Nako uses the camera to scan product barcodes.";

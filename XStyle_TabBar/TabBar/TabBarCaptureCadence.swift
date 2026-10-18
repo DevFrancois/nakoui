@@ -1,6 +1,70 @@
 import CoreFoundation
 import Darwin
 
+/// A single clean tick is not evidence that an interaction or GPU producer has
+/// stopped. Keep its display cadence through callback jitter and the final update.
+nonisolated struct TabBarRenderActivity {
+    private var activeUntil: CFTimeInterval = 0
+    var isInteracting = false
+
+    mutating func noteChange(at time: CFTimeInterval) {
+        guard time.isFinite else { return }
+        activeUntil = max(activeUntil, time + 0.25)
+    }
+
+    func isActive(at time: CFTimeInterval) -> Bool {
+        isInteracting || time < activeUntil
+    }
+}
+
+/// Idle checks run at a different clock/power state. Their measured cost must
+/// not replace the active estimate and block the first capture of a new scroll.
+/// Both histories retain their own deadline guard and bounded retry policy.
+nonisolated struct TabBarCaptureSchedule {
+    private var active = TabBarCaptureCadence()
+    private var idle = TabBarCaptureCadence()
+    private var motionPendingUntil: CFTimeInterval = 0
+    private var lastCaptureTime: CFTimeInterval?
+
+    /// Input can precede scrolling by hundreds of milliseconds. Classify the
+    /// next capture from an actual offset change, independently of the render
+    /// clock. Consume this signal even if the sampled pixels happen to match.
+    mutating func noteUIMotion(at time: CFTimeInterval) {
+        guard time.isFinite else { return }
+        motionPendingUntil = time + 0.25
+    }
+
+    func hasUIMotion(at time: CFTimeInterval) -> Bool {
+        time < motionPendingUntil
+    }
+
+    func estimatedDuration(isIdle: Bool) -> CFTimeInterval {
+        isIdle ? idle.estimatedCaptureDuration : active.estimatedCaptureDuration
+    }
+
+    mutating func shouldCapture(at time: CFTimeInterval, deadline: CFTimeInterval,
+                                isIdle: Bool, force: Bool = false) -> Bool {
+        // Switching histories must not admit two captures on adjacent 120Hz
+        // ticks. The shared rate limit applies even when the cost class changes.
+        if let lastCaptureTime, time < lastCaptureTime { reset() }
+        if !force, let lastCaptureTime, time - lastCaptureTime + 1.0 / 600 < 1.0 / 60 {
+            return false
+        }
+        if isIdle { return idle.shouldCapture(at: time, deadline: deadline, force: force) }
+        return active.shouldCapture(at: time, deadline: deadline, force: force)
+    }
+
+    mutating func recordCapture(duration: CFTimeInterval, at time: CFTimeInterval, isIdle: Bool) {
+        guard duration.isFinite, duration >= 0, time.isFinite else { return }
+        lastCaptureTime = time
+        motionPendingUntil = 0
+        if isIdle { idle.recordCapture(duration: duration, at: time) }
+        else { active.recordCapture(duration: duration, at: time) }
+    }
+
+    mutating func reset() { self = Self() }
+}
+
 /// Separates the cost of producing nearby UI colors from the display's refresh
 /// rate. This does not queue work: callers either capture now or reuse textures.
 nonisolated struct TabBarCaptureCadence {

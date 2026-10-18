@@ -152,9 +152,10 @@ final class TabBarLayerRegionRenderer {
         }
 
         context.saveGState()
-        var beganRoundedGroup = false
+        var needsTransparencyGroup = layer.opacity != 1
+        var beganTransparencyGroup = false
         defer {
-            if beganRoundedGroup { context.endTransparencyLayer() }
+            if beganTransparencyGroup { context.endTransparencyLayer() }
             context.restoreGState()
         }
         if layer.masksToBounds {
@@ -169,13 +170,19 @@ final class TabBarLayerRegionRenderer {
                 context.concatenate(localToWindow.inverted())
                 // Apply native rounded coverage once to the composed children,
                 // not separately to each overlapping child draw.
-                context.beginTransparencyLayer(in: visibleRegion.intersection(boundsInWindow), auxiliaryInfo: nil)
-                beganRoundedGroup = true
+                needsTransparencyGroup = true
             } else {
                 var mapping = localToWindow
                 context.addPath(CGPath(rect: bounds, transform: &mapping))
                 context.clip()
             }
+        }
+        if needsTransparencyGroup {
+            // Begin resets the drawing alpha to one; End applies this alpha
+            // once to the composed shell and children, preserving overlap.
+            context.setAlpha(CGFloat(layer.opacity))
+            context.beginTransparencyLayer(in: visibleRegion, auxiliaryInfo: nil)
+            beganTransparencyGroup = true
         }
         if ownImageContributes, hasOwnImage(layer) {
             renderShell(layer, localToWindow: localToWindow, in: context)
@@ -282,7 +289,7 @@ final class TabBarLayerRegionRenderer {
     }
 
     private func reasonNotToSplit(_ model: CALayer, shown layer: CALayer) -> String? {
-        if layer.opacity != 1 { return "group opacity" }
+        if layer.opacity != 1, !layer.allowsGroupOpacity { return "individual opacity" }
         if layer.mask != nil { return "mask" }
         if layer.shadowOpacity != 0 { return "group shadow" }
         if layer.borderWidth != 0 { return "border" }
