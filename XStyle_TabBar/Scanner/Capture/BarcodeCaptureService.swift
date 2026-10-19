@@ -256,16 +256,7 @@ actor BarcodeCaptureService {
             #if DEBUG
             // On every change of mode, and once a second while the light flickers.
             if mode != lastMode || (flicker != .steady && tick % 10 == 0) {
-                // While watching for uneven pulses, how much they show: flicker
-                // needs "uneven" over its threshold and 3 times "steady".
-                var changes = ""
-                if exposesWholePulses, let measured = await analyzer.unevenFlickerChanges {
-                    changes = String(
-                        format: "; uneven %.4f (threshold %.4f), steady %.4f",
-                        measured.pulsing, ScannerMetrics.unevenFlickerMinimumChange, measured.steady
-                    )
-                }
-                Self.logger.debug("Light: \(report)\(changes)")
+                Self.logger.debug("Light: \(report)")
             }
             lastMode = mode
             #endif

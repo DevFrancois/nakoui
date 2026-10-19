@@ -64,13 +64,6 @@ actor FrameAnalyzer {
         return unevenFlicker.isFlickering ? .unevenlyPulsing : .pulsing
     }
 
-    #if DEBUG
-    /// The uneven-flicker detector's latest measurements, for tuning.
-    var unevenFlickerChanges: (pulsing: Float, steady: Float)? {
-        unevenFlicker.lastChanges
-    }
-    #endif
-
     /// Looks for flicker afresh, such as at the start of a run.
     func resetFlicker() {
         flicker.reset()

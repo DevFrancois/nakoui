@@ -17,9 +17,6 @@ nonisolated struct FlickerDetector {
     /// Latched once enough frames vote for flicker, until `reset()`: the
     /// exposure that removes the bands also hides them from here.
     private(set) var isFlickering = false
-    /// The latest frame's change since out-of-phase and since in-phase
-    /// frames, in mean log brightness, for tuning the thresholds.
-    private(set) var lastChanges: (pulsing: Float, steady: Float)?
     private let period: Double
     private let minimumChange: Float
     private var history: [Profile] = []
@@ -70,7 +67,6 @@ nonisolated struct FlickerDetector {
     mutating func forgetFrames() {
         history.removeAll()
         votes.removeAll()
-        lastChanges = nil
     }
 
     /// Whether `profile` changed much more since the latest frame half a
@@ -80,7 +76,7 @@ nonisolated struct FlickerDetector {
     /// frame just before is nearly in phase at 50 Hz, and a moving hand read
     /// as flicker. Nil until there is such a pair, such as at frame rates
     /// where there never is.
-    private mutating func vote(for profile: Profile) -> Bool? {
+    private func vote(for profile: Profile) -> Bool? {
         var outOfPhase: Profile?
         var inPhase: Profile?
         for earlier in history.reversed() where earlier.rows.count == profile.rows.count {
@@ -98,7 +94,6 @@ nonisolated struct FlickerDetector {
         guard let inPhase, let outOfPhase else { return nil }
         let pulsingChange = Self.change(from: outOfPhase.rows, to: profile.rows)
         let steadyChange = Self.change(from: inPhase.rows, to: profile.rows)
-        lastChanges = (pulsingChange, steadyChange)
         return pulsingChange >= minimumChange
             && pulsingChange >= steadyChange * ScannerMetrics.flickerChangeRatio
     }
