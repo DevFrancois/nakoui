@@ -115,7 +115,7 @@ private struct GlassTabBarBackground: View {
     var body: some View {
         ZStack {
             Capsule()
-                .fill(.black.opacity(0.3))
+                .fill(.black.opacity(colorScheme == .dark ? 0.3 : 0))
             Color.clear
                 .glassEffect(glass.interactive(false), in: .capsule)
         }
