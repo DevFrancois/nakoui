@@ -245,20 +245,21 @@ actor BarcodeCaptureService {
             }
             let exposesWholePulses = CameraTuning.exposesWholePulses(device)
             #if DEBUG
+            // Only when the mode changes, so the console stays quiet under
+            // lamps that always flicker.
             let mode = "\(flicker), \(exposesWholePulses ? "whole-pulse" : "auto") exposure"
-            let report = String(
+            let report = mode == lastMode ? nil : String(
                 format: "%@ %.2f ms at ISO %.0f, %.0f fps", mode,
                 device.exposureDuration.seconds * 1000, device.iso, 1 / device.activeVideoMaxFrameDuration.seconds
             )
+            lastMode = mode
             #endif
             device.unlockForConfiguration()
             await analyzer.setExposesWholePulses(exposesWholePulses)
             #if DEBUG
-            // On every change of mode, and once a second while the light flickers.
-            if mode != lastMode || (flicker != .steady && tick % 10 == 0) {
+            if let report {
                 Self.logger.debug("Light: \(report)")
             }
-            lastMode = mode
             #endif
         }
     }
