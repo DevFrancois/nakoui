@@ -53,6 +53,7 @@ struct FeedPage: View {
             .frame(maxWidth: 720)
             .frame(maxWidth: .infinity)
         }
+        .scrollEdgeEffectHidden(true, for: .bottom)
         .sheet(item: $presentedDestination, content: ForYouDetailSheet.init)
         // A tap on a card, not the sheet's dismissal.
         .sensoryFeedback(trigger: presentedDestination) { _, newValue in

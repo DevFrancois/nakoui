@@ -44,7 +44,6 @@ private struct AdaptiveGlassTabBar: View {
 struct GlassTabBar: View {
     @Binding var selection: RootTab
     var layoutAxis: NSLayoutConstraint.Axis = .horizontal
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var presentation = GlassTabBarPresentation()
 
@@ -54,11 +53,7 @@ struct GlassTabBar: View {
             .background {
                 // Keep native glass behind the controls so its foreground
                 // treatment cannot change their explicitly assigned colors.
-                Color.clear
-                    .glassEffect(
-                        .regular.tint(colorScheme == .dark ? .black.opacity(0.60) : nil).interactive(false),
-                        in: .capsule
-                    )
+                GlassTabBarBackground()
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
@@ -104,5 +99,25 @@ private struct GlassTabBarRepresentable: UIViewRepresentable {
         // One measurement owns the controls, glass, and unscaled touch anchor.
         // A separate clamping frame could give those layers different widths.
         uiView.fittingSize(proposedWidth: proposal.width)
+    }
+}
+
+/// The chosen material stays behind the controls to preserve their colors.
+private struct GlassTabBarBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var glass: Glass {
+        colorScheme == .dark
+            ? .clear.tint(Color(red: 28.0 / 255, green: 28.0 / 255, blue: 30.0 / 255).opacity(0.9))
+            : .regular
+    }
+
+    var body: some View {
+        ZStack {
+            Capsule()
+                .fill(.black.opacity(0.3))
+            Color.clear
+                .glassEffect(glass.interactive(false), in: .capsule)
+        }
     }
 }
