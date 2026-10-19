@@ -158,6 +158,25 @@ struct RootTabControllerTests {
         }
     }
 
+    @Test("Selections made while the tabs are off-window, as under a pushed page, still switch pages")
+    func offWindowSelectionsDoNotStall() async throws {
+        try await withController { controller, pages in
+            update(controller, selection: .profile)
+            let window = try #require(controller.view.window)
+            window.rootViewController = nil
+            update(controller, selection: .scanner)
+            update(controller, selection: .search)
+            try await Task.sleep(for: .milliseconds(80))
+            #expect(controller.selectedViewController === pages[3])
+            #expect(controller.activeAnimator == nil)
+            window.rootViewController = controller
+            window.layoutIfNeeded()
+            update(controller, selection: .home)
+            try await Task.sleep(for: .milliseconds(380))
+            #expect(controller.selectedViewController === pages[0])
+        }
+    }
+
     @Test("Reduce Motion selects without page deformation")
     func reduceMotionSwitchesImmediately() async throws {
         try await withController { controller, pages in

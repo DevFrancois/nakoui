@@ -15,6 +15,7 @@ final class GlassTabBarView: UIView {
     private var layoutAxis: NSLayoutConstraint.Axis = .horizontal
     private var lastGeometry: GlassTabBarInteraction.Geometry?
     private var materialIsDark: Bool?
+    private var environmentInputs: EnvironmentInputs?
     private var motionGeneration = 0
 
     init(selection: RootTab) {
@@ -69,6 +70,13 @@ final class GlassTabBarView: UIView {
         reduceMotion: Bool,
         isEnabled: Bool
     ) {
+        // SwiftUI updates on every selection and parent pass; only a changed
+        // input needs the bar re-measured.
+        let inputs = EnvironmentInputs(locale: locale, contentSizeCategory: contentSizeCategory,
+                                       layoutDirection: layoutDirection, layoutAxis: layoutAxis,
+                                       reduceMotion: reduceMotion, isEnabled: isEnabled)
+        guard inputs != environmentInputs else { return }
+        environmentInputs = inputs
         let semantic: UISemanticContentAttribute = layoutDirection == .rightToLeft ? .forceRightToLeft : .forceLeftToRight
         if self.layoutAxis != layoutAxis || semanticContentAttribute != semantic || !isEnabled {
             cancelTracking(animated: false)
@@ -97,6 +105,15 @@ final class GlassTabBarView: UIView {
         }
         invalidateIntrinsicContentSize()
         setNeedsLayout()
+    }
+
+    private struct EnvironmentInputs: Equatable {
+        let locale: Locale
+        let contentSizeCategory: UIContentSizeCategory
+        let layoutDirection: UIUserInterfaceLayoutDirection
+        let layoutAxis: NSLayoutConstraint.Axis
+        let reduceMotion: Bool
+        let isEnabled: Bool
     }
 
     func fittingHeight(for width: CGFloat) -> CGFloat {

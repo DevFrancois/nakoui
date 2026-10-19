@@ -37,7 +37,7 @@ struct GlassTabBarInteraction {
         let position = isVertical ? point.y : point.x
         let centers = tracking.geometry.items.map { isVertical ? $0.frame.midY : $0.frame.midX }
         guard let lower = centers.min(), let upper = centers.max() else { return }
-        tracking.position = min(max(position, lower), upper)
+        tracking.position = (lower...upper).clamp(position)
         tracking.candidate = tracking.geometry.bounds.contains(point)
             ? tracking.geometry.items.min {
                 abs((isVertical ? $0.frame.midY : $0.frame.midX) - position)

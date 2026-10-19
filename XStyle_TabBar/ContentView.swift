@@ -32,7 +32,9 @@ struct ContentView: View {
     @State private var logoCollapse = LogoCollapse()
     /// Shared by the For you page and the side menu's debug reset.
     @State private var taskList = ForYouTaskList()
-    @AccessibilityFocusState private var isMenuButtonFocused: Bool
+    /// Bumped to move VoiceOver to the menu button. A value, unlike focus
+    /// state, reaches the button inside the Home tab's own host.
+    @State private var menuButtonFocusRequest = 0
     /// Shared by the feed images and article zoom transitions.
     @Namespace private var zoomNamespace
 
@@ -84,7 +86,7 @@ struct ContentView: View {
                     if AppFeatures.sideMenuEnabled {
                         TopMenuIconButton(title: "Open menu", systemImage: "line.3.horizontal", action: openMenu)
                             .accessibilityIdentifier("navigation.openMenu")
-                            .accessibilityFocused($isMenuButtonFocused)
+                            .modifier(MenuButtonFocus(request: menuButtonFocusRequest))
                     }
                 }
             }
@@ -156,7 +158,7 @@ struct ContentView: View {
         revealingRoute = nil
         // A collapsed logo row hides the menu button from VoiceOver.
         if navigation.path.isEmpty && logoCollapse.isShown {
-            isMenuButtonFocused = true
+            menuButtonFocusRequest += 1
         }
     }
 
@@ -208,6 +210,19 @@ struct ContentView: View {
         guard !pendingSidebarOpen else { return }
         pager.select(tab)
         openPendingSidebar()
+    }
+}
+
+/// Owns the focus state in the hosting tree that draws the button, since
+/// accessibility focus does not cross hosting controllers.
+private struct MenuButtonFocus: ViewModifier {
+    let request: Int
+    @AccessibilityFocusState private var isFocused: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .accessibilityFocused($isFocused)
+            .onChange(of: request) { isFocused = true }
     }
 }
 

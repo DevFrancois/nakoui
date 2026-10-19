@@ -17,10 +17,11 @@ struct RootTabPages<Home: View>: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> RootTabController {
         let coordinator = context.coordinator
-        coordinator.home = UIHostingController(rootView: hosted(home, tab: .home, environment: context.environment))
-        coordinator.scanner = UIHostingController(rootView: hosted(scannerPage, tab: .scanner, environment: context.environment))
-        coordinator.profile = UIHostingController(rootView: hosted(RootTabPlaceholder(tab: .profile), tab: .profile, environment: context.environment))
-        coordinator.search = UIHostingController(rootView: hosted(RootTabPlaceholder(tab: .search), tab: .search, environment: context.environment))
+        let environment = ForwardedEnvironment(context.environment)
+        coordinator.home = UIHostingController(rootView: HostedTabPage(content: home, environment: environment))
+        coordinator.scanner = UIHostingController(rootView: HostedTabPage(content: scannerPage, environment: environment))
+        coordinator.profile = UIHostingController(rootView: HostedTabPage(content: RootTabPlaceholder(tab: .profile), environment: environment))
+        coordinator.search = UIHostingController(rootView: HostedTabPage(content: RootTabPlaceholder(tab: .search), environment: environment))
         let controllers: [UIViewController] = [coordinator.home, coordinator.scanner, coordinator.profile, coordinator.search].compactMap { $0 }
         for controller in controllers {
             controller.view.backgroundColor = .clear
@@ -37,10 +38,11 @@ struct RootTabPages<Home: View>: UIViewControllerRepresentable {
             right: isRightToLeft ? safeAreaInsets.leading : safeAreaInsets.trailing
         )
         // Updating values of the same root type retains each host's SwiftUI tree.
-        context.coordinator.home?.rootView = hosted(home, tab: .home, environment: context.environment)
-        context.coordinator.scanner?.rootView = hosted(scannerPage, tab: .scanner, environment: context.environment)
-        context.coordinator.profile?.rootView = hosted(RootTabPlaceholder(tab: .profile), tab: .profile, environment: context.environment)
-        context.coordinator.search?.rootView = hosted(RootTabPlaceholder(tab: .search), tab: .search, environment: context.environment)
+        let environment = ForwardedEnvironment(context.environment)
+        context.coordinator.home?.rootView = HostedTabPage(content: home, environment: environment)
+        context.coordinator.scanner?.rootView = HostedTabPage(content: scannerPage, environment: environment)
+        context.coordinator.profile?.rootView = HostedTabPage(content: RootTabPlaceholder(tab: .profile), environment: environment)
+        context.coordinator.search?.rootView = HostedTabPage(content: RootTabPlaceholder(tab: .search), environment: environment)
         controller.update(
             selection: selection,
             layoutAxis: layoutAxis,
@@ -56,10 +58,6 @@ struct RootTabPages<Home: View>: UIViewControllerRepresentable {
         ScannerView(model: scanner, isActive: selection == .scanner && isVisible)
     }
 
-    private func hosted<Content: View>(_ content: Content, tab: RootTab, environment: EnvironmentValues) -> HostedTabPage<Content> {
-        HostedTabPage(content: content, environment: environment, isActive: selection == tab && isVisible)
-    }
-
     final class Coordinator {
         var home: UIHostingController<HostedTabPage<Home>>?
         var scanner: UIHostingController<HostedTabPage<ScannerView>>?
@@ -68,16 +66,61 @@ struct RootTabPages<Home: View>: UIViewControllerRepresentable {
     }
 }
 
+/// Only the public values the app intentionally shares across the UIKit
+/// boundary. Equatable, so an unrelated outer environment change leaves the
+/// hosted pages alone.
+struct ForwardedEnvironment: Equatable {
+    var rootNavigation: RootNavigation?
+    var scenePhase: ScenePhase
+    var locale: Locale
+    var calendar: Calendar
+    var timeZone: TimeZone
+    var layoutDirection: LayoutDirection
+    var dynamicTypeSize: DynamicTypeSize
+    var legibilityWeight: LegibilityWeight?
+    var colorScheme: ColorScheme
+    var displayScale: CGFloat
+    var horizontalSizeClass: UserInterfaceSizeClass?
+    var verticalSizeClass: UserInterfaceSizeClass?
+    var isEnabled: Bool
+
+    init(_ environment: EnvironmentValues) {
+        rootNavigation = environment.rootNavigation
+        scenePhase = environment.scenePhase
+        locale = environment.locale
+        calendar = environment.calendar
+        timeZone = environment.timeZone
+        layoutDirection = environment.layoutDirection
+        dynamicTypeSize = environment.dynamicTypeSize
+        legibilityWeight = environment.legibilityWeight
+        colorScheme = environment.colorScheme
+        displayScale = environment.displayScale
+        horizontalSizeClass = environment.horizontalSizeClass
+        verticalSizeClass = environment.verticalSizeClass
+        isEnabled = environment.isEnabled
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.rootNavigation === rhs.rootNavigation && lhs.scenePhase == rhs.scenePhase
+            && lhs.locale == rhs.locale && lhs.calendar == rhs.calendar && lhs.timeZone == rhs.timeZone
+            && lhs.layoutDirection == rhs.layoutDirection && lhs.dynamicTypeSize == rhs.dynamicTypeSize
+            && lhs.legibilityWeight == rhs.legibilityWeight && lhs.colorScheme == rhs.colorScheme
+            && lhs.displayScale == rhs.displayScale && lhs.horizontalSizeClass == rhs.horizontalSizeClass
+            && lhs.verticalSizeClass == rhs.verticalSizeClass && lhs.isEnabled == rhs.isEnabled
+    }
+}
+
 struct HostedTabPage<Content: View>: View {
     let content: Content
-    let environment: EnvironmentValues
-    let isActive: Bool
+    let environment: ForwardedEnvironment
 
     var body: some View {
         content
             // Each hosting root must keep its own layout, safe-area and
-            // presentation environment. Only copy the public values that the
-            // app intentionally shares across this UIKit boundary.
+            // presentation environment, including its system openURL.
+            // Read-only accessibility values (VoiceOver, motion, transparency
+            // and contrast) come from this host's system environment too.
+            // RootTabController gates interaction and accessibility per page.
             .environment(\.rootNavigation, environment.rootNavigation)
             .environment(\.scenePhase, environment.scenePhase)
             .environment(\.locale, environment.locale)
@@ -91,10 +134,5 @@ struct HostedTabPage<Content: View>: View {
             .environment(\.horizontalSizeClass, environment.horizontalSizeClass)
             .environment(\.verticalSizeClass, environment.verticalSizeClass)
             .environment(\.isEnabled, environment.isEnabled)
-            .environment(\.openURL, environment.openURL)
-            // Read-only accessibility values (VoiceOver, motion, transparency
-            // and contrast) come from this host's system environment.
-            .allowsHitTesting(isActive)
-            .accessibilityHidden(!isActive)
     }
 }
