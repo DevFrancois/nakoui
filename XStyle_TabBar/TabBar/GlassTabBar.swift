@@ -6,12 +6,15 @@ import UIKit
 struct GlassTabBarToolbar: ToolbarContent {
     @Binding var selection: RootTab
     @Binding var layoutAxis: NSLayoutConstraint.Axis
+    /// Slides the bar off the bottom of the screen; see `GlassTabBar`.
+    var isHidden = false
+    var windowBottom: CGFloat = 0
 
     var body: some ToolbarContent {
         ToolbarSpacer(.flexible, placement: .bottomBar)
         if #available(iOS 27.1, *) {
             ToolbarItem(placement: .bottomBar) {
-                AdaptiveGlassTabBar(selection: $selection, layoutAxis: $layoutAxis)
+                AdaptiveGlassTabBar(selection: $selection, layoutAxis: $layoutAxis, isHidden: isHidden, windowBottom: windowBottom)
             }
             .axisBehavior(.verticalPreferred)
             .sharedBackgroundVisibility(.hidden)
@@ -19,7 +22,7 @@ struct GlassTabBarToolbar: ToolbarContent {
             .visibilityPriority(.high)
         } else {
             ToolbarItem(placement: .bottomBar) {
-                GlassTabBar(selection: $selection)
+                GlassTabBar(selection: $selection, isHidden: isHidden, windowBottom: windowBottom)
             }
             .sharedBackgroundVisibility(.hidden)
         }
@@ -31,10 +34,13 @@ struct GlassTabBarToolbar: ToolbarContent {
 private struct AdaptiveGlassTabBar: View {
     @Binding var selection: RootTab
     @Binding var layoutAxis: NSLayoutConstraint.Axis
+    let isHidden: Bool
+    let windowBottom: CGFloat
     @Environment(\.toolbarVerticalEdge) private var verticalEdge
 
     var body: some View {
-        GlassTabBar(selection: $selection, layoutAxis: verticalEdge == nil ? .horizontal : .vertical)
+        GlassTabBar(selection: $selection, layoutAxis: verticalEdge == nil ? .horizontal : .vertical,
+                    isHidden: isHidden, windowBottom: windowBottom)
             .onChange(of: verticalEdge == nil, initial: true) {
                 layoutAxis = verticalEdge == nil ? .horizontal : .vertical
             }
@@ -44,8 +50,19 @@ private struct AdaptiveGlassTabBar: View {
 struct GlassTabBar: View {
     @Binding var selection: RootTab
     var layoutAxis: NSLayoutConstraint.Axis = .horizontal
+    /// Springs the bar down off the screen, or fades it with Reduce Motion.
+    /// The toolbar keeps its place, so the content's safe area doesn't change.
+    var isHidden = false
+    /// The window's bottom edge in global space, which the bar slides past.
+    var windowBottom: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var presentation = GlassTabBarPresentation()
+
+    /// While the Scan tab shows a result, the bar makes way for its pane. The
+    /// Duo's vertical rail stays.
+    static func hidesForScanResult(selection: RootTab, hasResult: Bool, layoutAxis: NSLayoutConstraint.Axis) -> Bool {
+        selection == .scanner && hasResult && layoutAxis == .horizontal
+    }
 
     var body: some View {
         GlassTabBarRepresentable(selection: $selection, layoutAxis: layoutAxis, presentation: presentation)
@@ -67,6 +84,13 @@ struct GlassTabBar: View {
                     .accessibilityHidden(true)
             }
             .padding(.bottom, layoutAxis == .horizontal ? GlassTabBarMetrics.horizontalToolbarBottomPadding : 0)
+            .visualEffect { [isHidden, windowBottom, reduceMotion] content, proxy in
+                content.offset(y: isHidden && !reduceMotion ? max(0, windowBottom - proxy.frame(in: .global).minY) : 0)
+            }
+            .opacity(isHidden && reduceMotion ? 0 : 1)
+            .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.5, bounce: 0.3), value: isHidden)
+            .allowsHitTesting(!isHidden)
+            .accessibilityHidden(isHidden)
     }
 }
 

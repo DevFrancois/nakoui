@@ -1,14 +1,27 @@
 import SwiftUI
 
 /// The pane under the camera: the aiming hint, then the code a scan found,
-/// with Copy and Scan Again.
+/// with Copy, Scan Again, and a close button in the corner. The details
+/// scroll below the close row, so dragging along the pane's top edge still
+/// moves the pane.
 struct ScannerResultPane: View {
     let model: ScannerModel
 
     var body: some View {
         ZStack {
             if let code = model.scannedCode {
-                ScrollView {
+                VStack(spacing: 0) {
+                    HStack {
+                        Spacer()
+                        Button("Close", systemImage: "xmark", action: model.scanAgain)
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.glass)
+                            .buttonBorderShape(.circle)
+                            .controlSize(.large)
+                    }
+                    .padding([.top, .horizontal])
+
+                    ScrollView {
                     VStack(spacing: 20) {
                         ScannedCodeDetails(code: code)
 
@@ -25,8 +38,9 @@ struct ScannerResultPane: View {
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
                 }
-                .scrollBounceBehavior(.basedOnSize)
                 .transition(.blurReplace)
             } else {
                 VStack(spacing: 16) {

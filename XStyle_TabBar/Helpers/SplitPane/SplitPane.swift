@@ -21,6 +21,8 @@ struct SplitPane<Top: View, Bottom: View>: View {
     @State private var size = CGSize.zero
     /// How far the current drag has moved the bottom pane's edge down.
     @State private var dragDistance: CGFloat = 0
+    /// The bottom pane's top edge in global space, where its drag strip starts.
+    @State private var bottomPaneTop: CGFloat = 0
     @GestureState private var isDragging = false
 
     var body: some View {
@@ -46,16 +48,15 @@ struct SplitPane<Top: View, Bottom: View>: View {
                         .fill(Self.paneBackground)
                         .ignoresSafeArea(edges: isSideBySide ? [.vertical, .trailing] : [.bottom, .horizontal])
                 }
-                .overlay(alignment: .top) {
-                    if !isSideBySide {
-                        // SplitPaneKit's draggable strip along the pane's top edge.
-                        Color.clear
-                            .frame(maxWidth: .infinity)
-                            .frame(height: Self.dragStripHeight)
-                            .contentShape(.rect)
-                            .gesture(drag)
-                    }
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.frame(in: .global).minY
+                } action: { top in
+                    bottomPaneTop = top
                 }
+                // SplitPaneKit's draggable strip along the pane's top edge.
+                // Alongside the content rather than over it, so taps there,
+                // such as on a close button in the corner, still land.
+                .simultaneousGesture(drag(fromStripOnly: true), isEnabled: !isSideBySide)
         }
         .background(Self.background.ignoresSafeArea())
         .onGeometryChange(for: CGSize.self) { proxy in
@@ -104,7 +105,7 @@ struct SplitPane<Top: View, Bottom: View>: View {
             .frame(maxWidth: .infinity)
             .frame(height: Self.gap)
             .contentShape(.rect)
-            .gesture(drag)
+            .gesture(drag(fromStripOnly: false))
             .accessibilityElement()
             .accessibilityLabel("Pane size")
             .accessibilityValue(Double(breakpoint.ratio).formatted(.percent.precision(.fractionLength(0))))
@@ -122,15 +123,23 @@ struct SplitPane<Top: View, Bottom: View>: View {
 
     /// In global space, so the translation stays steady as the pane under the
     /// finger moves.
-    private var drag: some Gesture {
-        DragGesture(minimumDistance: 1, coordinateSpace: .global)
-            .updating($isDragging) { _, state, _ in
-                state = true
+    /// - Parameter fromStripOnly: Counts only drags that start in the bottom
+    ///   pane's top `dragStripHeight`.
+    private func drag(fromStripOnly: Bool) -> some Gesture {
+        let bottomPaneTop = bottomPaneTop
+        func isAccepted(_ value: DragGesture.Value) -> Bool {
+            !fromStripOnly || value.startLocation.y - bottomPaneTop <= Self.dragStripHeight
+        }
+        return DragGesture(minimumDistance: 1, coordinateSpace: .global)
+            .updating($isDragging) { value, state, _ in
+                if isAccepted(value) { state = true }
             }
             .onChanged { value in
+                guard isAccepted(value) else { return }
                 dragDistance = value.translation.height
             }
             .onEnded { value in
+                guard isAccepted(value) else { return }
                 let end = SplitPaneDrag.rubberBanded(restingHeight - value.translation.height, within: heightRange)
                 let target = SplitPaneDrag.target(
                     from: breakpoint, in: breakpoints, startHeight: restingHeight, endHeight: end,
