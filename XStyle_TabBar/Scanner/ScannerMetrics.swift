@@ -3,9 +3,12 @@ import CoreGraphics
 /// Shared sizes for the scanner. Nonisolated because the capture code reads
 /// the viewfinder geometry too.
 nonisolated enum ScannerMetrics {
-    /// Share of the screen width the viewfinder spans.
+    /// Share of the camera pane's width the viewfinder spans...
     static let viewfinderWidthFraction = 0.82
     static let viewfinderMaxWidth = 360.0
+    /// ...and the most of its height, so the viewfinder shrinks as the result
+    /// pane grows, live while it's dragged.
+    static let viewfinderMaxHeightFraction = 0.4
     /// Width over height: wide, like the product barcodes it frames.
     static let viewfinderAspectRatio = 1.6
     /// The viewfinder's center, as a share of the camera pane's height: the
@@ -91,12 +94,14 @@ nonisolated enum ScannerMetrics {
     /// than this, in EV, so the image doesn't shimmer as they jitter.
     static let flickerMeteringDeadband = 0.15
 
-    /// The viewfinder's frame in a full-screen `bounds`. The on-screen frame
-    /// and the camera's scan region both come from here, so they match.
+    /// The viewfinder's frame in the camera pane's `bounds`. The brackets, the
+    /// camera's scan region and the reveal all come from here, so they match
+    /// at every pane size.
     static func viewfinderRect(in bounds: CGRect) -> CGRect {
-        // Keep both edges in a short window while retaining the same preferred
-        // width and optical center when there is enough room.
-        let availableHeight = bounds.height * 2 * min(viewfinderCenterFraction, 1 - viewfinderCenterFraction)
+        // A share of the pane's height, and never past its edges around the
+        // optical center.
+        let edgeLimit = 2 * min(viewfinderCenterFraction, 1 - viewfinderCenterFraction)
+        let availableHeight = bounds.height * min(viewfinderMaxHeightFraction, edgeLimit)
         let width = max(0, min(bounds.width * viewfinderWidthFraction, viewfinderMaxWidth, availableHeight * viewfinderAspectRatio))
         let height = width / viewfinderAspectRatio
         return CGRect(

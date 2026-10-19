@@ -182,6 +182,23 @@ struct ScannerGeometryTests {
         #expect(pixel[0] > 240 && pixel[1] > 240 && pixel[2] > 240)
     }
 
+    @Test("The viewfinder shrinks as the camera pane gets shorter, and is width-bound when tall")
+    func viewfinderFollowsPaneHeight() {
+        let width: CGFloat = 400
+        let rects = [1_000, 500, 300].map { height in
+            ScannerMetrics.viewfinderRect(in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        // Tall: the width limits it, well inside its share of the height.
+        #expect(rects[0].height < 1_000 * ScannerMetrics.viewfinderMaxHeightFraction)
+        // Shorter panes: smaller each time, never taller than their share.
+        #expect(rects[1].width < rects[0].width)
+        #expect(rects[2].width < rects[1].width)
+        #expect(rects[1].height <= 500 * ScannerMetrics.viewfinderMaxHeightFraction)
+        #expect(rects[2].height <= 300 * ScannerMetrics.viewfinderMaxHeightFraction)
+        // Still centred on the pane's optical center.
+        #expect(rects[2].midX == width / 2)
+    }
+
     @Test("Camera artwork fits short windows without changing its intended proportions")
     func shortWindowArtworkFits() {
         for size in [CGSize(width: 600, height: 200), CGSize(width: 1_024, height: 320), CGSize(width: 320, height: 200)] {
