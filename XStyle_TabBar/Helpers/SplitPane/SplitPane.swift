@@ -23,7 +23,13 @@ struct SplitPane<Top: View, Bottom: View>: View {
     @State private var dragDistance: CGFloat = 0
     /// The bottom pane's top edge in global space, where its drag strip starts.
     @State private var bottomPaneTop: CGFloat = 0
-    @GestureState private var isDragging = false
+    /// The latest drag's start and whether it moves the pane, decided once at
+    /// its first change, as SplitPaneKit decides in `gestureRecognizerShouldBegin`.
+    /// The strip's edge moves up with the finger, so judging again later would
+    /// drop an upward drag midway and leave the pane stuck.
+    @State private var dragDecision: (start: CGPoint, isAccepted: Bool)?
+    /// A finger is down on the handle or the strip, accepted or not.
+    @GestureState private var isTouching = false
 
     var body: some View {
         let isSideBySide = sideBySideFraction != nil
@@ -67,9 +73,9 @@ struct SplitPane<Top: View, Bottom: View>: View {
         // Snap points set from outside, too, such as when content arrives.
         .animation(Self.spring, value: breakpoint)
         .sensoryFeedback(.impact(weight: .light), trigger: breakpoint)
-        .onChange(of: isDragging) {
+        .onChange(of: isTouching) {
             // A cancelled drag gets no `onEnded`.
-            if !isDragging, dragDistance != 0 {
+            if !isTouching, dragDistance != 0 {
                 withAnimation(Self.spring) { dragDistance = 0 }
             }
         }
@@ -84,6 +90,10 @@ struct SplitPane<Top: View, Bottom: View>: View {
         let lowest = size.height * (sortedBreakpoints.first?.ratio ?? breakpoint.ratio)
         let highest = size.height * (sortedBreakpoints.last?.ratio ?? breakpoint.ratio)
         return lowest...max(lowest, highest)
+    }
+
+    private var isDragging: Bool {
+        isTouching && dragDecision?.isAccepted == true
     }
 
     private var restingHeight: CGFloat {
@@ -126,20 +136,16 @@ struct SplitPane<Top: View, Bottom: View>: View {
     /// - Parameter fromStripOnly: Counts only drags that start in the bottom
     ///   pane's top `dragStripHeight`.
     private func drag(fromStripOnly: Bool) -> some Gesture {
-        let bottomPaneTop = bottomPaneTop
-        func isAccepted(_ value: DragGesture.Value) -> Bool {
-            !fromStripOnly || value.startLocation.y - bottomPaneTop <= Self.dragStripHeight
-        }
-        return DragGesture(minimumDistance: 1, coordinateSpace: .global)
-            .updating($isDragging) { value, state, _ in
-                if isAccepted(value) { state = true }
+        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+            .updating($isTouching) { _, state, _ in
+                state = true
             }
             .onChanged { value in
-                guard isAccepted(value) else { return }
+                guard accepts(value, fromStripOnly: fromStripOnly) else { return }
                 dragDistance = value.translation.height
             }
             .onEnded { value in
-                guard isAccepted(value) else { return }
+                guard accepts(value, fromStripOnly: fromStripOnly) else { return }
                 let end = SplitPaneDrag.rubberBanded(restingHeight - value.translation.height, within: heightRange)
                 let target = SplitPaneDrag.target(
                     from: breakpoint, in: breakpoints, startHeight: restingHeight, endHeight: end,
@@ -150,6 +156,17 @@ struct SplitPane<Top: View, Bottom: View>: View {
                     dragDistance = 0
                 }
             }
+    }
+
+    /// Whether a drag moves the pane, judged at its first change, while the
+    /// pane is still where the finger came down. A new drag has a new start.
+    private func accepts(_ value: DragGesture.Value, fromStripOnly: Bool) -> Bool {
+        if let dragDecision, dragDecision.start == value.startLocation {
+            return dragDecision.isAccepted
+        }
+        let isAccepted = !fromStripOnly || value.startLocation.y - bottomPaneTop <= Self.dragStripHeight
+        dragDecision = (value.startLocation, isAccepted)
+        return isAccepted
     }
 
     private func topShape(isSideBySide: Bool) -> UnevenRoundedRectangle {
