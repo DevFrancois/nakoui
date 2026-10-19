@@ -8,17 +8,17 @@ nonisolated enum CameraTuning {
     static let frameRate: Int32 = 60
     /// The exposure cap's steps. It starts short to freeze motion, and
     /// lengthens only when the camera runs out of ISO in dim light.
-    private static let exposureSteps: [Int32] = [250, 180, 120, 60]
+    private static let exposureSteps = [250, 180, 120, 60].map { CMTime(value: 1, timescale: $0) }
+    /// The steps under flickering light: one pulse, then two. Exposures of
+    /// whole pulses catch the same light in every sensor row, so no bands.
+    private static let flickerExposureSteps = (1...2).map { CMTime(value: $0, timescale: Int32(ScannerMetrics.flickerRate)) }
 
     /// Call after the input is added: adding it resets frame durations.
     static func apply(_ format: AVCaptureDevice.Format, to device: AVCaptureDevice) {
         device.activeFormat = format
-        let frameDuration = CMTime(value: 1, timescale: frameRate)
         if device.isAutoVideoFrameRateEnabled {
             device.isAutoVideoFrameRateEnabled = false
         }
-        device.activeVideoMinFrameDuration = frameDuration
-        device.activeVideoMaxFrameDuration = frameDuration
 
         if format.isVideoHDRSupported {
             device.automaticallyAdjustsVideoHDREnabled = false
@@ -45,7 +45,15 @@ nonisolated enum CameraTuning {
             device.automaticallyAdjustsFaceDrivenAutoExposureEnabled = false
             device.isFaceDrivenAutoExposureEnabled = false
             device.exposureMode = .continuousAutoExposure
-            device.activeMaxExposureDuration = clamped(CMTime(value: 1, timescale: exposureSteps[0]), to: format)
+        }
+        resetExposure(on: device)
+    }
+
+    /// The start of a run: the shortest exposure cap at the full frame rate.
+    static func resetExposure(on device: AVCaptureDevice) {
+        setFrameRate(frameRate, on: device)
+        if device.exposureMode == .continuousAutoExposure {
+            device.activeMaxExposureDuration = clamped(exposureSteps[0], to: device.activeFormat)
         }
     }
 
@@ -92,25 +100,45 @@ nonisolated enum CameraTuning {
         return CameraZoom(range: minimum...maximum, recommended: (recommended * 10).rounded() / 10)
     }
 
-    /// Lengthens the exposure cap a step when the camera is out of ISO and
-    /// still underexposed; drops the frame rate under thermal pressure.
-    static func adjust(_ device: AVCaptureDevice) {
+    /// Moves the exposure cap to whole pulses once the light is seen
+    /// flickering, and lengthens it a step when the camera is out of ISO and
+    /// still underexposed. Lowers the frame rate for exposures longer than a
+    /// frame and under thermal pressure.
+    static func adjust(_ device: AVCaptureDevice, isLightFlickering: Bool) {
         let format = device.activeFormat
-        if device.exposureMode == .continuousAutoExposure,
-           device.iso >= format.maxISO * 0.95, device.exposureTargetOffset < -1,
-           let next = exposureSteps.map({ CMTime(value: 1, timescale: $0) })
-               .first(where: { CMTimeCompare($0, device.activeMaxExposureDuration) > 0 }) {
-            device.activeMaxExposureDuration = clamped(next, to: format)
+        let isAutoExposing = device.exposureMode == .continuousAutoExposure
+        let steps = (isLightFlickering ? flickerExposureSteps : exposureSteps).map { clamped($0, to: format) }
+        var cap = device.activeMaxExposureDuration
+        if isAutoExposing {
+            // Matched within a tenth of a millisecond, in case the device rounds the cap.
+            if let index = steps.firstIndex(where: { abs($0.seconds - cap.seconds) < 0.0001 }) {
+                if device.iso >= format.maxISO * 0.95, device.exposureTargetOffset < -1, index + 1 < steps.count {
+                    cap = steps[index + 1]
+                }
+            } else {
+                // The light was just seen flickering: start on its ladder.
+                cap = steps[0]
+            }
         }
 
-        let rate: Int32
-        switch device.systemPressureState.level {
-        case .serious: rate = 30
-        case .critical: rate = 20
-        default: rate = frameRate
+        let thermalRate: Int32 = switch device.systemPressureState.level {
+        case .serious: 30
+        case .critical: 20
+        default: frameRate
         }
+        // A frame lasts at least its exposure: two 100 Hz pulses need 50 fps.
+        let exposureRate = cap.seconds > 0 ? Int32((1 / cap.seconds + 0.01).rounded(.down)) : frameRate
+        setFrameRate(min(thermalRate, exposureRate), on: device)
+
+        if isAutoExposing, cap != device.activeMaxExposureDuration,
+           CMTimeCompare(cap, device.activeVideoMaxFrameDuration) <= 0 {
+            device.activeMaxExposureDuration = cap
+        }
+    }
+
+    private static func setFrameRate(_ rate: Int32, on device: AVCaptureDevice) {
         // An unsupported rate raises an exception Swift can't catch.
-        let isSupported = format.videoSupportedFrameRateRanges.contains {
+        let isSupported = device.activeFormat.videoSupportedFrameRateRanges.contains {
             $0.minFrameRate <= Double(rate) && Double(rate) <= $0.maxFrameRate
         }
         let duration = CMTime(value: 1, timescale: rate)

@@ -30,6 +30,7 @@ actor FrameAnalyzer {
     private var tracked: (reading: BarcodeReading, frame: CVPixelBuffer)?
     private var lastFrameTime = 0.0
     private var isWarmedUp = false
+    private var flicker = FlickerDetector()
     private var continuation: AsyncStream<ScanEvent>.Continuation?
 
     /// A fresh stream of results for one scanning run. A stream ends for good
@@ -48,6 +49,16 @@ actor FrameAnalyzer {
               screen.map({ viewport.revision >= $0.revision }) ?? true else { return }
         screen = viewport
         mapper = nil
+    }
+
+    /// Whether the light pulses, so exposures should last whole pulses.
+    var isLightFlickering: Bool {
+        flicker.isFlickering
+    }
+
+    /// Looks for flicker afresh, such as at the start of a run.
+    func resetFlicker() {
+        flicker.reset()
     }
 
     /// Scans again after a result, holding `text` back until it has left the frame.
@@ -109,7 +120,10 @@ actor FrameAnalyzer {
         let mapper = currentMapper(for: frame, screen: screen)
         guard let region else { return }
 
-        let readings = LumaPlane.read(frame) { decoder.decode($0, region: region, options: .camera) } ?? []
+        let readings = LumaPlane.read(frame) { image -> [BarcodeReading] in
+            flicker.add(image, at: time)
+            return decoder.decode(image, region: region, options: .camera)
+        } ?? []
         switch mode {
         case .scanning:
             guard let reading = confirmer.confirm(readings, at: time) else {

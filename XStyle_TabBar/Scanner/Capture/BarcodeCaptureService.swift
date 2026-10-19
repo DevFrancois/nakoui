@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import OSLog
 
 /// Owns the camera session. Session calls block, so the actor runs on a
 /// serial queue of its own, never the main thread. The session is set up once,
@@ -49,6 +50,11 @@ actor BarcodeCaptureService {
         }
         runToken += 1
         isRunActive = true
+        // Each run starts sharp and looks for flicker afresh.
+        if let device, (try? device.lockForConfiguration()) != nil {
+            CameraTuning.resetExposure(on: device)
+            device.unlockForConfiguration()
+        }
         if !session.isRunning {
             session.startRunning()
         }
@@ -213,14 +219,28 @@ actor BarcodeCaptureService {
         }
     }
 
-    /// Twice a second, eases the exposure cap in dim light and the frame
-    /// rate under thermal pressure.
+    /// Twice a second, moves exposures to whole pulses under flickering
+    /// light, eases the exposure cap in dim light, and the frame rate under
+    /// thermal pressure.
     private func adjustPeriodically() async {
+        await analyzer.resetFlicker()
+        var wasLightFlickering = false
         while !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(500))
+            let isLightFlickering = await analyzer.isLightFlickering
+            #if DEBUG
+            if isLightFlickering != wasLightFlickering {
+                Self.logger.debug("Light flickering: \(isLightFlickering), exposure \(isLightFlickering ? "whole pulses" : "shortest")")
+            }
+            #endif
+            wasLightFlickering = isLightFlickering
             guard let device, (try? device.lockForConfiguration()) != nil else { continue }
-            CameraTuning.adjust(device)
+            CameraTuning.adjust(device, isLightFlickering: isLightFlickering)
             device.unlockForConfiguration()
         }
     }
+
+    #if DEBUG
+    private static let logger = Logger(subsystem: "dev.kavsoft.XStyle-TabBar", category: "scanner")
+    #endif
 }

@@ -49,6 +49,29 @@ nonisolated enum ScannerMetrics {
     /// The zoom buttons' inset inside their capsule.
     static let zoomButtonInset = 4.0
 
+    // Flicker detection (see `FlickerDetector`).
+    /// Pulses per second of the lights to look for: lamps on 50 Hz mains.
+    /// Exposures of whole pulses show them without bands.
+    static let flickerRate = 100
+    /// The luma plane is sampled every this many rows and columns.
+    static let flickerRowStep = 4
+    static let flickerColumnStep = 16
+    /// Frames are compared with earlier ones up to this many seconds old.
+    static let flickerHistoryDuration = 0.3
+    /// How close, as a share of a pulse, a time gap must come to a whole
+    /// number of pulses to count as in phase, or to half a pulse off to
+    /// count as out of phase.
+    static let flickerInPhaseTolerance = 0.1
+    static let flickerOutOfPhaseTolerance = 0.3
+    /// The least mean change in log brightness between out-of-phase frames
+    /// that counts as flicker: about 2%.
+    static let flickerMinimumChange: Float = 0.02
+    /// How many times more out-of-phase frames must differ than in-phase ones.
+    static let flickerChangeRatio: Float = 3
+    /// Flicker is seen once this many of the latest votes say so.
+    static let flickerVoteWindow = 12
+    static let flickerVotesNeeded = 8
+
     /// The viewfinder's frame in a full-screen `bounds`. The on-screen frame
     /// and the camera's scan region both come from here, so they match.
     static func viewfinderRect(in bounds: CGRect) -> CGRect {
