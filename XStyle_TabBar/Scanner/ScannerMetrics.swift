@@ -8,9 +8,9 @@ nonisolated enum ScannerMetrics {
     static let viewfinderMaxWidth = 360.0
     /// Width over height: wide, like the product barcodes it frames.
     static let viewfinderAspectRatio = 1.6
-    /// The viewfinder's center, as a share of the screen height. A little
-    /// above the middle, clear of the tab bar.
-    static let viewfinderCenterFraction = 0.45
+    /// The viewfinder's center, as a share of the camera pane's height: the
+    /// middle, as the pane runs under the status bar and has zoom at its foot.
+    static let viewfinderCenterFraction = 0.5
     static let viewfinderCornerRadius = 24.0
     /// A bracket's straight part, beyond its rounded corner.
     static let bracketLength = 30.0
@@ -20,7 +20,17 @@ nonisolated enum ScannerMetrics {
     /// Keeps white brackets visible on white labels.
     static let bracketShadowOpacity = 0.35
     static let scrimOpacity = 0.45
-    static let hintSpacing = 24.0
+
+    /// Wide windows at least this wide put the result pane beside the camera.
+    static let sideBySideMinimumWidth = 600.0
+    /// The result pane's share of the width side by side.
+    static let sideBySideResultFraction = 0.38
+
+    /// Whether a scanner of `size` puts its panes side by side, such as the
+    /// Duo unfolded or a phone in landscape.
+    static func usesSideBySide(in size: CGSize) -> Bool {
+        size.width > size.height && size.width >= sideBySideMinimumWidth
+    }
 
     /// The camera also scans this far around the viewfinder, as a share of
     /// its width, so a code at its edge still has its quiet zones.

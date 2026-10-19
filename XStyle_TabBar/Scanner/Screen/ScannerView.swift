@@ -1,99 +1,45 @@
 import SwiftUI
 
-/// The Scan tab: a live camera with a viewfinder. A code that comes into view
-/// is revealed with Code Scanner's animation, then shown in a Liquid Glass sheet.
+/// The Scan tab, split like SplitPaneKit: a live camera with a viewfinder in
+/// the top pane, and a pane under it with the aiming hint. A code that comes
+/// into view is revealed with Code Scanner's animation, then the pane opens
+/// with its details. Wide windows put the panes side by side.
 struct ScannerView: View {
-    @Bindable var model: ScannerModel
+    let model: ScannerModel
     /// Whether the Scan tab is showing. The camera only runs while it is.
     let isActive: Bool
     @Environment(\.displayScale) private var displayScale
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var resultPresentation = ScannerResultPresentation()
-    /// The zoom a pinch started from; nil between pinches, including ones
-    /// cut short, such as by a code being found.
-    @GestureState private var pinchStartZoom: Double?
+    @State private var paneBreakpoint = SplitPaneBreakpoint.peek
+    @State private var isSideBySide = false
+
+    private static let breakpoints: [SplitPaneBreakpoint] = [.peek, .half, .large]
 
     var body: some View {
-        ZStack {
-            // Full screen, in the preview layer's space, which codes are mapped
-            // into. Camera-style chrome: dark over the feed, in any appearance.
-            ZStack {
-                Color.clear
-                    .onGeometryChange(for: CGSize.self) { proxy in
-                        proxy.size
-                    } action: { size in
-                        model.updateScreen(size: size, displayScale: displayScale)
-                    }
-
-                if let session = model.session, let device = model.cameraDevice {
-                    CameraPreview(session: session, device: device, onRotationChange: model.updatePreviewRotation)
-                } else {
-                    ScannerBackdropPlaceholder()
-                }
-
-                if model.state == .idle || model.state == .scanning {
-                    ScannerViewfinder(isRevealing: model.reveal != nil)
-                }
-            }
-            .contentShape(.rect)
-            .gesture(pinch, isEnabled: canZoom)
-            .ignoresSafeArea()
-            .environment(\.colorScheme, .dark)
-
-            if model.state == .denied || model.state == .unavailable {
-                // Inside the safe area: readable text and a button.
-                ScannerUnavailableView(state: model.state)
-                    .background {
-                        Color.black.opacity(ScannerMetrics.scrimOpacity)
-                            .ignoresSafeArea()
-                    }
-                    .environment(\.colorScheme, .dark)
-            }
-
-            if let reveal = model.reveal {
-                ScanRevealView(reveal: reveal)
-            }
+        SplitPane(
+            breakpoint: $paneBreakpoint, breakpoints: Self.breakpoints,
+            sideBySideFraction: isSideBySide ? ScannerMetrics.sideBySideResultFraction : nil
+        ) {
+            ScannerCameraPane(model: model)
+        } bottom: {
+            ScannerResultPane(model: model)
         }
-        .safeAreaBar(edge: .bottom) {
-            // Each item pads its own bottom, so with none showing the bar
-            // adds no inset.
-            VStack(spacing: 0) {
-                if model.state == .idle || model.state == .scanning {
-                    ScannerHint(isRevealing: model.reveal != nil)
-                }
-
-                if model.state == .scanning, model.zoom != nil || model.hasTorch {
-                    GlassEffectContainer(spacing: 12) {
-                        HStack(spacing: 12) {
-                            ScannerZoomControl(model: model)
-                            if model.hasTorch {
-                                ScannerTorchButton(model: model)
-                            }
-                        }
-                    }
-                    .padding(.bottom)
-                    .opacity(isAiming ? 1 : 0)
-                    .disabled(!isAiming)
-                    .animation(.easeOut(duration: 0.15), value: isAiming)
-                }
-
-                #if targetEnvironment(simulator)
-                ScannerSimulateButton(action: model.simulateScan)
-                    .disabled(model.reveal != nil)
-                #endif
+        .onGeometryChange(for: Bool.self) { proxy in
+            ScannerMetrics.usesSideBySide(in: proxy.size)
+        } action: { isSideBySide in
+            self.isSideBySide = isSideBySide
+        }
+        // A found code opens the pane; a cleared one lets it back down.
+        .onChange(of: model.scannedCode?.id, initial: true) {
+            paneBreakpoint = model.scannedCode == nil ? .peek : .half
+        }
+        // Dragging the open pane back down closes the result, as dismissing
+        // the sheet did.
+        .onChange(of: paneBreakpoint) {
+            if paneBreakpoint == .peek, model.scannedCode != nil {
+                model.scanAgain()
             }
-            .environment(\.colorScheme, .dark)
-        }
-        .sheet(item: $resultPresentation.sheetItem, onDismiss: resultSheetDidDismiss) { code in
-            ScannedCodeSheet(code: code)
-                .onAppear { resultPresentation.didPresent(code.id) }
-        }
-        .onChange(of: isActive, initial: true) {
-            updateResultPresentation()
-        }
-        .onChange(of: model.scannedCode, initial: true) {
-            updateResultPresentation()
         }
         .sensoryFeedback(.success, trigger: model.reveal?.code) { _, newCode in
             newCode != nil
@@ -112,36 +58,6 @@ struct ScannerView: View {
 
     private var isCameraActive: Bool {
         isActive && scenePhase == .active
-    }
-
-    private func updateResultPresentation() {
-        resultPresentation.update(isActive: isActive, pendingCode: model.scannedCode)
-    }
-
-    private func resultSheetDidDismiss() {
-        guard let consumedID = resultPresentation.didDismiss(), model.scannedCode?.id == consumedID else { return }
-        model.scannedCode = nil
-        model.resultDidClose()
-    }
-
-    /// The camera controls show while aiming, not while a found code is
-    /// revealed.
-    private var isAiming: Bool {
-        model.state == .scanning && model.reveal == nil
-    }
-
-    private var canZoom: Bool {
-        isAiming && model.zoom != nil
-    }
-
-    /// Scales the zoom from where the pinch started, like the Camera app.
-    private var pinch: some Gesture {
-        MagnifyGesture()
-            .updating($pinchStartZoom) { value, start, _ in
-                let base = start ?? model.liveZoomFactor
-                start = base
-                model.setZoom(base * value.magnification, animated: false)
-            }
     }
 }
 

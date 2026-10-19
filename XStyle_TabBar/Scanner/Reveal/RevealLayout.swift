@@ -1,8 +1,8 @@
 import CoreGraphics
 
 /// Where the found code ends up: lifted flat, turned into a white card, with
-/// an icon on it. Everything is in full-screen view points, and kept in the
-/// top half so the result sheet doesn't cover it.
+/// an icon on it. Everything is in the camera pane's points, centred where
+/// the viewfinder is.
 nonisolated struct RevealLayout: Equatable, Sendable {
     /// The flattened code at the end of the lift.
     let liftTarget: CGRect
@@ -27,8 +27,8 @@ nonisolated struct RevealLayout: Equatable, Sendable {
 
     private static let widthFraction = 0.62
     private static let maximumWidth = 320.0
-    /// Card centre as a share of the screen height: above the medium sheet.
-    private static let centerFraction = 0.27
+    /// Card centre as a share of the camera pane's height.
+    private static let centerFraction = ScannerMetrics.viewfinderCenterFraction
     private static let cardOutset = 0.05
     private static let minimumAspect = 1.1
     private static let maximumAspect = 2.4

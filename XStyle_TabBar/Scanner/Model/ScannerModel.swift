@@ -211,9 +211,15 @@ final class ScannerModel {
         isTorchOn = isActive
     }
 
-    /// Call once the result sheet is gone: the reveal fades and scanning
-    /// resumes, holding the same code back until it leaves the frame.
-    func resultDidClose() {
+    /// Clears the result and scans again.
+    func scanAgain() {
+        scannedCode = nil
+        resultDidClose()
+    }
+
+    /// Call once the result is gone: the reveal fades and scanning resumes,
+    /// holding the same code back until it leaves the frame.
+    private func resultDidClose() {
         guard let code = reveal?.code else { return }
         reveal?.close()
         revealTask?.cancel()
@@ -232,6 +238,12 @@ final class ScannerModel {
         let analyzer = analyzer ?? FrameAnalyzer()
         self.analyzer = analyzer
         let events = await analyzer.events()
+        // A camera's controls, so they can be tried here too.
+        if zoom == nil {
+            zoom = CameraZoom(range: 1...5, recommended: 2.6)
+            zoomFactor = zoom?.initial ?? 1
+        }
+        hasTorch = true
         previewRotation = .simulated
         publishViewport()
         state = .scanning

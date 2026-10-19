@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// What a scan found: the barcode type and its digits. Shared by the sheet
-/// and the card.
+/// What a scan found: the barcode type and its digits, in the result pane.
 struct ScannedCodeDetails: View {
     let code: ScannedCode
 
