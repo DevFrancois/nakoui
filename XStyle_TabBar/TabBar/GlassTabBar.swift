@@ -45,11 +45,27 @@ struct GlassTabBar: View {
     @Binding var selection: RootTab
     var layoutAxis: NSLayoutConstraint.Axis = .horizontal
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var presentation = GlassTabBarPresentation()
 
     var body: some View {
-        GlassTabBarRepresentable(selection: $selection, layoutAxis: layoutAxis)
+        GlassTabBarRepresentable(selection: $selection, layoutAxis: layoutAxis, presentation: presentation)
             .frame(maxWidth: maximumWidth)
             .fixedSize(horizontal: false, vertical: true)
+            .glassEffect(
+                .regular.tint(colorScheme == .dark ? .black.opacity(0.25) : nil).interactive(false),
+                in: .capsule
+            )
+            .scaleEffect(x: reduceMotion ? 1 : presentation.scale.width,
+                         y: reduceMotion ? 1 : presentation.scale.height)
+            // This anchor is outside the visual transform. Touch locations and
+            // layout validation stay in the toolbar's unscaled coordinate space.
+            .background {
+                GlassTabBarCoordinateSpace(presentation: presentation)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
     }
 
     private var maximumWidth: CGFloat {
@@ -61,23 +77,26 @@ struct GlassTabBar: View {
 private struct GlassTabBarRepresentable: UIViewRepresentable {
     @Binding var selection: RootTab
     let layoutAxis: NSLayoutConstraint.Axis
+    let presentation: GlassTabBarPresentation
 
     func makeUIView(context: Context) -> GlassTabBarView {
-        GlassTabBarView(selection: selection)
+        GlassTabBarView(selection: selection, presentation: presentation)
     }
 
     func updateUIView(_ view: GlassTabBarView, context: Context) {
         // Replace the callback too, so it always writes to the current binding.
         view.onSelect = { selection = $0 }
-        view.updateEnvironment(
-            locale: context.environment.locale,
-            contentSizeCategory: UIContentSizeCategory(context.environment.dynamicTypeSize),
-            layoutDirection: context.environment.layoutDirection == .rightToLeft ? .rightToLeft : .leftToRight,
-            layoutAxis: layoutAxis,
-            reduceMotion: context.environment.accessibilityReduceMotion,
-            isEnabled: context.environment.isEnabled
-        )
-        view.select(selection, animated: !context.transaction.disablesAnimations)
+        presentation.updateView {
+            view.updateEnvironment(
+                locale: context.environment.locale,
+                contentSizeCategory: UIContentSizeCategory(context.environment.dynamicTypeSize),
+                layoutDirection: context.environment.layoutDirection == .rightToLeft ? .rightToLeft : .leftToRight,
+                layoutAxis: layoutAxis,
+                reduceMotion: context.environment.accessibilityReduceMotion,
+                isEnabled: context.environment.isEnabled
+            )
+            view.select(selection, animated: !context.transaction.disablesAnimations)
+        }
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: GlassTabBarView, context: Context) -> CGSize? {
