@@ -10,6 +10,7 @@ final class GlassTabBarView: UIView {
     private let selectionView = UIView()
     private let buttons = RootTab.allCases.map { GlassTabBarButton(tab: $0) }
     private let touchRecognizer = GlassTabBarTouchRecognizer()
+    private lazy var releaseFeedback = UIImpactFeedbackGenerator(style: .light, view: self)
     private var interaction: GlassTabBarInteraction
     private var reduceMotion = false
     private var layoutAxis: NSLayoutConstraint.Axis = .horizontal
@@ -51,6 +52,7 @@ final class GlassTabBarView: UIView {
             guard let point = self.trackingPoint(point) else { return }
             self.trackingCoordinateView = self.presentation.coordinateSpace(for: self)
             self.interaction.begin(at: point, geometry: self.currentGeometry)
+            if self.interaction.tracking != nil { self.releaseFeedback.prepare() }
             self.showTracking(previousPosition: nil)
         }
         touchRecognizer.addTarget(self, action: #selector(trackTouch(_:)))
@@ -223,8 +225,13 @@ final class GlassTabBarView: UIView {
             showTracking(previousPosition: previousPosition)
         case .ended:
             guard validateTrackingGeometry(), let point = trackingPoint(recognizer.touchLocation) else { return }
+            interaction.move(to: point)
+            // A valid release rebounds even on the current tab; cancellations
+            // and outside releases must remain silent.
+            let acceptedRelease = interaction.tracking?.candidate != nil
             let destination = interaction.release(at: point)
             showSelection(animated: true)
+            if acceptedRelease { releaseFeedback.impactOccurred() }
             if let destination { onSelect?(destination) }
         case .cancelled, .failed:
             interaction.cancel()
@@ -255,6 +262,7 @@ final class GlassTabBarView: UIView {
         interaction.cancel()
         resetRecognizerIfNeeded()
         showSelection(animated: true)
+        releaseFeedback.impactOccurred()
         if changed { onSelect?(button.tab) }
     }
 

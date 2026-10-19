@@ -52,7 +52,7 @@ struct GlassTabBar: View {
         GlassTabBarRepresentable(selection: $selection, layoutAxis: layoutAxis, presentation: presentation)
             .fixedSize(horizontal: false, vertical: true)
             .glassEffect(
-                .regular.tint(colorScheme == .dark ? .black.opacity(0.50) : nil).interactive(false),
+                .regular.tint(colorScheme == .dark ? .black.opacity(0.60) : nil).interactive(false),
                 in: .capsule
             )
             .scaleEffect(x: reduceMotion ? 1 : presentation.scale.width,
