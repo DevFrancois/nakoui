@@ -31,6 +31,13 @@ actor FrameAnalyzer {
     private var lastFrameTime = 0.0
     private var isWarmedUp = false
     private var flicker = FlickerDetector()
+    /// Looks for the faint flicker left once exposures last one whole pulse.
+    private var unevenFlicker = FlickerDetector(
+        rate: ScannerMetrics.unevenFlickerRate, minimumChange: ScannerMetrics.unevenFlickerMinimumChange
+    )
+    /// Whether exposures last whole pulses, which is when uneven pulses
+    /// show: before, the stronger bands would read as them.
+    private var isWatchingForUnevenFlicker = false
     private var continuation: AsyncStream<ScanEvent>.Continuation?
 
     /// A fresh stream of results for one scanning run. A stream ends for good
@@ -51,14 +58,32 @@ actor FrameAnalyzer {
         mapper = nil
     }
 
-    /// Whether the light pulses, so exposures should last whole pulses.
-    var isLightFlickering: Bool {
-        flicker.isFlickering
+    /// How the light pulses, so how many whole pulses exposures should last.
+    var lightFlicker: LightFlicker {
+        guard flicker.isFlickering else { return .steady }
+        return unevenFlicker.isFlickering ? .unevenlyPulsing : .pulsing
     }
+
+    #if DEBUG
+    /// The uneven-flicker detector's latest measurements, for tuning.
+    var unevenFlickerChanges: (pulsing: Float, steady: Float)? {
+        unevenFlicker.lastChanges
+    }
+    #endif
 
     /// Looks for flicker afresh, such as at the start of a run.
     func resetFlicker() {
         flicker.reset()
+        unevenFlicker.reset()
+        isWatchingForUnevenFlicker = false
+    }
+
+    /// Call with whether exposures now last whole pulses.
+    func setExposesWholePulses(_ isOn: Bool) {
+        guard isOn != isWatchingForUnevenFlicker else { return }
+        isWatchingForUnevenFlicker = isOn
+        // Frames from other exposures don't compare.
+        unevenFlicker.forgetFrames()
     }
 
     /// Scans again after a result, holding `text` back until it has left the frame.
@@ -122,6 +147,9 @@ actor FrameAnalyzer {
 
         let readings = LumaPlane.read(frame) { image -> [BarcodeReading] in
             flicker.add(image, at: time)
+            if isWatchingForUnevenFlicker {
+                unevenFlicker.add(image, at: time)
+            }
             return decoder.decode(image, region: region, options: .camera)
         } ?? []
         switch mode {

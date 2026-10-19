@@ -53,6 +53,9 @@ nonisolated enum ScannerMetrics {
     /// Pulses per second of the lights to look for: lamps on 50 Hz mains.
     /// Exposures of whole pulses show them without bands.
     static let flickerRate = 100
+    /// Many such lamps light the two halves of each mains cycle unevenly,
+    /// a faint flicker at half the rate that one-pulse exposures leave.
+    static let unevenFlickerRate = 50
     /// The luma plane is sampled every this many rows and columns.
     static let flickerRowStep = 4
     static let flickerColumnStep = 16
@@ -66,11 +69,17 @@ nonisolated enum ScannerMetrics {
     /// The least mean change in log brightness between out-of-phase frames
     /// that counts as flicker: about 2%.
     static let flickerMinimumChange: Float = 0.02
+    /// The same for uneven pulses, which are much fainter: about 0.3%, still
+    /// visible as a slow shimmer.
+    static let unevenFlickerMinimumChange: Float = 0.003
     /// How many times more out-of-phase frames must differ than in-phase ones.
     static let flickerChangeRatio: Float = 3
     /// Flicker is seen once this many of the latest votes say so.
     static let flickerVoteWindow = 12
     static let flickerVotesNeeded = 8
+    /// Under flickering light the meter's ISO steps are ignored when smaller
+    /// than this, in EV, so the image doesn't shimmer as they jitter.
+    static let flickerMeteringDeadband = 0.15
 
     /// The viewfinder's frame in a full-screen `bounds`. The on-screen frame
     /// and the camera's scan region both come from here, so they match.

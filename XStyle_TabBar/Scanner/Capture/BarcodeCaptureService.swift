@@ -219,24 +219,56 @@ actor BarcodeCaptureService {
         }
     }
 
-    /// Twice a second, moves exposures to whole pulses under flickering
-    /// light, eases the exposure cap in dim light, and the frame rate under
-    /// thermal pressure.
+    /// Ten times a second, exposes for whole pulses under flickering light;
+    /// twice a second, eases the exposure cap in dim light and fits the frame
+    /// rate to the exposure and thermal pressure.
     private func adjustPeriodically() async {
         await analyzer.resetFlicker()
-        var wasLightFlickering = false
+        var tick = 0
+        #if DEBUG
+        var lastMode = ""
+        #endif
         while !Task.isCancelled {
-            try? await Task.sleep(for: .milliseconds(500))
-            let isLightFlickering = await analyzer.isLightFlickering
-            #if DEBUG
-            if isLightFlickering != wasLightFlickering {
-                Self.logger.debug("Light flickering: \(isLightFlickering), exposure \(isLightFlickering ? "whole pulses" : "shortest")")
-            }
-            #endif
-            wasLightFlickering = isLightFlickering
+            try? await Task.sleep(for: .milliseconds(100))
+            let flicker = await analyzer.lightFlicker
+            // Checked after the last wait, which a stop can end early or run
+            // during: going on would set the exposure of a stopped run, or of
+            // the next one.
+            guard !Task.isCancelled else { break }
+            tick += 1
             guard let device, (try? device.lockForConfiguration()) != nil else { continue }
-            CameraTuning.adjust(device, isLightFlickering: isLightFlickering)
+            if flicker != .steady {
+                CameraTuning.exposeForWholePulses(device, flicker: flicker)
+            }
+            if tick % 5 == 0 {
+                CameraTuning.adjust(device, flicker: flicker)
+            }
+            let exposesWholePulses = CameraTuning.exposesWholePulses(device)
+            #if DEBUG
+            let mode = "\(flicker), \(exposesWholePulses ? "whole-pulse" : "auto") exposure"
+            let report = String(
+                format: "%@ %.2f ms at ISO %.0f, %.0f fps", mode,
+                device.exposureDuration.seconds * 1000, device.iso, 1 / device.activeVideoMaxFrameDuration.seconds
+            )
+            #endif
             device.unlockForConfiguration()
+            await analyzer.setExposesWholePulses(exposesWholePulses)
+            #if DEBUG
+            // On every change of mode, and once a second while the light flickers.
+            if mode != lastMode || (flicker != .steady && tick % 10 == 0) {
+                // While watching for uneven pulses, how much they show: flicker
+                // needs "uneven" over its threshold and 3 times "steady".
+                var changes = ""
+                if exposesWholePulses, let measured = await analyzer.unevenFlickerChanges {
+                    changes = String(
+                        format: "; uneven %.4f (threshold %.4f), steady %.4f",
+                        measured.pulsing, ScannerMetrics.unevenFlickerMinimumChange, measured.steady
+                    )
+                }
+                Self.logger.debug("Light: \(report)\(changes)")
+            }
+            lastMode = mode
+            #endif
         }
     }
 

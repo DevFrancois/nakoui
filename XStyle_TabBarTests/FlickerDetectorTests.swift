@@ -47,9 +47,10 @@ struct FlickerDetectorTests {
 
     /// Feeds frames at `times`, returning the detector afterwards.
     private func run(
-        _ scene: Scene, times: [Double], shift: (Int) -> Int = { _ in 0 }, gain: (Int) -> Double = { _ in 1 }
+        _ scene: Scene, times: [Double], detector: FlickerDetector = FlickerDetector(),
+        shift: (Int) -> Int = { _ in 0 }, gain: (Int) -> Double = { _ in 1 }
     ) -> FlickerDetector {
-        var detector = FlickerDetector()
+        var detector = detector
         for (index, time) in times.enumerated() {
             add(scene.frame(at: time, shift: shift(index), gain: gain(index), noiseSeed: UInt64(index)), at: time, to: &detector)
         }
@@ -89,6 +90,39 @@ struct FlickerDetectorTests {
     @Test("Auto exposure brightening the whole frame isn't flicker")
     func ignoresExposureRamp() {
         let detector = run(Scene(), times: times(count: 60, framesPerSecond: 60), gain: { 0.7 + Double($0) * 0.01 })
+        #expect(!detector.isFlickering)
+    }
+
+    /// Looks for the faint half-rate flicker of uneven pulses, as the
+    /// analyzer does once exposures last whole pulses.
+    private var unevenDetector: FlickerDetector {
+        FlickerDetector(rate: ScannerMetrics.unevenFlickerRate, minimumChange: ScannerMetrics.unevenFlickerMinimumChange)
+    }
+
+    @Test("Uneven pulses' faint flicker is seen once exposures last a whole pulse")
+    func detectsUnevenPulses() {
+        // A one-pulse exposure evens out the 100 Hz pulses, leaving only the
+        // difference between every other one.
+        let scene = Scene(flickerDepth: 0.03, flickerRate: Double(ScannerMetrics.unevenFlickerRate))
+        let detector = run(scene, times: times(count: 30, framesPerSecond: 60), detector: unevenDetector)
+        #expect(detector.isFlickering)
+    }
+
+    @Test("A steady scene held in a shaking hand isn't uneven flicker")
+    func unevenIgnoresJitter() {
+        let jitter = [0, 3, -2, 4, -3, 1, -4, 2, 0, -1, 3, -3]
+        let detector = run(Scene(), times: times(count: 60, framesPerSecond: 60), detector: unevenDetector) {
+            jitter[$0 % jitter.count]
+        }
+        #expect(!detector.isFlickering)
+    }
+
+    @Test("Moving at 47 fps, where the frame just before is nearly in phase, isn't uneven flicker")
+    func unevenIgnoresMotionAtTwoPulseFrameRate() {
+        let detector = run(
+            Scene(), times: times(count: 60, framesPerSecond: 47), detector: unevenDetector,
+            shift: { $0 * 3 }, gain: { 0.6 + Double($0) * 0.01 }
+        )
         #expect(!detector.isFlickering)
     }
 
