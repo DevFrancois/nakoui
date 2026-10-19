@@ -1,7 +1,7 @@
 import UIKit
 
-/// A single accessibility element; its symbol and label share the glass's
-/// semantic foreground treatment without adding another glass surface.
+/// A single accessibility element; its symbol and label share explicit
+/// foreground colors above the menu's separate glass background.
 final class GlassTabBarButton: UIControl {
     let tab: RootTab
     var onSizeChange: (() -> Void)?
@@ -57,7 +57,7 @@ final class GlassTabBarButton: UIControl {
         addSubview(symbolView)
         addSubview(titleLabel)
 
-        registerForTraitChanges([UITraitPreferredContentSizeCategory.self, UITraitLegibilityWeight.self]) { (view: GlassTabBarButton, _) in
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (view: GlassTabBarButton, _) in
             view.updateFonts()
         }
         updateFonts()
@@ -137,9 +137,8 @@ final class GlassTabBarButton: UIControl {
     }
 
     private func updateFonts() {
-        let fontWeight: UIFont.Weight = traitCollection.legibilityWeight == .bold ? .semibold : .regular
         titleLabel.font = UIFontMetrics(forTextStyle: .caption2).scaledFont(
-            for: .systemFont(ofSize: GlassTabBarMetrics.labelSize, weight: fontWeight),
+            for: .systemFont(ofSize: GlassTabBarMetrics.labelSize, weight: .semibold),
             compatibleWith: traitCollection
         )
         symbolSize = min(
@@ -149,8 +148,7 @@ final class GlassTabBarButton: UIControl {
         if tab == .home {
             symbolView.image = UIImage(resource: .homeTabIcon)
         } else {
-            let weight: UIImage.SymbolWeight = traitCollection.legibilityWeight == .bold ? .semibold : .regular
-            symbolView.image = UIImage(systemName: tab.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: symbolSize, weight: weight))
+            symbolView.image = UIImage(systemName: tab.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: symbolSize, weight: .semibold))
         }
         invalidateSize()
     }

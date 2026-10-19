@@ -51,10 +51,17 @@ struct GlassTabBar: View {
     var body: some View {
         GlassTabBarRepresentable(selection: $selection, layoutAxis: layoutAxis, presentation: presentation)
             .fixedSize(horizontal: false, vertical: true)
-            .glassEffect(
-                .regular.tint(colorScheme == .dark ? .black.opacity(0.60) : nil).interactive(false),
-                in: .capsule
-            )
+            .background {
+                // Keep native glass behind the controls so its foreground
+                // treatment cannot change their explicitly assigned colors.
+                Color.clear
+                    .glassEffect(
+                        .regular.tint(colorScheme == .dark ? .black.opacity(0.60) : nil).interactive(false),
+                        in: .capsule
+                    )
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
             .scaleEffect(x: reduceMotion ? 1 : presentation.scale.width,
                          y: reduceMotion ? 1 : presentation.scale.height)
             // This anchor is outside the visual transform. Touch locations and
