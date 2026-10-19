@@ -192,7 +192,7 @@ actor BarcodeCaptureService {
         // Scanning still works on the camera's defaults if this one fails.
         if (try? device.lockForConfiguration()) != nil {
             CameraTuning.apply(format, to: device)
-            device.videoZoomFactor = CameraTuning.zoom(for: device).recommended
+            device.videoZoomFactor = CameraTuning.zoom(for: device).initial
             device.unlockForConfiguration()
         }
         // Read without the lock, so the controls show even if it failed; the

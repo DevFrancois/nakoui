@@ -1,14 +1,16 @@
 import Foundation
 
-/// The camera's zoom: the range the user can pinch through, and the zoom
-/// scanning starts at.
+/// The camera's zoom range, starting zoom, and button presets.
 nonisolated struct CameraZoom: Equatable, Sendable {
     let range: ClosedRange<Double>
-    /// Where scanning starts: sharp on small codes (see `BarcodeZoom`).
+    /// A close-up preset that keeps small codes sharp (see `BarcodeZoom`).
     let recommended: Double
     /// The zoom buttons: the widest zoom and the recommended one, or 2× on
-    /// cameras that start unzoomed.
+    /// cameras whose recommended zoom is the widest.
     let presets: [Double]
+
+    /// Scanning starts at 1×, within the camera's supported range.
+    var initial: Double { range.clamp(1) }
 
     /// - Parameter recommended: Kept within `range`.
     init(range: ClosedRange<Double>, recommended: Double) {

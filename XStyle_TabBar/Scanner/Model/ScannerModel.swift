@@ -54,7 +54,7 @@ final class ScannerModel {
         self.scannedCode = scannedCode
         self.zoom = zoom
         self.hasTorch = hasTorch
-        zoomFactor = zoom?.recommended ?? 1
+        zoomFactor = zoom?.initial ?? 1
     }
 
     private var viewfinder: CGRect {
@@ -95,7 +95,7 @@ final class ScannerModel {
         // The camera was set to it already, unless that failed.
         if zoom == nil, let cameraZoom = await capture.zoom {
             zoom = cameraZoom
-            setZoom(cameraZoom.recommended, animated: false)
+            setZoom(cameraZoom.initial, animated: false)
         }
         hasTorch = await capture.hasTorch
         let torchActivity = await capture.torchActivity()

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Camera-style zoom buttons: the widest zoom and the one scanning starts at.
+/// Camera-style zoom buttons: the widest zoom and a close-up preset.
 /// The button the current zoom falls under shows it, so a pinch reads out
 /// here too. Reads the zoom itself, so a pinch redraws only this.
 struct ScannerZoomControl: View {

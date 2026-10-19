@@ -71,7 +71,7 @@ nonisolated enum CameraTuning {
         }
     }
 
-    /// The zoom range for the active format, starting where the smallest
+    /// The zoom range for the active format, with a preset where the smallest
     /// product barcode is sharp at the closest focus distance (see
     /// `BarcodeZoom`), rounded to the tenth the zoom buttons show.
     static func zoom(for device: AVCaptureDevice) -> CameraZoom {
