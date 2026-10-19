@@ -41,6 +41,7 @@ struct ArticleView: View {
             ArticleToolbar(article: article)
         }
         .toolbarVisibility(.visible, for: .navigationBar)
+        .toolbarVisibility(.hidden, for: .bottomBar)
         .navigationTransition(.zoom(sourceID: article.id, in: namespace))
         // The backdrop is toned to match the appearance, so text keeps its contrast.
         .onChange(of: colorScheme, initial: true) {

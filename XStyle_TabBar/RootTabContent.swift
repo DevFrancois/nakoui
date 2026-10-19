@@ -17,10 +17,11 @@ struct RootTabContent<Home: View>: View {
                 // the outer stack's toolbar/rail insets into UIKit's children.
                 .ignoresSafeArea(.container)
         }
-        // Root-only items: pushed pages bring their own toolbar, so the bar
-        // stays in place while an interactive pop reveals the root.
+        // Let the navigation container coordinate the root toolbar's visibility
+        // with pushed destinations, including interactive dismissal.
         .toolbar {
             GlassTabBarToolbar(selection: $selection, layoutAxis: $layoutAxis)
         }
+        .toolbarVisibility(.visible, for: .bottomBar)
     }
 }
