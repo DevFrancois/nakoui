@@ -117,11 +117,39 @@ final class GlassTabBarView: UIView {
         let isEnabled: Bool
     }
 
+    func fittingSize(proposedWidth: CGFloat?) -> CGSize {
+        let preferredWidth: CGFloat
+        if layoutAxis == .vertical {
+            preferredWidth = GlassTabBarMetrics.preferredVerticalWidth
+        } else {
+            // Equal-width items need room for the widest localized, scaled title.
+            // The reference width is a preference; content may justify more.
+            let itemWidth = buttons.map(\.preferredWidth).max() ?? GlassTabBarMetrics.minimumTapSize
+            preferredWidth = max(GlassTabBarMetrics.preferredHorizontalWidth,
+                                 itemWidth * CGFloat(buttons.count) + GlassTabBarMetrics.contentInset * 2)
+        }
+        // Zero probes the minimum, nil the ideal, and infinity the maximum.
+        // This capsule's ideal and maximum both follow its content preference.
+        // Never compress the controls below 44 points,
+        // even if a parent proposes less than the menu's required minimum.
+        let width = proposedWidth.flatMap { $0.isFinite ? min(preferredWidth, max(minimumContentWidth, $0)) : nil }
+            ?? preferredWidth
+        return CGSize(width: width, height: fittingHeight(for: width))
+    }
+
+    private var minimumContentWidth: CGFloat {
+        layoutAxis == .vertical ? GlassTabBarMetrics.minimumTapSize : GlassTabBarMetrics.minimumHorizontalWidth
+    }
+
+    private func horizontalInset(for width: CGFloat) -> CGFloat {
+        min(GlassTabBarMetrics.contentInset, max(0, (width - minimumContentWidth) / 2))
+    }
+
     func fittingHeight(for width: CGFloat) -> CGFloat {
         if layoutAxis == .vertical {
             return CGFloat(buttons.count) * GlassTabBarMetrics.minimumTapSize + GlassTabBarMetrics.contentInset * 2
         }
-        let itemWidth = max(0, width - GlassTabBarMetrics.contentInset * 2) / CGFloat(buttons.count)
+        let itemWidth = max(0, width - horizontalInset(for: width) * 2) / CGFloat(buttons.count)
         let itemHeight = buttons.map { $0.sizeThatFits(CGSize(width: itemWidth, height: .greatestFiniteMagnitude)).height }.max() ?? 0
         return max(GlassTabBarMetrics.minimumHeight, itemHeight + GlassTabBarMetrics.contentInset * 2)
     }
@@ -129,7 +157,7 @@ final class GlassTabBarView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         containerView.frame = bounds
-        let content = bounds.insetBy(dx: GlassTabBarMetrics.contentInset, dy: GlassTabBarMetrics.contentInset)
+        let content = bounds.insetBy(dx: horizontalInset(for: bounds.width), dy: GlassTabBarMetrics.contentInset)
         let isVertical = layoutAxis == .vertical
         let itemWidth = max(0, content.width) / (isVertical ? 1 : CGFloat(buttons.count))
         let itemHeight = max(0, content.height) / (isVertical ? CGFloat(buttons.count) : 1)

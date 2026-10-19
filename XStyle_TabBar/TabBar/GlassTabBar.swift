@@ -44,17 +44,15 @@ private struct AdaptiveGlassTabBar: View {
 struct GlassTabBar: View {
     @Binding var selection: RootTab
     var layoutAxis: NSLayoutConstraint.Axis = .horizontal
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var presentation = GlassTabBarPresentation()
 
     var body: some View {
         GlassTabBarRepresentable(selection: $selection, layoutAxis: layoutAxis, presentation: presentation)
-            .frame(maxWidth: maximumWidth)
             .fixedSize(horizontal: false, vertical: true)
             .glassEffect(
-                .regular.tint(colorScheme == .dark ? .black.opacity(0.25) : nil).interactive(false),
+                .regular.tint(colorScheme == .dark ? .black.opacity(0.50) : nil).interactive(false),
                 in: .capsule
             )
             .scaleEffect(x: reduceMotion ? 1 : presentation.scale.width,
@@ -66,11 +64,7 @@ struct GlassTabBar: View {
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
-    }
-
-    private var maximumWidth: CGFloat {
-        if layoutAxis == .vertical { return GlassTabBarMetrics.verticalWidth }
-        return dynamicTypeSize.isAccessibilitySize ? .infinity : GlassTabBarMetrics.maximumWidth
+            .padding(.bottom, layoutAxis == .horizontal ? GlassTabBarMetrics.horizontalToolbarBottomPadding : 0)
     }
 }
 
@@ -100,8 +94,8 @@ private struct GlassTabBarRepresentable: UIViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: GlassTabBarView, context: Context) -> CGSize? {
-        let width = layoutAxis == .vertical ? GlassTabBarMetrics.verticalWidth
-            : proposal.width.flatMap { $0.isFinite ? max($0, GlassTabBarMetrics.minimumWidth) : nil } ?? GlassTabBarMetrics.maximumWidth
-        return CGSize(width: width, height: uiView.fittingHeight(for: width))
+        // One measurement owns the controls, glass, and unscaled touch anchor.
+        // A separate clamping frame could give those layers different widths.
+        uiView.fittingSize(proposedWidth: proposal.width)
     }
 }

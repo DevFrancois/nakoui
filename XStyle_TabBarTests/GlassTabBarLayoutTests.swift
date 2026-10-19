@@ -13,10 +13,10 @@ struct GlassTabBarLayoutTests {
         // necessarily attached it or installed any trait overrides.
         for category: UIContentSizeCategory in [.large, .accessibilityExtraExtraExtraLarge, .large] {
             configure(view, category: category)
-            let height = view.fittingHeight(for: 360)
-            #expect(height.isFinite && height > 0)
+            let size = view.fittingSize(proposedWidth: 360)
+            #expect(size.height.isFinite && size.height > 0)
             #expect(view.traitCollection.preferredContentSizeCategory == category)
-            view.frame = CGRect(x: 0, y: 0, width: 360, height: height)
+            view.frame = CGRect(origin: .zero, size: size)
             view.layoutIfNeeded()
             try expectUsableButtons(in: view)
         }
@@ -30,11 +30,11 @@ struct GlassTabBarLayoutTests {
 
         for (axis, direction, width): (NSLayoutConstraint.Axis, UIUserInterfaceLayoutDirection, CGFloat) in [
             (.horizontal, .leftToRight, 360),
-            (.vertical, .leftToRight, GlassTabBarMetrics.verticalWidth),
+            (.vertical, .leftToRight, GlassTabBarMetrics.preferredVerticalWidth),
             (.horizontal, .rightToLeft, 360),
         ] {
             configure(view, axis: axis, direction: direction)
-            view.frame = CGRect(x: 0, y: 0, width: width, height: view.fittingHeight(for: width))
+            view.frame = CGRect(origin: .zero, size: view.fittingSize(proposedWidth: width))
             view.layoutIfNeeded()
 
             let controls = try buttons(in: view)
@@ -64,16 +64,16 @@ struct GlassTabBarLayoutTests {
         var selections: [RootTab] = []
         view.onSelect = { selections.append($0) }
         configure(view)
-        view.frame = CGRect(x: 0, y: 0, width: 360, height: view.fittingHeight(for: 360))
+        view.frame = CGRect(origin: .zero, size: view.fittingSize(proposedWidth: 360))
         view.layoutIfNeeded()
         view.select(.profile, animated: false)
 
         for (axis, width): (NSLayoutConstraint.Axis, CGFloat) in [
-            (.vertical, GlassTabBarMetrics.verticalWidth),
+            (.vertical, GlassTabBarMetrics.preferredVerticalWidth),
             (.horizontal, 360),
         ] {
             configure(view, axis: axis)
-            view.frame = CGRect(x: 0, y: 0, width: width, height: view.fittingHeight(for: width))
+            view.frame = CGRect(origin: .zero, size: view.fittingSize(proposedWidth: width))
             view.layoutIfNeeded()
             let controls = try buttons(in: view)
             #expect(controls.filter { $0.isSelected }.map(\.tab) == [RootTab.profile])
@@ -89,6 +89,117 @@ struct GlassTabBarLayoutTests {
         #expect(search.accessibilityTraits.contains(.selected))
         #expect(search.accessibilityActivate())
         #expect(selections == [.search], "Reactivating the selected tab must not change destinations again")
+    }
+
+    @Test("Narrow horizontal proposals preserve four touch targets, identities and VoiceOver selection")
+    func horizontalResizingPreservesControlsAndSelection() throws {
+        let view = GlassTabBarView(selection: .profile)
+        let identities = try buttons(in: view).map(ObjectIdentifier.init)
+        var selections: [RootTab] = []
+        view.onSelect = { selections.append($0) }
+
+        for direction: UIUserInterfaceLayoutDirection in [.leftToRight, .rightToLeft] {
+            configure(view, direction: direction)
+            for width: CGFloat in [360, 326, 320, 188, 180, 176, 360] {
+                let size = view.fittingSize(proposedWidth: width)
+                #expect(size.width == min(width, GlassTabBarMetrics.preferredHorizontalWidth))
+                view.frame = CGRect(origin: .zero, size: size)
+                view.layoutIfNeeded()
+                try expectUsableButtons(in: view)
+
+                let controls = try buttons(in: view)
+                #expect(controls.map(ObjectIdentifier.init) == identities)
+                #expect(controls.filter { $0.accessibilityTraits.contains(.selected) }.map(\.tab) == [.profile])
+                let first = try #require(controls.first)
+                let last = try #require(controls.last)
+                #expect(direction == .rightToLeft ? first.frame.minX > last.frame.minX : first.frame.minX < last.frame.minX)
+                #expect(controls.allSatisfy { !($0.accessibilityLabel ?? "").isEmpty })
+            }
+        }
+        #expect(selections.isEmpty, "Resizing and mirroring must not navigate")
+
+        let search = try #require(buttons(in: view).first { $0.tab == .search })
+        #expect(search.accessibilityActivate())
+        #expect(search.accessibilityActivate())
+        #expect(selections == [.search])
+        #expect(search.accessibilityTraits.contains(.selected))
+    }
+
+    @Test("Vertical proposals compress capsule padding before any touch target")
+    func narrowVerticalProposalsKeepFullTouchTargets() throws {
+        let view = GlassTabBarView(selection: .profile)
+        let identities = try buttons(in: view).map(ObjectIdentifier.init)
+        configure(view, category: .accessibilityExtraExtraExtraLarge, axis: .vertical)
+
+        for width: CGFloat in [56, 50, 44, 56] {
+            let size = view.fittingSize(proposedWidth: width)
+            #expect(size == CGSize(width: width, height: 188))
+            view.frame = CGRect(origin: .zero, size: size)
+            view.layoutIfNeeded()
+            try expectUsableButtons(in: view)
+            let controls = try buttons(in: view)
+            #expect(controls.map(ObjectIdentifier.init) == identities)
+            #expect(controls.filter { $0.accessibilityTraits.contains(.selected) }.map(\.tab) == [.profile])
+            for (first, second) in zip(controls, controls.dropFirst()) {
+                #expect(first.frame.maxY <= second.frame.minY)
+            }
+        }
+    }
+
+    @Test("Unspecified and infinite proposals use preferred sizes; minimum probes retain touch targets")
+    func proposalExtremesProduceUsableFiniteSizes() throws {
+        let view = GlassTabBarView(selection: .home)
+        for (axis, preferredWidth, minimumWidth): (NSLayoutConstraint.Axis, CGFloat, CGFloat) in [
+            (.horizontal, 326, 176),
+            (.vertical, 56, 44),
+        ] {
+            configure(view, axis: axis)
+            for proposal: CGFloat? in [nil, .infinity, .nan, 10_000] {
+                let size = view.fittingSize(proposedWidth: proposal)
+                #expect(size.width == preferredWidth)
+                #expect(size.height.isFinite && size.height > 0)
+            }
+            for proposal: CGFloat in [-1, 0, 1, minimumWidth - 1] {
+                let size = view.fittingSize(proposedWidth: proposal)
+                #expect(size.width == minimumWidth)
+                view.frame = CGRect(origin: .zero, size: size)
+                view.layoutIfNeeded()
+                try expectUsableButtons(in: view)
+            }
+        }
+    }
+
+    @Test("Accessibility text grows the preferred width and wraps vertically when width is constrained")
+    func dynamicTypeExpandsPreferredWidthAndConstrainedHeight() throws {
+        let view = GlassTabBarView(selection: .home)
+        configure(view)
+        let standardPreferred = view.fittingSize(proposedWidth: nil)
+        let standardNarrow = view.fittingSize(proposedWidth: 176)
+
+        configure(view, category: .accessibilityExtraExtraExtraLarge)
+        let accessiblePreferred = view.fittingSize(proposedWidth: nil)
+        let accessibleNarrow = view.fittingSize(proposedWidth: 176)
+        #expect(accessiblePreferred.width > standardPreferred.width)
+        #expect(accessibleNarrow.width == 176)
+        #expect(accessibleNarrow.height > accessiblePreferred.height,
+                "A constrained menu must grow tall enough for its wrapped labels")
+        #expect(accessibleNarrow.height > standardNarrow.height)
+
+        for width in [accessiblePreferred.width, 320, 176] {
+            let size = view.fittingSize(proposedWidth: width)
+            view.frame = CGRect(origin: .zero, size: size)
+            view.layoutIfNeeded()
+            try expectUsableButtons(in: view)
+            for control in try buttons(in: view) {
+                let requiredHeight = control.sizeThatFits(CGSize(width: control.bounds.width,
+                                                                 height: .greatestFiniteMagnitude)).height
+                #expect(control.bounds.height >= requiredHeight,
+                        "Every control must fit its measured symbol and wrapped title")
+            }
+        }
+
+        configure(view)
+        #expect(view.fittingSize(proposedWidth: nil) == standardPreferred)
     }
 
     private func configure(

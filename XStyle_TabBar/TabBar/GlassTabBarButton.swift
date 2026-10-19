@@ -85,6 +85,13 @@ final class GlassTabBarButton: UIControl {
         return true
     }
 
+    var preferredWidth: CGFloat {
+        guard layoutAxis == .horizontal else { return GlassTabBarMetrics.minimumTapSize }
+        let labelWidth = titleSize(for: .greatestFiniteMagnitude).width
+        return max(GlassTabBarMetrics.minimumTapSize,
+                   ceil(max(symbolSize, labelWidth) + GlassTabBarMetrics.itemPadding * 2))
+    }
+
     override func sizeThatFits(_ size: CGSize) -> CGSize {
         if layoutAxis == .vertical {
             return CGSize(width: size.width, height: GlassTabBarMetrics.minimumTapSize)

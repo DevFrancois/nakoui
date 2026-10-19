@@ -1,3 +1,4 @@
+import SwiftUI
 import Testing
 import UIKit
 @testable import XStyle_TabBar
@@ -149,6 +150,50 @@ struct GlassTabBarPresentationTests {
         #expect(committedTabs.isEmpty, "Moving the toolbar must cancel without navigation")
     }
 
+    @Test("Narrow SwiftUI bars keep UIKit content and the glass anchor aligned so presses can begin")
+    func hostedNarrowBarsRetainAValidTrackingAnchor() async throws {
+        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        for (axis, width): (NSLayoutConstraint.Axis, CGFloat) in [
+            (.horizontal, 180), (.horizontal, 176), (.vertical, 50), (.vertical, 44),
+        ] {
+            let window = UIWindow(windowScene: scene)
+            let host = UIHostingController(rootView: NarrowGlassTabBarFixture(axis: axis, width: width))
+            window.rootViewController = host
+            window.isHidden = false
+            defer { window.isHidden = true }
+
+            try #require(await eventually {
+                host.view.layoutIfNeeded()
+                guard let view = self.findBar(in: host.view) else { return false }
+                return abs(view.bounds.width - width) < 0.5 && view.bounds.height > 0
+            }, "The UIKit content must honor the same narrow proposal as its SwiftUI capsule")
+            let view = try #require(findBar(in: host.view))
+            let recognizer = try #require(view.gestureRecognizers?.compactMap {
+                $0 as? GlassTabBarTouchRecognizer
+            }.first)
+            let controls = try #require(view.accessibilityElements as? [GlassTabBarButton])
+            let search = try #require(controls.first { $0.tab == .search })
+            let searchSymbol = try #require(search.subviews.compactMap { $0 as? UIImageView }.first)
+            await drainMainQueue()
+            let restingFrame = view.convert(view.bounds, to: window)
+            #expect(searchSymbol.tintColor == UIColor.secondaryLabel)
+
+            // A mismatched anchor rejects this begin callback. Candidate emphasis
+            // must still appear when the device's Reduce Motion setting is on.
+            recognizer.onBegin?(search.convert(CGPoint(x: search.bounds.midX, y: search.bounds.midY), to: view))
+            #expect(searchSymbol.tintColor == UIColor.label,
+                    "A valid anchor must allow the finger candidate to become emphasized")
+            if !UIAccessibility.isReduceMotionEnabled {
+                #expect(try await eventually {
+                    let pressedFrame = view.convert(view.bounds, to: window)
+                    return axis == .vertical ? pressedFrame.height > restingFrame.height + 0.5
+                        : pressedFrame.width > restingFrame.width + 0.5
+                }, "A valid press must reach the SwiftUI glass at every supported narrow width")
+            }
+            #expect(controls.filter(\.isSelected).map(\.tab) == [.home])
+        }
+    }
+
     @Test("Removing the SwiftUI anchor cannot keep its UIView alive through presentation state")
     func doesNotRetainRemovedAnchor() {
         let presentation = GlassTabBarPresentation()
@@ -171,6 +216,32 @@ struct GlassTabBarPresentationTests {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             DispatchQueue.main.async { continuation.resume() }
         }
+    }
+
+    private func findBar(in view: UIView) -> GlassTabBarView? {
+        if let bar = view as? GlassTabBarView { return bar }
+        return view.subviews.lazy.compactMap { findBar(in: $0) }.first
+    }
+
+    private func eventually(_ condition: () -> Bool) async throws -> Bool {
+        for _ in 0..<100 {
+            if condition() { return true }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        return false
+    }
+}
+
+private struct NarrowGlassTabBarFixture: View {
+    let axis: NSLayoutConstraint.Axis
+    let width: CGFloat
+
+    var body: some View {
+        GlassTabBar(selection: .constant(.home), layoutAxis: axis)
+            .frame(width: width)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .dynamicTypeSize(.large)
+            .environment(\.locale, Locale(identifier: "en"))
     }
 }
 
