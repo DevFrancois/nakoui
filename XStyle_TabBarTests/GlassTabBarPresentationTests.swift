@@ -172,17 +172,21 @@ struct GlassTabBarPresentationTests {
                 $0 as? GlassTabBarTouchRecognizer
             }.first)
             let controls = try #require(view.accessibilityElements as? [GlassTabBarButton])
+            let home = try #require(controls.first { $0.tab == .home })
             let search = try #require(controls.first { $0.tab == .search })
-            let searchSymbol = try #require(search.subviews.compactMap { $0 as? UIImageView }.first)
             await drainMainQueue()
+            let selectionFill = try #require(search.superview?.subviews.first {
+                $0.backgroundColor == UIColor.tertiarySystemFill
+            })
             let restingFrame = view.convert(view.bounds, to: window)
-            #expect(searchSymbol.tintColor == UIColor.secondaryLabel)
+            expectPoint(selectionFill.center, equals: home.center)
 
-            // A mismatched anchor rejects this begin callback. Candidate emphasis
-            // must still appear when the device's Reduce Motion setting is on.
+            // A mismatched anchor rejects this begin callback. The selection fill
+            // must follow the finger even when Reduce Motion suppresses scaling.
             recognizer.onBegin?(search.convert(CGPoint(x: search.bounds.midX, y: search.bounds.midY), to: view))
-            #expect(searchSymbol.tintColor == UIColor.label,
-                    "A valid anchor must allow the finger candidate to become emphasized")
+            expectPoint(selectionFill.center, equals: search.center)
+            #expect(selectionFill.backgroundColor == UIColor.secondarySystemFill,
+                    "A valid anchor must move and brighten the fill behind the finger candidate")
             if !UIAccessibility.isReduceMotionEnabled {
                 #expect(try await eventually {
                     let pressedFrame = view.convert(view.bounds, to: window)

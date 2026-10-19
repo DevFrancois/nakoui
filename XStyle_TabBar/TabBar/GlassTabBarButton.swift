@@ -15,8 +15,13 @@ final class GlassTabBarButton: UIControl {
     private let symbolView = UIImageView()
     private let titleLabel = UILabel()
     private var symbolSize = GlassTabBarMetrics.symbolSize
-    // A finger candidate changes emphasis, never the committed accessibility selection.
+    // Finger tracking stays separate from the committed accessibility selection.
     private var trackingCandidate: Bool?
+    private static let unselectedForeground = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 121.0 / 255.0, green: 121.0 / 255.0, blue: 121.0 / 255.0, alpha: 1)
+            : UIColor.label.resolvedColor(with: traits)
+    }
 
     override var isSelected: Bool {
         didSet { updateAppearance() }
@@ -141,8 +146,12 @@ final class GlassTabBarButton: UIControl {
             GlassTabBarMetrics.maximumSymbolSize,
             UIFontMetrics(forTextStyle: .body).scaledValue(for: GlassTabBarMetrics.symbolSize, compatibleWith: traitCollection)
         )
-        let weight: UIImage.SymbolWeight = traitCollection.legibilityWeight == .bold ? .semibold : .regular
-        symbolView.image = UIImage(systemName: tab.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: symbolSize, weight: weight))
+        if tab == .home {
+            symbolView.image = UIImage(resource: .homeTabIcon)
+        } else {
+            let weight: UIImage.SymbolWeight = traitCollection.legibilityWeight == .bold ? .semibold : .regular
+            symbolView.image = UIImage(systemName: tab.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: symbolSize, weight: weight))
+        }
         invalidateSize()
     }
 
@@ -154,7 +163,7 @@ final class GlassTabBarButton: UIControl {
 
     private func updateAppearance() {
         let isEmphasized = trackingCandidate ?? (isSelected || isHighlighted)
-        let foreground: UIColor = !isEnabled ? .tertiaryLabel : (isEmphasized ? .label : .secondaryLabel)
+        let foreground: UIColor = !isEnabled ? .tertiaryLabel : (isEmphasized ? .label : Self.unselectedForeground)
         symbolView.tintColor = foreground
         titleLabel.textColor = foreground
         backgroundColor = .clear
