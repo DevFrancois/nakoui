@@ -188,7 +188,11 @@ final class ScannerModel {
     /// Turns the flashlight on or off. The button changes at once, then
     /// shows what the camera did, such as staying off when it can't light.
     func toggleTorch() {
-        let isOn = !isTorchOn
+        setTorch(!isTorchOn)
+    }
+
+    /// Lights or dims the flashlight, in order with taps on the button.
+    private func setTorch(_ isOn: Bool) {
         isTorchOn = isOn
         torchRequest += 1
         let request = torchRequest
@@ -285,6 +289,11 @@ final class ScannerModel {
             guard !Task.isCancelled else { return }
             let frozen = await freeze()
             guard !Task.isCancelled else { return }
+            // The found frame is captured, lit if the torch was on; the
+            // flashlight isn't needed for the result.
+            if isTorchOn {
+                setTorch(false)
+            }
             if let frozen {
                 reveal?.freeze(frozen)
             }
