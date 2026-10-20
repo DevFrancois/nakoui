@@ -9,4 +9,5 @@ nonisolated struct SplitPaneBreakpoint: Hashable, Sendable {
     static let peek = SplitPaneBreakpoint(ratio: 0.25, name: "peek")
     static let half = SplitPaneBreakpoint(ratio: 0.5, name: "half")
     static let large = SplitPaneBreakpoint(ratio: 0.75, name: "large")
+    static let full = SplitPaneBreakpoint(ratio: 0.9, name: "full")
 }

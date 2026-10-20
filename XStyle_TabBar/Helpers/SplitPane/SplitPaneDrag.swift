@@ -35,6 +35,18 @@ nonisolated enum SplitPaneDrag {
     /// `1 - rubberBandingStrength` as far.
     static let rubberBandingStrength: CGFloat = 0.7
 
+    /// Whether a drag on the bottom pane moves it, or scrolls its content,
+    /// as SplitPaneKit's `gestureRecognizerShouldBegin` decides, but like a
+    /// sheet: the content only scrolls once the pane is at its tallest.
+    /// - Parameters:
+    ///   - startsInStrip: The drag began on the pane's top edge, which
+    ///     always moves it.
+    ///   - isContentAtTop: The content is scrolled to its top, so a
+    ///     downward drag can shrink the pane rather than scroll.
+    static func movesPane(startsInStrip: Bool, isAtTallest: Bool, isContentAtTop: Bool, isDownward: Bool) -> Bool {
+        startsInStrip || !isAtTallest || (isContentAtTop && isDownward)
+    }
+
     /// The pane's height for `height`, resisting past `range`.
     static func rubberBanded(_ height: CGFloat, within range: ClosedRange<CGFloat>) -> CGFloat {
         let resistance = 1 - rubberBandingStrength

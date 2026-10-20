@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// The pane under the camera: the aiming hint, then the code a scan found,
-/// with Copy, Scan Again, and a close button in the corner. The details
-/// scroll below the close row, so dragging along the pane's top edge still
-/// moves the pane.
+/// with Copy, Scan Again, product sections, and a close button in the corner.
+/// Like a sheet, dragging the result grows the pane until it's fully open,
+/// then the details scroll below the close row.
 struct ScannerResultPane: View {
     let model: ScannerModel
 
@@ -22,24 +22,31 @@ struct ScannerResultPane: View {
                     .padding([.top, .horizontal])
 
                     ScrollView {
-                    VStack(spacing: 20) {
-                        ScannedCodeDetails(code: code)
+                        VStack(spacing: 20) {
+                            ScannedCodeDetails(code: code)
 
-                        GlassEffectContainer {
-                            HStack(spacing: 12) {
-                                Button("Copy", systemImage: "doc.on.doc") {
-                                    UIPasteboard.general.string = code.value
+                            GlassEffectContainer {
+                                HStack(spacing: 12) {
+                                    Button("Copy", systemImage: "doc.on.doc") {
+                                        UIPasteboard.general.string = code.value
+                                    }
+                                    Button("Scan Again", systemImage: "barcode.viewfinder", action: model.scanAgain)
                                 }
-                                Button("Scan Again", systemImage: "barcode.viewfinder", action: model.scanAgain)
+                                .buttonStyle(.glass)
+                                .controlSize(.large)
                             }
-                            .buttonStyle(.glass)
-                            .controlSize(.large)
+
+                            ScannedProductSections()
                         }
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity)
+                        .padding()
+                        .frame(maxWidth: .infinity)
                     }
                     .scrollBounceBehavior(.basedOnSize)
+                    // The tab bar slides away while a result shows, but its
+                    // toolbar keeps its place; without this, the system would
+                    // still blur the content scrolling under the empty bar.
+                    .scrollEdgeEffectHidden(true, for: .bottom)
+                    .splitPaneScrollable()
                 }
                 .transition(.blurReplace)
             } else {

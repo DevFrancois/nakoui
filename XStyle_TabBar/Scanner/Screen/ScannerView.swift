@@ -14,11 +14,14 @@ struct ScannerView: View {
     @State private var paneBreakpoint = SplitPaneBreakpoint.peek
     @State private var isSideBySide = false
 
-    private static let breakpoints: [SplitPaneBreakpoint] = [.peek, .half, .large]
+    /// A result can open almost fully, leaving a strip of camera.
+    private var breakpoints: [SplitPaneBreakpoint] {
+        model.scannedCode == nil ? [.peek, .half, .large] : [.peek, .half, .large, .full]
+    }
 
     var body: some View {
         SplitPane(
-            breakpoint: $paneBreakpoint, breakpoints: Self.breakpoints,
+            breakpoint: $paneBreakpoint, breakpoints: breakpoints,
             sideBySideFraction: isSideBySide ? ScannerMetrics.sideBySideResultFraction : nil
         ) {
             ScannerCameraPane(model: model)

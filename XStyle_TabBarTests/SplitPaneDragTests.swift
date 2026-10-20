@@ -51,6 +51,21 @@ struct SplitPaneDragTests {
         #expect(target(from: .half, start: 400, end: 480, velocity: 0) == .large)
     }
 
+    @Test("Like a sheet, the pane moves until it's fully open, then its content scrolls")
+    func movesPaneOrScrolls() {
+        // The top edge always moves the pane.
+        #expect(SplitPaneDrag.movesPane(startsInStrip: true, isAtTallest: true, isContentAtTop: false, isDownward: false))
+        // Below its tallest point, any drag grows or shrinks it.
+        #expect(SplitPaneDrag.movesPane(startsInStrip: false, isAtTallest: false, isContentAtTop: false, isDownward: false))
+        #expect(SplitPaneDrag.movesPane(startsInStrip: false, isAtTallest: false, isContentAtTop: true, isDownward: true))
+        // Fully open: down from the content's top shrinks it...
+        #expect(SplitPaneDrag.movesPane(startsInStrip: false, isAtTallest: true, isContentAtTop: true, isDownward: true))
+        // ...and everything else scrolls.
+        #expect(!SplitPaneDrag.movesPane(startsInStrip: false, isAtTallest: true, isContentAtTop: true, isDownward: false))
+        #expect(!SplitPaneDrag.movesPane(startsInStrip: false, isAtTallest: true, isContentAtTop: false, isDownward: true))
+        #expect(!SplitPaneDrag.movesPane(startsInStrip: false, isAtTallest: true, isContentAtTop: false, isDownward: false))
+    }
+
     @Test("Wide windows put the scanner's panes side by side", arguments: [
         (CGSize(width: 393, height: 852), false),
         (CGSize(width: 466, height: 678), false),

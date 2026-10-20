@@ -3,11 +3,14 @@ import SwiftUI
 /// Two panes in the style of SplitPaneKit (see `SplitPaneDrag` for its licence).
 ///
 /// Stacked, the top pane fills what the bottom one leaves, and the bottom one
-/// snaps between `breakpoints`, shares of the split's height, dragged by its
-/// handle or top edge. Side by side, the trailing pane takes a fixed share of
-/// the width and there's no handle. Unlike SplitPaneKit, heights come from the
-/// measured size on every layout, so the panes re-snap when the window
-/// resizes, and the shares are of the area inside the safe area. Each pane
+/// snaps between `breakpoints`, shares of the split's height. It's dragged by
+/// its handle, its top edge, or anywhere on it, like a sheet: content marked
+/// `splitPaneScrollable()` scrolls only once the pane is at its tallest, and
+/// hands downward drags back to it at its top. Side by side, the trailing pane
+/// takes a fixed share of the width and there's no handle. Unlike
+/// SplitPaneKit, heights come from the measured size on every layout, so the
+/// panes re-snap when the window resizes, and the shares are of the area
+/// inside the safe area. Each pane
 /// runs into the safe area on the screen edges it touches: the top pane's
 /// content, such as a camera, and the bottom pane's background.
 struct SplitPane<Top: View, Bottom: View>: View {
@@ -28,8 +31,16 @@ struct SplitPane<Top: View, Bottom: View>: View {
     /// The strip's edge moves up with the finger, so judging again later would
     /// drop an upward drag midway and leave the pane stuck.
     @State private var dragDecision: (start: CGPoint, isAccepted: Bool)?
-    /// A finger is down on the handle or the strip, accepted or not.
+    /// A finger is down on the handle or the bottom pane, accepted or not.
     @GestureState private var isTouching = false
+    /// Whether the bottom pane's scrollable content is at its top.
+    @State private var isContentAtTop = true
+
+    private enum DragSource {
+        case handle
+        /// Anywhere on the bottom pane, sharing it with its content.
+        case pane
+    }
 
     var body: some View {
         let isSideBySide = sideBySideFraction != nil
@@ -46,6 +57,10 @@ struct SplitPane<Top: View, Bottom: View>: View {
             }
 
             bottom
+                .environment(\.splitPaneScrollsContent, isSideBySide || (isAtTallest && !isDragging))
+                .onPreferenceChange(SplitPaneContentAtTopKey.self) { isAtTop in
+                    isContentAtTop = isAtTop
+                }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .frame(width: isSideBySide ? size.width * (sideBySideFraction ?? 0) : nil,
                        height: isSideBySide ? nil : bottomHeight)
@@ -59,10 +74,10 @@ struct SplitPane<Top: View, Bottom: View>: View {
                 } action: { top in
                     bottomPaneTop = top
                 }
-                // SplitPaneKit's draggable strip along the pane's top edge.
-                // Alongside the content rather than over it, so taps there,
-                // such as on a close button in the corner, still land.
-                .simultaneousGesture(drag(fromStripOnly: true), isEnabled: !isSideBySide)
+                // SplitPaneKit's pan on the whole pane, alongside the content
+                // rather than over it, so taps, such as on a close button,
+                // still land.
+                .simultaneousGesture(drag(from: .pane), isEnabled: !isSideBySide)
         }
         .background(Self.background.ignoresSafeArea())
         .onGeometryChange(for: CGSize.self) { proxy in
@@ -92,6 +107,10 @@ struct SplitPane<Top: View, Bottom: View>: View {
         return lowest...max(lowest, highest)
     }
 
+    private var isAtTallest: Bool {
+        breakpoint == sortedBreakpoints.last
+    }
+
     private var isDragging: Bool {
         isTouching && dragDecision?.isAccepted == true
     }
@@ -115,7 +134,7 @@ struct SplitPane<Top: View, Bottom: View>: View {
             .frame(maxWidth: .infinity)
             .frame(height: Self.gap)
             .contentShape(.rect)
-            .gesture(drag(fromStripOnly: false))
+            .gesture(drag(from: .handle))
             .accessibilityElement()
             .accessibilityLabel("Pane size")
             .accessibilityValue(Double(breakpoint.ratio).formatted(.percent.precision(.fractionLength(0))))
@@ -132,20 +151,19 @@ struct SplitPane<Top: View, Bottom: View>: View {
     }
 
     /// In global space, so the translation stays steady as the pane under the
-    /// finger moves.
-    /// - Parameter fromStripOnly: Counts only drags that start in the bottom
-    ///   pane's top `dragStripHeight`.
-    private func drag(fromStripOnly: Bool) -> some Gesture {
-        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+    /// finger moves. On the pane, a few points pass first, so the drag's
+    /// direction is clear when it's judged.
+    private func drag(from source: DragSource) -> some Gesture {
+        DragGesture(minimumDistance: source == .pane ? 6 : 1, coordinateSpace: .global)
             .updating($isTouching) { _, state, _ in
                 state = true
             }
             .onChanged { value in
-                guard accepts(value, fromStripOnly: fromStripOnly) else { return }
+                guard accepts(value, from: source) else { return }
                 dragDistance = value.translation.height
             }
             .onEnded { value in
-                guard accepts(value, fromStripOnly: fromStripOnly) else { return }
+                guard accepts(value, from: source) else { return }
                 let end = SplitPaneDrag.rubberBanded(restingHeight - value.translation.height, within: heightRange)
                 let target = SplitPaneDrag.target(
                     from: breakpoint, in: breakpoints, startHeight: restingHeight, endHeight: end,
@@ -160,11 +178,20 @@ struct SplitPane<Top: View, Bottom: View>: View {
 
     /// Whether a drag moves the pane, judged at its first change, while the
     /// pane is still where the finger came down. A new drag has a new start.
-    private func accepts(_ value: DragGesture.Value, fromStripOnly: Bool) -> Bool {
+    private func accepts(_ value: DragGesture.Value, from source: DragSource) -> Bool {
         if let dragDecision, dragDecision.start == value.startLocation {
             return dragDecision.isAccepted
         }
-        let isAccepted = !fromStripOnly || value.startLocation.y - bottomPaneTop <= Self.dragStripHeight
+        let isAccepted = switch source {
+        case .handle:
+            true
+        case .pane:
+            SplitPaneDrag.movesPane(
+                startsInStrip: value.startLocation.y - bottomPaneTop <= Self.dragStripHeight,
+                isAtTallest: isAtTallest, isContentAtTop: isContentAtTop,
+                isDownward: value.translation.height > 0
+            )
+        }
         dragDecision = (value.startLocation, isAccepted)
         return isAccepted
     }
