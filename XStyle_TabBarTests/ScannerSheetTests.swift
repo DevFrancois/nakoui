@@ -8,12 +8,16 @@ struct ScannerSheetTests {
     private let canvas = PaneCanvas(size: CGSize(width: 402, height: 874), safeAreaTop: 62, safeAreaBottom: 96)
     private let metrics = SheetMetrics.floating
 
-    private func paneFrame(sheetTop: CGFloat) throws -> CGRect {
-        let layout = try #require(PaneLayout(
+    private func paneLayout(sheetTop: CGFloat) throws -> PaneLayout {
+        let tops = metrics.tops(for: canvas)
+        return try #require(PaneLayout(
             sheetTop: sheetTop, canvas: canvas, sideInset: metrics.paneSideInset,
-            collapseEnd: metrics.tops(for: canvas).full, reduceMotion: false
+            holdTop: tops.medium, coverEnd: tops.full
         ))
-        return layout.paneFrame
+    }
+
+    private func paneFrame(sheetTop: CGFloat) throws -> CGRect {
+        try paneLayout(sheetTop: sheetTop).paneFrame
     }
 
     private func sheet(at detent: SheetDetent) -> SheetController {
@@ -48,6 +52,24 @@ struct ScannerSheetTests {
         let tops = metrics.tops(for: canvas)
         #expect(try paneFrame(sheetTop: tops.collapsed) == CGRect(x: 8, y: 70, width: 386, height: (tops.collapsed - 8) - 70))
         #expect(try paneFrame(sheetTop: tops.medium) == CGRect(x: 8, y: 70, width: 386, height: (tops.medium - 8) - 70))
+    }
+
+    @Test("Above medium, the pane holds its medium frame while the sheet covers it")
+    func paneHoldsMediumFrame() throws {
+        let tops = metrics.tops(for: canvas)
+        let medium = try paneLayout(sheetTop: tops.medium)
+        let full = try paneLayout(sheetTop: tops.full)
+        #expect(medium.coverProgress == 0)
+        #expect(full.paneFrame == medium.paneFrame)
+        #expect(full.coverProgress == 1)
+        #expect(try paneFrame(sheetTop: (tops.medium + tops.full) / 2) == medium.paneFrame)
+    }
+
+    @Test("At and below medium, nothing covers the pane")
+    func paneUncoveredBelowMedium() throws {
+        let tops = metrics.tops(for: canvas)
+        #expect(try paneLayout(sheetTop: tops.collapsed).coverProgress == 0)
+        #expect(try paneLayout(sheetTop: tops.hidden).coverProgress == 0)
     }
 
     @Test("Released past collapsed, the sheet is dismissed")

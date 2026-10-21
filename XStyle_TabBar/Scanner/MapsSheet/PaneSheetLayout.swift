@@ -8,13 +8,11 @@
 import SwiftUI
 
 /// The top pane over the custom bottom sheet, both following one `SheetController` across the whole screen.
-struct PaneSheetLayout<Pane: View, PaneUnderlay: View, Header: View, Content: View>: View {
+struct PaneSheetLayout<Pane: View, Header: View, Content: View>: View {
     /// Single source of truth for the sheet's position; the sheet and the pane both read it.
     let sheet: SheetController
     let settings: SheetSettings
     @ViewBuilder var pane: Pane
-    /// Drawn under `pane`, out of its collapse effects: see `TopPaneView.underlay`.
-    @ViewBuilder var paneUnderlay: PaneUnderlay
     @ViewBuilder var header: Header
     @ViewBuilder var content: Content
     @State private var paneModel = TopPaneModel()
@@ -30,14 +28,10 @@ struct PaneSheetLayout<Pane: View, PaneUnderlay: View, Header: View, Content: Vi
                 TopPaneView(
                     sheet: sheet,
                     model: paneModel,
-                    effect: settings.paneEffect,
                     showsSquash: settings.paneSquash,
-                    showsDeformation: settings.paneDeformation,
                     onTap: sheet.collapse
                 ) {
                     pane
-                } underlay: {
-                    paneUnderlay
                 }
 
                 SheetContainer(controller: sheet) {
@@ -76,9 +70,6 @@ struct PaneSheetLayout<Pane: View, PaneUnderlay: View, Header: View, Content: Vi
             sheet.onVelocityChange = nil
             paneModel.stop()
         }
-        .onChange(of: settings.paneEffect) { _, _ in
-            configurePaneMotion()
-        }
         .onChange(of: settings.smoothStretch) { _, _ in
             configurePaneMotion()
         }
@@ -98,7 +89,7 @@ struct PaneSheetLayout<Pane: View, PaneUnderlay: View, Header: View, Content: Vi
     }
 
     private func configurePaneMotion() {
-        paneModel.configure(effect: settings.paneEffect, isSmoothed: settings.smoothStretch)
+        paneModel.configure(isSmoothed: settings.smoothStretch)
     }
 }
 
@@ -127,8 +118,6 @@ private struct PaneSheetLayoutPreview: View {
     var body: some View {
         PaneSheetLayout(sheet: sheet, settings: settings) {
             ScannerBackdropPlaceholder()
-        } paneUnderlay: {
-            Color.black
         } header: {
             SheetHeader(title: PetFoodAnalysis.example.recipe, subtitle: Text(ScannedCode.sampleEAN13.value), onClose: {})
         } content: {

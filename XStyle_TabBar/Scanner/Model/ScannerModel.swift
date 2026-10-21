@@ -13,9 +13,6 @@ final class ScannerModel {
     private(set) var reveal: ScanReveal?
     /// The code in the result sheet.
     var scannedCode: ScannedCode?
-    /// The frozen frame of the latest code found. It stands in for the live
-    /// camera while the pane collapses, which can't draw the camera's layer.
-    private(set) var resultFrame: FrozenScan?
     /// Whether the camera keeps scanning while a result shows, another code
     /// replacing it. Off, it scans again once the result is dismissed.
     var scansWithResultOpen = true {
@@ -357,7 +354,6 @@ final class ScannerModel {
             if let frozen {
                 reveal?.freeze(frozen)
             }
-            resultFrame = frozen
             guard let current = reveal else { return }
             if let freezeTime = current.freezeTime {
                 let resultTime = ScanRevealTimeline.resultTime(freezeTime: freezeTime, reduceMotion: reduceMotion)

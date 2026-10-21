@@ -20,7 +20,7 @@ struct ScannerView: View {
     /// away after the result closes.
     @State private var shownCode: ScannedCode?
     /// The camera's one preview layer, kept across layout changes, which
-    /// rebuild the feed's view.
+    /// rebuild the camera pane.
     @State private var previewHost = CameraPreviewHost()
     @State private var isSideBySide = false
     /// Illustrative until products are looked up.
@@ -33,18 +33,13 @@ struct ScannerView: View {
                     breakpoint: .constant(.half), breakpoints: [.half],
                     sideBySideFraction: ScannerMetrics.sideBySideResultFraction
                 ) {
-                    ScannerCameraPane(model: model)
-                        .background {
-                            ScannerCameraFeed(model: model, previewHost: previewHost)
-                        }
+                    ScannerCameraPane(model: model, previewHost: previewHost)
                 } bottom: {
                     sideResult
                 }
             } else {
                 PaneSheetLayout(sheet: sheet, settings: settings) {
-                    ScannerCameraPane(model: model)
-                } paneUnderlay: {
-                    ScannerCameraFeed(model: model, previewHost: previewHost)
+                    ScannerCameraPane(model: model, previewHost: previewHost)
                 } header: {
                     if let shownCode {
                         header(for: shownCode)

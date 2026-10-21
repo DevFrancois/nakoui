@@ -7,36 +7,29 @@ import CoreGraphics
 
 /// Geometry of the top pane for a displayed sheet top.
 ///
-/// The pane fills the space above the sheet and the bottom safe area, minus a gap. Once it reaches its minimum height
-/// the frame freezes and the sheet's remaining travel drives `collapseProgress` instead.
+/// The pane fills the space above the sheet and the bottom safe area, minus a gap, down to the medium detent. Above
+/// it the frame holds its medium size, and the sheet's remaining travel to full drives `coverProgress` as the sheet
+/// slides over the pane.
 nonisolated struct PaneLayout: Equatable {
     /// Pane frame in window coordinates.
     var paneFrame: CGRect
-    /// Screen safe-area inset used to locate the collapse destination above the card.
-    var safeAreaTop: CGFloat
-    /// 0 while the pane resizes; rises to 1 as the sheet travels from the collapse start to `.large`.
-    var collapseProgress: CGFloat
+    /// 0 at medium and below; rises to 1 as the sheet travels on to full, over the pane.
+    var coverProgress: CGFloat
 
-    init?(sheetTop: CGFloat?, canvas: PaneCanvas, sideInset: CGFloat, collapseEnd: CGFloat, reduceMotion: Bool) {
+    /// - Parameters:
+    ///   - holdTop: The sheet top above which the pane holds its frame: the medium detent's.
+    ///   - coverEnd: The sheet top where it covers the pane: the full detent's.
+    init?(sheetTop: CGFloat?, canvas: PaneCanvas, sideInset: CGFloat, holdTop: CGFloat, coverEnd: CGFloat) {
         guard let sheetTop, canvas.size.width > 0, canvas.size.height > 0 else {
             return nil
         }
 
         let gap = PaneLayout.gap(sideInset: sideInset)
         let paneTop = canvas.safeAreaTop + sideInset
-        let minPaneBottom = PaneLayout.minPaneBottom(canvas: canvas)
-        let collapseStart = minPaneBottom + gap
-        let collapseLimit = min(collapseEnd, collapseStart - 1)
         /// Never under the bottom safe area, which covers the tab bar's slot even while the bar is hidden: with the
         /// sheet hidden, the pane rests one gap above the bar.
-        let trackedBottom = min(sheetTop - gap, canvas.size.height - canvas.safeAreaBottom - gap)
-        let paneBottom: CGFloat
-        if reduceMotion {
-            /// No frozen frame under Reduce Motion: the pane keeps shrinking above the sheet while it fades.
-            paneBottom = max(trackedBottom, paneTop + 1)
-        } else {
-            paneBottom = max(trackedBottom, minPaneBottom)
-        }
+        let trackedBottom = min(max(sheetTop, holdTop) - gap, canvas.size.height - canvas.safeAreaBottom - gap)
+        let paneBottom = max(trackedBottom, paneTop + 1)
 
         paneFrame = CGRect(
             x: sideInset,
@@ -44,21 +37,11 @@ nonisolated struct PaneLayout: Equatable {
             width: canvas.size.width - 2 * sideInset,
             height: paneBottom - paneTop
         )
-        safeAreaTop = canvas.safeAreaTop
-        collapseProgress = clipUnit(value: (collapseStart - sheetTop) / (collapseStart - collapseLimit))
+        coverProgress = holdTop > coverEnd ? clipUnit(value: (holdTop - sheetTop) / (holdTop - coverEnd)) : 0
     }
 
     /// Floating sheets use their side inset as the gap, so all gutters match.
     static func gap(sideInset: CGFloat) -> CGFloat {
         sideInset > 0 ? sideInset : PaneMetrics.legacyGap
-    }
-
-    static func minPaneBottom(canvas: PaneCanvas) -> CGFloat {
-        canvas.safeAreaTop + PaneMetrics.collapsedContentHeight
-    }
-
-    /// Sheet top below which the pane stops shrinking and starts collapsing.
-    static func collapseStart(canvas: PaneCanvas, sideInset: CGFloat) -> CGFloat {
-        minPaneBottom(canvas: canvas) + gap(sideInset: sideInset)
     }
 }

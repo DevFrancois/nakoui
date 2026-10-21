@@ -8,7 +8,7 @@ import Foundation
 import Observation
 import QuartzCore
 
-/// The pane's own motion: velocity-driven deformation and horizontal squash.
+/// The pane's own motion: the velocity-driven stretch behind its horizontal squash.
 /// Its position comes straight from `SheetController.sheetTop`, so it never trails the sheet.
 @Observable
 final class TopPaneModel {
@@ -33,30 +33,28 @@ final class TopPaneModel {
 
     @ObservationIgnored private var lastVelocityTime: CFTimeInterval = 0
     @ObservationIgnored private var staleCheckTask: Task<Void, Never>?
-    @ObservationIgnored private var effect: PaneEffect = .standard
     @ObservationIgnored private var isSmoothed = false
     /// The speed the stretch follows: filtered when smoothed, raw otherwise.
     @ObservationIgnored private var followedVelocity: CGFloat = 0
 
     private let stretchAnimator = SpringAnimator<CGFloat>(
-        spring: PaneSprings.stretch(effect: .standard, isSmoothed: false),
+        spring: PaneSprings.stretch(isSmoothed: false),
         value: 0,
         target: 0
     )
 
     init() {
         stretchAnimator.valueChanged = { [weak self] value in
-            // Bound the visible deformation without discarding the spring's internal momentum.
+            // Bound the visible stretch without discarding the spring's internal momentum.
             self?.stretch = clip(value: value, lower: -1, upper: 1)
         }
     }
 
     /// Change the motion character while preserving the current presentation value and velocity.
-    func configure(effect: PaneEffect, isSmoothed: Bool) {
-        guard effect != self.effect || isSmoothed != self.isSmoothed else { return }
-        self.effect = effect
+    func configure(isSmoothed: Bool) {
+        guard isSmoothed != self.isSmoothed else { return }
         self.isSmoothed = isSmoothed
-        stretchAnimator.spring = PaneSprings.stretch(effect: effect, isSmoothed: isSmoothed)
+        stretchAnimator.spring = PaneSprings.stretch(isSmoothed: isSmoothed)
         if stretchAnimator.state == .running, let value = stretchAnimator.value {
             // Refresh the settling clock for the new spring without resetting its momentum.
             stretchAnimator.restart(value: value, velocity: stretchAnimator.velocity)

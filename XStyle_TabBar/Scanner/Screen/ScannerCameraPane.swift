@@ -1,15 +1,18 @@
 import SwiftUI
 
-/// Everything drawn over the camera, in the preview layer's space, which
-/// codes are mapped into: this pane's size. The live feed itself is
-/// `ScannerCameraFeed`, drawn under this pane. Camera-style chrome: dark over
-/// the feed, in any appearance. While aiming, the hint, zoom and the
-/// flashlight sit at its foot. The feed stays live behind a result.
+/// The camera and everything drawn over it, in the preview layer's space,
+/// which codes are mapped into: this pane's size. Camera-style chrome: dark
+/// over the feed, in any appearance. While aiming, the hint, zoom and the
+/// flashlight sit at its foot. The feed stays live behind a result, and while
+/// the sheet slides over the pane.
 struct ScannerCameraPane: View {
     let model: ScannerModel
+    /// Owned above this pane, which a layout change rebuilds, so the feed
+    /// keeps its one preview layer.
+    let previewHost: CameraPreviewHost
     @Environment(\.displayScale) private var displayScale
-    /// While the pane collapses, its feed fades out under it.
-    @Environment(\.paneIsCollapsing) private var paneIsCollapsing
+    /// Whether the sheet is over the pane, on its way to full.
+    @Environment(\.paneIsCovered) private var paneIsCovered
     /// The zoom a pinch started from; nil between pinches, including ones
     /// cut short, such as by a code being found.
     @GestureState private var pinchStartZoom: Double?
@@ -23,39 +26,31 @@ struct ScannerCameraPane: View {
                     model.updateScreen(size: size, displayScale: displayScale)
                 }
 
-            if paneIsCollapsing {
-                // The pane only collapses with a result open: the frame its
-                // code was found in stands in for the feed.
-                Color.black
-                if let resultFrame = model.resultFrame {
-                    FrozenFrameBackdrop(frozen: resultFrame, blur: 0)
-                }
+            if let session = model.session, let device = model.cameraDevice {
+                CameraPreview(host: previewHost, session: session, device: device,
+                              onRotationChange: model.updatePreviewRotation)
             } else {
-                // Previews and the Simulator have no camera feed.
-                if model.session == nil {
-                    ScannerBackdropPlaceholder()
-                }
+                ScannerBackdropPlaceholder()
+            }
 
-                if (model.state == .idle || model.state == .scanning) && !model.isPausedForResult {
-                    ScannerViewfinder(isRevealing: model.reveal != nil)
-                }
+            if (model.state == .idle || model.state == .scanning) && !model.isPausedForResult {
+                ScannerViewfinder(isRevealing: model.reveal != nil)
+            }
 
-                if let reveal = model.reveal {
-                    ScanRevealView(reveal: reveal)
-                }
+            if let reveal = model.reveal {
+                ScanRevealView(reveal: reveal)
+            }
 
-                if model.state == .denied || model.state == .unavailable {
-                    ScannerUnavailableView(state: model.state)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(.black.opacity(ScannerMetrics.scrimOpacity))
-                }
+            if model.state == .denied || model.state == .unavailable {
+                ScannerUnavailableView(state: model.state)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.black.opacity(ScannerMetrics.scrimOpacity))
             }
         }
+        .background(.black)
         .contentShape(.rect)
         .gesture(pinch, isEnabled: canZoom)
         .overlay(alignment: .bottom) {
-            // Removed, not just faded, before the pane collapses: its glass
-            // can't be flattened either.
             ZStack {
                 if isAiming {
                     aimingControls
@@ -66,9 +61,9 @@ struct ScannerCameraPane: View {
             .animation(.easeOut(duration: 0.15), value: isAiming)
         }
         .environment(\.colorScheme, .dark)
-        // Nothing is scanned while the camera is out of view.
-        .onChange(of: paneIsCollapsing, initial: true) {
-            model.setCameraHidden(paneIsCollapsing)
+        // Nothing is scanned while the sheet slides over the camera.
+        .onChange(of: paneIsCovered, initial: true) {
+            model.setCameraHidden(paneIsCovered)
         }
     }
 
@@ -103,9 +98,9 @@ struct ScannerCameraPane: View {
     }
 
     /// The camera controls show while aiming, not while a found code is
-    /// revealed, a result is waited on, or the pane collapses.
+    /// revealed, a result is waited on, or the sheet covers the pane.
     private var isAiming: Bool {
-        model.isAiming && !paneIsCollapsing
+        model.isAiming && !paneIsCovered
     }
 
     private var canZoom: Bool {

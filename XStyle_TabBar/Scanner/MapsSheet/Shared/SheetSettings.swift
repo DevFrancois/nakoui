@@ -9,15 +9,9 @@ import Observation
 /// Debug settings shown inside the sheet, persisted across launches.
 @Observable
 final class SheetSettings {
-    var paneEffect: PaneEffect {
-        didSet {
-            defaults.set(paneEffect.rawValue, forKey: Self.paneEffectKey)
-        }
-    }
-
     // MARK: Motion, to compare what makes the pane move
 
-    /// The pane deforms with the sheet's speed; off, it only follows the sheet's position.
+    /// The pane stretches with the sheet's speed; off, it only follows the sheet's position.
     var paneStretch: Bool {
         didSet {
             defaults.set(paneStretch, forKey: Key.paneStretch)
@@ -35,13 +29,6 @@ final class SheetSettings {
     var paneSquash: Bool {
         didSet {
             defaults.set(paneSquash, forKey: Key.paneSquash)
-        }
-    }
-
-    /// The stretch bends the collapse: width, corner timing and funnel pinch in `PaneDisappearModifier`.
-    var paneDeformation: Bool {
-        didSet {
-            defaults.set(paneDeformation, forKey: Key.paneDeformation)
         }
     }
 
@@ -73,11 +60,9 @@ final class SheetSettings {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        paneEffect = defaults.string(forKey: Self.paneEffectKey).flatMap(PaneEffect.init(rawValue:)) ?? .standard
         paneStretch = Self.bool(Key.paneStretch, in: defaults) ?? false
         smoothStretch = Self.bool(Key.smoothStretch, in: defaults) ?? true
         paneSquash = Self.bool(Key.paneSquash, in: defaults) ?? false
-        paneDeformation = Self.bool(Key.paneDeformation, in: defaults) ?? false
         sheetBounce = Self.bool(Key.sheetBounce, in: defaults) ?? true
         paneFollowsBounce = Self.bool(Key.paneFollowsBounce, in: defaults) ?? true
         scansWithResultOpen = Self.bool(Key.scansWithResultOpen, in: defaults) ?? true
@@ -92,13 +77,10 @@ final class SheetSettings {
         defaults.object(forKey: key) == nil ? nil : defaults.bool(forKey: key)
     }
 
-    private static let paneEffectKey = "sheet.paneEffect"
-
     private enum Key {
         static let paneStretch = "sheet.paneStretch"
         static let smoothStretch = "sheet.smoothStretch"
         static let paneSquash = "sheet.paneSquash"
-        static let paneDeformation = "sheet.paneDeformation"
         static let sheetBounce = "sheet.sheetBounce"
         static let paneFollowsBounce = "sheet.paneFollowsBounce"
         static let scansWithResultOpen = "sheet.scansWithResultOpen"
@@ -110,5 +92,7 @@ final class SheetSettings {
         "sheet.haptics",
         "sheet.rubberBand",
         "sheet.tapPaneToCollapse",
+        "sheet.paneEffect",
+        "sheet.paneDeformation",
     ]
 }

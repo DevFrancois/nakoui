@@ -12,27 +12,6 @@ struct SheetSettingsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                /// The picker carries the same label for VoiceOver.
-                Text("Pane Effect")
-                    .font(.headline)
-                    .accessibilityHidden(true)
-
-                Picker("Pane Effect", selection: $settings.paneEffect) {
-                    ForEach(PaneEffect.allCases) { effect in
-                        Text(effect.title)
-                            .tag(effect)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                Text(reduceMotion ? "Reduce Motion is on: every pane effect uses a simple fade." : settings.paneEffect.caption)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-
-            Divider()
-
             VStack(alignment: .leading, spacing: 12) {
                 Text("Pane Motion")
                     .font(.headline)
@@ -40,7 +19,7 @@ struct SheetSettingsSection: View {
 
                 SettingToggle(
                     title: "Stretch",
-                    caption: "The pane deforms with the sheet's speed.",
+                    caption: "The pane narrows with the sheet's speed.",
                     isOn: $settings.paneStretch
                 )
 
@@ -56,12 +35,6 @@ struct SheetSettingsSection: View {
                         title: "Horizontal squash",
                         caption: "Narrows the pane by up to \(PaneTuning.maxSquash, format: .percent.precision(.fractionLength(0...1))).",
                         isOn: $settings.paneSquash
-                    )
-
-                    SettingToggle(
-                        title: "Collapse deformation",
-                        caption: "Bends the collapse into the Dynamic Island: width, corners and funnel pinch.",
-                        isOn: $settings.paneDeformation
                     )
                 }
                 .disabled(!settings.paneStretch)
