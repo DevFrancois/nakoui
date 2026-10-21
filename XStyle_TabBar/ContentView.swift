@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import TipKit
 
 struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -19,14 +20,14 @@ struct ContentView: View {
     /// The bottom tab bar's selection.
     @State private var rootTab: RootTab = .home
     /// Owned here, not by the Scan tab, so passes of this body never
-    /// construct a throwaway one.
-    @State private var scanner = ScannerModel()
+    /// construct a throwaway one. It keeps the scan history.
+    @State private var scanner: ScannerModel
     /// The Scan tab's sheet and its debug settings, owned here for the same
     /// reason.
     @State private var scannerSheet = SheetController(initialDetent: .hidden)
     @State private var sheetSettings = SheetSettings()
     /// The products scanned, kept across launches.
-    @State private var scanHistory = ScanHistory()
+    @State private var scanHistory: ScanHistory
     /// Holds sidebar routes and articles, so either can be pushed.
     @State private var navigation = RootNavigation()
     @State private var isSidebarExpanded = false
@@ -44,11 +45,26 @@ struct ContentView: View {
     /// Shared by the feed images and article zoom transitions.
     @Namespace private var zoomNamespace
 
+    init() {
+        let history = ScanHistory()
+        _scanHistory = State(initialValue: history)
+        _scanner = State(initialValue: ScannerModel(history: history))
+    }
+
     var body: some View {
-        if AppFeatures.sideMenuEnabled {
-            contentWithSidebar
-        } else {
-            appContent
+        Group {
+            if AppFeatures.sideMenuEnabled {
+                contentWithSidebar
+            } else {
+                appContent
+            }
+        }
+        // From launch: TipKit settles a tip's eligibility a moment after it's
+        // first asked, so the history button has it from its first frame.
+        .task {
+            for await shouldDisplay in ScanHistoryTip().shouldDisplayUpdates {
+                scanHistory.isTipEligible = shouldDisplay
+            }
         }
     }
 

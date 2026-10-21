@@ -32,16 +32,10 @@ struct TopPaneView<Content: View, Footer: View>: View {
                 footerHeight: model.footerHeight,
                 mode: mode
             ) {
-                PaneContainer(
-                    layout: layout,
-                    stretch: model.stretch,
-                    cornerRadius: PaneMetrics.viewportCornerRadius,
-                    /// The stretch only shows on a pane that follows the sheet.
-                    showsSquash: showsSquash && mode == .resizing,
-                    content: content
-                )
-
+                /// Under the pane: the footer takes its new height at once while the pane eases, so growing it
+                /// comes out from under the pane rather than over it.
                 footer
+                    .environment(\.paneFooterIsCovered, layout.isFooterCovered)
                     .onGeometryChange(for: CGFloat.self) { proxy in
                         proxy.size.height
                     } action: { height in
@@ -52,6 +46,17 @@ struct TopPaneView<Content: View, Footer: View>: View {
                     .padding(.horizontal, sheet.metrics.paneSideInset)
                     /// Placed from the top like the pane, from the same canvas, so the two never part.
                     .frame(height: layout.footerBottom, alignment: .bottom)
+                    /// Out of reach under the sheet.
+                    .accessibilityHidden(layout.isFooterCovered)
+
+                PaneContainer(
+                    layout: layout,
+                    stretch: model.stretch,
+                    cornerRadius: PaneMetrics.viewportCornerRadius,
+                    /// The stretch only shows on a pane that follows the sheet.
+                    showsSquash: showsSquash && mode == .resizing,
+                    content: content
+                )
             }
         }
         /// Only the Wave springs move the pane and its footer.
@@ -64,6 +69,8 @@ struct TopPaneView<Content: View, Footer: View>: View {
 extension EnvironmentValues {
     /// Whether the sheet has risen past medium, over the pane. It flips only at medium, not on every frame.
     @Entry var paneIsCovered = false
+    /// Whether the sheet covers the pane's footer. It flips only as the sheet crosses the footer's bottom edge.
+    @Entry var paneFooterIsCovered = false
 }
 
 /// Scales the card in its own coordinates, then places it below the top safe area.

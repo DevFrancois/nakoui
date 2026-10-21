@@ -37,15 +37,16 @@ struct ScannerView: View {
                     sideBySideFraction: ScannerMetrics.sideBySideResultFraction
                 ) {
                     ScannerCameraPane(model: model, previewHost: previewHost)
+                        // Over the camera's top-leading corner, clear of the
+                        // island; its tip stays over the camera too.
+                        .overlay(alignment: .topLeading) {
+                            if history.isButtonRevealed {
+                                historyButton
+                                    .padding(16)
+                            }
+                        }
                 } bottom: {
                     sideResult
-                }
-                // Over the camera's top-leading corner, clear of the island.
-                .overlay(alignment: .topLeading) {
-                    if history.isButtonRevealed {
-                        historyButton
-                            .padding(16)
-                    }
                 }
             } else {
                 PaneSheetLayout(sheet: sheet, settings: settings) {
@@ -82,23 +83,14 @@ struct ScannerView: View {
         } action: { isSideBySide in
             self.isSideBySide = isSideBySide
         }
-        // A found code goes into the history and opens the sheet; a closed
-        // one sends it away, and reveals the history button the first time.
-        .onChange(of: model.scannedCode?.id, initial: true) { oldID, newID in
+        // A found code opens the sheet; a closed one sends it away. The model
+        // keeps the history of both.
+        .onChange(of: model.scannedCode?.id, initial: true) {
             if let code = model.scannedCode {
-                // Not when the view first shows a code it already had.
-                if oldID != newID {
-                    history.record(code)
-                }
                 apply(sheetState.found(code))
             } else {
-                history.revealButton()
                 apply(sheetState.resultClosed())
             }
-        }
-        // The history tip waits for its button.
-        .onChange(of: history.isButtonRevealed, initial: true) {
-            ScanHistoryTip.isButtonShown = history.isButtonRevealed
         }
         // Dragging the sheet below the screen closes the result.
         .onChange(of: sheet.detent) {

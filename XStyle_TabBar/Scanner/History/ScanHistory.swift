@@ -19,14 +19,15 @@ final class ScanHistory {
         }
     }
     /// Whether the history button shows, from the first dismissed result on.
-    private(set) var isButtonRevealed: Bool {
-        didSet {
-            defaults.set(isButtonRevealed, forKey: Key.isButtonRevealed)
-        }
-    }
+    /// Not saved: no result is open at launch, so a scan from an earlier run
+    /// counts as dismissed.
+    private(set) var isButtonRevealed: Bool
     /// Counts the scans recorded since launch, so the button can show each
     /// one being added. Not saved.
     private(set) var recordCount = 0
+    /// Whether the history button's tip is to show, kept by the app from
+    /// TipKit, so the button has it from its first frame. Not saved.
+    var isTipEligible = false
 
     /// The most entries kept: the oldest go first.
     static let capacity = 100
@@ -35,16 +36,10 @@ final class ScanHistory {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        entries = defaults.data(forKey: Key.entries)
-            .flatMap { try? JSONDecoder().decode([ScanHistoryEntry].self, from: $0) } ?? []
-        let hasScanned = Self.bool(Key.hasScanned, in: defaults) ?? false
+        entries = defaults.data(forKey: Key.entries).map(Self.decodeEntries) ?? []
+        let hasScanned = defaults.optionalBool(forKey: Key.hasScanned) ?? false
         self.hasScanned = hasScanned
-        isButtonRevealed = Self.bool(Key.isButtonRevealed, in: defaults) ?? false
-        // No result is open at launch, so a scan from an earlier run counts
-        // as dismissed.
-        if hasScanned {
-            revealButton()
-        }
+        isButtonRevealed = hasScanned
     }
 
     /// Adds a successful scan: a new product goes on top, a known one moves
@@ -90,19 +85,29 @@ final class ScanHistory {
         isButtonRevealed = false
     }
 
+    /// One by one, so an entry this build can't read, as from a newer one,
+    /// costs only itself.
+    private nonisolated static func decodeEntries(from data: Data) -> [ScanHistoryEntry] {
+        let decoded = try? JSONDecoder().decode([LossyEntry].self, from: data)
+        return decoded?.compactMap(\.entry) ?? []
+    }
+
     private func save(_ entries: [ScanHistoryEntry]) {
         guard let data = try? JSONEncoder().encode(entries) else { return }
         defaults.set(data, forKey: Key.entries)
     }
 
-    /// `bool(forKey:)` also reads `-key YES` launch arguments, which arrive as strings.
-    private static func bool(_ key: String, in defaults: UserDefaults) -> Bool? {
-        defaults.object(forKey: key) == nil ? nil : defaults.bool(forKey: key)
-    }
-
     private enum Key {
         static let entries = "scanHistory.entries"
         static let hasScanned = "scanHistory.hasScanned"
-        static let isButtonRevealed = "scanHistory.isButtonRevealed"
+    }
+}
+
+/// A saved entry, or nil where it can't be read.
+private nonisolated struct LossyEntry: Decodable {
+    let entry: ScanHistoryEntry?
+
+    init(from decoder: any Decoder) throws {
+        entry = try? ScanHistoryEntry(from: decoder)
     }
 }

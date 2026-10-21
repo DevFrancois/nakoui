@@ -21,8 +21,8 @@ struct RootTabContent<Home: View>: View {
         // The scan sheet takes the bar's band whatever it shows, a result or
         // the history. The result counts from the moment it's found: the
         // sheet starts rising an update later.
-        let hidesTabBar = GlassTabBar.hidesForScanResult(
-            selection: selection, hasResult: scanner.scannedCode != nil || scannerSheet.detent != .hidden,
+        let hidesTabBar = GlassTabBar.hidesForScanSheet(
+            selection: selection, isSheetShown: scanner.scannedCode != nil || scannerSheet.detent != .hidden,
             layoutAxis: layoutAxis
         )
         GeometryReader { geometry in

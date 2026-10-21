@@ -93,11 +93,18 @@ final class ScannerModel {
     /// starts from where the camera has reached, not from its target.
     @ObservationIgnored private var zoomRamp: (from: Double, start: Date)?
 
-    init(state: ScannerState = .idle, scannedCode: ScannedCode? = nil, zoom: CameraZoom? = nil, hasTorch: Bool = false) {
+    /// Where found codes go, and learns of results closing; nil for none.
+    @ObservationIgnored private let history: ScanHistory?
+
+    init(
+        state: ScannerState = .idle, scannedCode: ScannedCode? = nil, zoom: CameraZoom? = nil, hasTorch: Bool = false,
+        history: ScanHistory? = nil
+    ) {
         self.state = state
         self.scannedCode = scannedCode
         self.zoom = zoom
         self.hasTorch = hasTorch
+        self.history = history
         zoomFactor = zoom?.initial ?? 1
     }
 
@@ -273,11 +280,13 @@ final class ScannerModel {
     }
 
     /// Closes the result. Scanning goes on, holding its code back for a
-    /// moment, so one still in view doesn't reopen at once.
+    /// moment, so one still in view doesn't reopen at once. The first time,
+    /// the history button shows.
     func scanAgain() {
         guard let code = scannedCode else { return }
         scannedCode = nil
         closedCode = code.decoderText
+        history?.revealButton()
         updateScanning()
     }
 
@@ -378,6 +387,7 @@ final class ScannerModel {
             )
             // The result comes up at once, as the reveal plays in the camera.
             scannedCode = detection.code
+            history?.record(detection.code)
             switch revealStyle {
             case .liveBrackets:
                 holdLiveBrackets()

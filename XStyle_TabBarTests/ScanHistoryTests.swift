@@ -162,6 +162,59 @@ final class ScanHistoryTests {
         #expect(!relaunched.isButtonRevealed)
     }
 
+    @Test("An entry this build can't read costs only itself")
+    func unreadableEntrySkipped() throws {
+        let history = ScanHistory(defaults: defaults)
+        history.record(ean13, at: start)
+        history.record(upcA, at: start + 60)
+        // As if a newer build had saved a symbology this one doesn't know.
+        let data = try #require(defaults.data(forKey: "scanHistory.entries"))
+        var saved = try #require(try JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        saved[0]["symbology"] = "qrCode"
+        defaults.set(try JSONSerialization.data(withJSONObject: saved), forKey: "scanHistory.entries")
+
+        #expect(ScanHistory(defaults: defaults).entries.map(\.id) == [id(of: ean13)])
+    }
+
+    @Test("Closing a result reveals the history button")
+    func closingResultReveals() {
+        let history = ScanHistory(defaults: defaults)
+        history.record(ean13, at: start)
+        let scanner = ScannerModel(state: .scanning, scannedCode: ean13, history: history)
+
+        scanner.scanAgain()
+        #expect(history.isButtonRevealed)
+    }
+
+    #if targetEnvironment(simulator)
+    @Test("The scanner records each code it finds")
+    func scannerRecordsFoundCode() async throws {
+        let history = ScanHistory(defaults: defaults)
+        let scanner = ScannerModel(history: history)
+        scanner.updateScreen(size: CGSize(width: 386, height: 662), displayScale: 3)
+        let run = Task { await scanner.run() }
+        defer { run.cancel() }
+        try #require(await eventually(within: 3) { scanner.isAiming })
+
+        scanner.simulateScan()
+        try #require(await eventually(within: 3) { scanner.scannedCode != nil })
+        let code = try #require(scanner.scannedCode)
+        #expect(history.entries.map(\.id) == [id(of: code)])
+        #expect(history.recordCount == 1)
+        // Revealed only once the result closes.
+        #expect(!history.isButtonRevealed)
+    }
+    #endif
+
+    private func eventually(within seconds: Double, _ condition: () -> Bool) async -> Bool {
+        let end = ContinuousClock.now + .seconds(seconds)
+        while ContinuousClock.now < end {
+            if condition() { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return condition()
+    }
+
     @Test("Unreadable saved entries start an empty history")
     func corruptEntriesDecodeEmpty() {
         defaults.set(Data("not json".utf8), forKey: "scanHistory.entries")

@@ -20,6 +20,8 @@ nonisolated struct PaneLayout: Equatable {
     var scale: CGFloat
     /// The footer's bottom edge in window coordinates: one gap above the bottom safe area, wherever the sheet is.
     var footerBottom: CGFloat
+    /// Whether the sheet's top is above the footer's bottom edge, over some of it.
+    var isFooterCovered: Bool
 
     /// - Parameters:
     ///   - tops: The sheet's detent tops. The pane holds its frame above medium, and the sheet covers it at full.
@@ -68,6 +70,7 @@ nonisolated struct PaneLayout: Equatable {
             scale = scales.hidden + opened + covered
         }
         self.footerBottom = footerBottom
+        isFooterCovered = sheetTop < footerBottom
     }
 
     /// Floating sheets use their side inset as the gap, so all gutters match.

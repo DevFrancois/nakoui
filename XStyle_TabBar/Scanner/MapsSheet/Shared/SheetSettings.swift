@@ -82,23 +82,18 @@ final class SheetSettings {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         viewportMode = defaults.string(forKey: Key.viewportMode).flatMap(ViewportMode.init(rawValue:)) ?? .fixed
-        paneStretch = Self.bool(Key.paneStretch, in: defaults) ?? false
-        smoothStretch = Self.bool(Key.smoothStretch, in: defaults) ?? true
-        paneSquash = Self.bool(Key.paneSquash, in: defaults) ?? false
-        sheetBounce = Self.bool(Key.sheetBounce, in: defaults) ?? true
-        paneFollowsBounce = Self.bool(Key.paneFollowsBounce, in: defaults) ?? true
-        scansWithResultOpen = Self.bool(Key.scansWithResultOpen, in: defaults) ?? true
+        paneStretch = defaults.optionalBool(forKey: Key.paneStretch) ?? false
+        smoothStretch = defaults.optionalBool(forKey: Key.smoothStretch) ?? true
+        paneSquash = defaults.optionalBool(forKey: Key.paneSquash) ?? false
+        sheetBounce = defaults.optionalBool(forKey: Key.sheetBounce) ?? true
+        paneFollowsBounce = defaults.optionalBool(forKey: Key.paneFollowsBounce) ?? true
+        scansWithResultOpen = defaults.optionalBool(forKey: Key.scansWithResultOpen) ?? true
         revealStyle = defaults.string(forKey: Key.revealStyle).flatMap(ScanRevealStyle.init(rawValue:)) ?? .standard
-        revealBlur = Self.bool(Key.revealBlur, in: defaults) ?? true
+        revealBlur = defaults.optionalBool(forKey: Key.revealBlur) ?? true
         /// Settings that are now fixed: forget what earlier builds stored.
         for key in Self.retiredKeys {
             defaults.removeObject(forKey: key)
         }
-    }
-
-    /// `bool(forKey:)` also reads `-key YES` launch arguments, which arrive as strings.
-    private static func bool(_ key: String, in defaults: UserDefaults) -> Bool? {
-        defaults.object(forKey: key) == nil ? nil : defaults.bool(forKey: key)
     }
 
     private enum Key {

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// One product in the history: its code first, as every product shows the
 /// same illustrative report until products are looked up; then how and when
-/// it was last scanned, and how many times.
+/// it was last scanned, kept current while it shows, and how many times.
 struct ScanHistoryRow: View {
     let entry: ScanHistoryEntry
 
@@ -13,7 +13,7 @@ struct ScanHistoryRow: View {
                     .font(.body.monospacedDigit().weight(.medium))
                     .speechSpellsOutCharacters()
 
-                Text("\(Text(entry.symbology.title)) · \(Text(entry.lastScanned, format: .relative(presentation: .named)))")
+                Text("\(Text(entry.symbology.title)) · \(Text(.currentDate, format: .reference(to: entry.lastScanned)))")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }

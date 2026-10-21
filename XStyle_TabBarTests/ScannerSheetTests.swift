@@ -60,6 +60,43 @@ struct ScannerSheetTests {
         #expect(try paneLayout(sheetTop: tops.medium, footerHeight: 30).footerBottom == 770)
     }
 
+    @Test("A footer shorter than the gap brings only as much of the gap, so its room grows from nothing")
+    func footerRoomGrowsFromNothing() throws {
+        let tops = metrics.tops(for: canvas)
+        // 4 pt of footer brings 4 pt of the 8 pt gap; 8 pt brings all of it.
+        #expect(try paneFrame(sheetTop: tops.hidden, footerHeight: 4) == CGRect(x: 8, y: 70, width: 386, height: 692))
+        #expect(try paneFrame(sheetTop: tops.hidden, footerHeight: 8) == CGRect(x: 8, y: 70, width: 386, height: 684))
+    }
+
+    @Test("The footer counts as covered once the sheet's top is above its bottom edge")
+    func footerCoverage() throws {
+        let tops = metrics.tops(for: canvas)
+        #expect(try !paneLayout(sheetTop: tops.hidden).isFooterCovered)
+        #expect(try !paneLayout(sheetTop: 770).isFooterCovered)
+        #expect(try paneLayout(sheetTop: 769).isFooterCovered)
+        #expect(try paneLayout(sheetTop: tops.medium).isFooterCovered)
+    }
+
+    @Test("The footer's first height lands at once, and a stop settles one under way")
+    func footerHeightSettles() {
+        let model = TopPaneModel()
+        model.setMeasuredFooter(44)
+        #expect(model.footerHeight == 44)
+
+        model.setMeasuredFooter(120)
+        model.stop()
+        #expect(model.footerHeight == 120)
+    }
+
+    @Test("With Reduce Motion, the footer takes every new height at once")
+    func footerHeightWithReduceMotion() {
+        let model = TopPaneModel()
+        model.reduceMotion = true
+        model.setMeasuredFooter(44)
+        model.setMeasuredFooter(120)
+        #expect(model.footerHeight == 120)
+    }
+
     @Test("At medium, the pane keeps one gap above the sheet")
     func paneFollowsSheet() throws {
         let tops = metrics.tops(for: canvas)

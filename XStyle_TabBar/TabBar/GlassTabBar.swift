@@ -82,10 +82,10 @@ struct GlassTabBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var presentation = GlassTabBarPresentation()
 
-    /// While the Scan tab shows a result, the bar makes way for its pane. The
-    /// Duo's vertical rail stays.
-    static func hidesForScanResult(selection: RootTab, hasResult: Bool, layoutAxis: NSLayoutConstraint.Axis) -> Bool {
-        selection == .scanner && hasResult && layoutAxis == .horizontal
+    /// While the Scan tab's sheet is up, with a result or the history, the bar
+    /// makes way for it. The Duo's vertical rail stays.
+    static func hidesForScanSheet(selection: RootTab, isSheetShown: Bool, layoutAxis: NSLayoutConstraint.Axis) -> Bool {
+        selection == .scanner && isSheetShown && layoutAxis == .horizontal
     }
 
     var body: some View {

@@ -58,14 +58,12 @@ final class TopPaneModel {
         }
     }
 
-    /// Call with the footer's measured height. The first lands at once, so the pane first appears in place; later
-    /// ones ease there, retargeting a move under way.
+    /// Call with the footer's measured height. The first lands at once, so the pane first appears in place, as do all
+    /// of them with Reduce Motion; later ones ease there, retargeting a move under way.
     func setMeasuredFooter(_ height: CGFloat) {
-        guard hasMeasuredFooter else {
+        guard hasMeasuredFooter, !reduceMotion else {
             hasMeasuredFooter = true
-            footerAnimator.value = height
-            footerAnimator.target = height
-            footerAnimator.valueChanged?(height)
+            settleFooter(at: height)
             return
         }
         guard footerAnimator.target != height else { return }
@@ -73,6 +71,14 @@ final class TopPaneModel {
         if footerAnimator.state != .running {
             footerAnimator.start()
         }
+    }
+
+    private func settleFooter(at height: CGFloat) {
+        footerAnimator.stop()
+        footerAnimator.value = height
+        footerAnimator.target = height
+        footerAnimator.velocity = 0
+        footerHeight = height
     }
 
     /// Change the motion character while preserving the current presentation value and velocity.
@@ -121,8 +127,8 @@ final class TopPaneModel {
         }
     }
 
-    /// Immediately neutralize motion when the pane disappears or Reduce Motion is enabled. The footer keeps its
-    /// height: the pane must reappear where it was.
+    /// Immediately neutralize motion when the pane disappears or Reduce Motion is enabled. The footer settles at the
+    /// height it was easing to: the pane must reappear where it was going.
     func stop() {
         staleCheckTask?.cancel()
         staleCheckTask = nil
@@ -134,6 +140,9 @@ final class TopPaneModel {
         stretchAnimator.target = 0
         stretchAnimator.velocity = 0
         stretch = 0
+        if let target = footerAnimator.target {
+            settleFooter(at: target)
+        }
     }
 
     /// A finger can stop without lifting and nothing reports it, so drop the stretch once the velocity goes stale.
