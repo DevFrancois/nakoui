@@ -11,8 +11,7 @@ import Foundation
 
 /// Native sheet geometry, measured on 402 × 874 pt simulators (62 pt top / 34 pt bottom safe area).
 nonisolated struct SheetMetrics: Equatable, Sendable {
-    /// Screen bottom to sheet top at the collapsed and medium detents.
-    var collapsedOffset: CGFloat
+    /// Screen bottom to sheet top at the medium detent.
     var mediumOffset: CGFloat
     /// Sheet top at full, below the top safe area.
     var fullTopInset: CGFloat
@@ -24,7 +23,7 @@ nonisolated struct SheetMetrics: Equatable, Sendable {
     var sheetTopCornerRadius: CGFloat
     /// The native iOS 26 sheet turns opaque (elevated system background) as it reaches full.
     var fadesToOpaqueAtFull: Bool
-    /// The surface's visible height at the collapsed detent; the header fills it.
+    /// The header's height, along the surface's top edge.
     var headerHeight: CGFloat
     /// The pane's side inset; `PaneLayout.gap` derives the pane–sheet gap from it (8 pt, or 10 pt when 0).
     var paneSideInset: CGFloat
@@ -48,7 +47,6 @@ nonisolated struct SheetMetrics: Equatable, Sendable {
         DetentValues(
             /// The surface's top at the screen's bottom edge: all of it below the screen.
             hidden: canvas.size.height,
-            collapsed: canvas.size.height - collapsedOffset,
             medium: canvas.size.height - mediumOffset,
             full: canvas.safeAreaTop + fullTopInset
         )
@@ -56,12 +54,11 @@ nonisolated struct SheetMetrics: Equatable, Sendable {
 
     /// iOS 26 and later: Liquid Glass floating at partial detents (measured on iOS 26.2 and 27.2).
     static let floating = SheetMetrics(
-        collapsedOffset: 99.3,
         mediumOffset: 376.72,
         fullTopInset: 0,
-        /// Below collapsed the surface keeps its collapsed shape, so `hidden` repeats it.
-        sideInset: DetentValues(hidden: 28, collapsed: 28, medium: 8, full: 0),
-        bottomInset: DetentValues(hidden: 25.85, collapsed: 25.85, medium: 8, full: 0),
+        /// Below medium the surface keeps its medium shape, so `hidden` repeats it.
+        sideInset: DetentValues(hidden: 8, medium: 8, full: 0),
+        bottomInset: DetentValues(hidden: 8, medium: 8, full: 0),
         sheetTopCornerRadius: 37,
         fadesToOpaqueAtFull: true,
         headerHeight: 73.45,
@@ -70,7 +67,6 @@ nonisolated struct SheetMetrics: Equatable, Sendable {
 
     /// iOS 18: material, edge-attached, `presentationCornerRadius(30)` (measured on iOS 18.5).
     static let edgeAttached = SheetMetrics(
-        collapsedOffset: 116.5,
         mediumOffset: 384,
         fullTopInset: 10,
         sideInset: .constant(0),

@@ -12,7 +12,6 @@ struct TopPaneView<Content: View, Footer: View>: View {
     let model: TopPaneModel
     /// Debug setting: whether the stretch narrows the pane.
     var showsSquash: Bool
-    var onTap: () -> Void
     /// What fills the rounded surface, such as the camera.
     @ViewBuilder var content: Content
     /// Under the pane while the sheet is hidden, one gap above the bottom safe area; see `PaneLayout`.
@@ -35,7 +34,6 @@ struct TopPaneView<Content: View, Footer: View>: View {
                     stretch: model.stretch,
                     cornerRadius: PaneMetrics.viewportCornerRadius,
                     showsSquash: showsSquash,
-                    onTap: onTap,
                     content: content
                 )
 
@@ -68,7 +66,6 @@ private struct PaneContainer<Content: View>: View {
     var stretch: CGFloat
     var cornerRadius: CGFloat
     var showsSquash: Bool
-    var onTap: () -> Void
     var content: Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
@@ -82,8 +79,6 @@ private struct PaneContainer<Content: View>: View {
                 .environment(\.paneIsCovered, progress > 0)
         }
         .frame(width: layout.paneFrame.width, height: layout.paneFrame.height)
-        .contentShape(.rect)
-        .onTapGesture(perform: onTap)
         .scaleEffect(x: squash * coverScale, y: coverScale)
         .accessibilityHidden(progress >= 0.5)
         .offset(y: layout.paneFrame.minY)
@@ -109,7 +104,7 @@ private struct TopPanePreview: View {
     }
 
     var body: some View {
-        TopPaneView(sheet: sheet, model: model, showsSquash: true, onTap: {}) {
+        TopPaneView(sheet: sheet, model: model, showsSquash: true) {
             ScannerBackdropPlaceholder()
         } footer: {
             EmptyView()

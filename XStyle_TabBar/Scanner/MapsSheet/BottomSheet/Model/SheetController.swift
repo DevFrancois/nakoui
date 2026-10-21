@@ -189,12 +189,6 @@ final class SheetController {
 
     // MARK: - Programmatic moves
 
-    /// Tap on the top pane. A hidden sheet stays hidden: there is nothing to show.
-    func collapse() {
-        guard !isDragging, detent != .hidden else { return }
-        settle(to: .collapsed, velocity: spring.state == .running ? spring.velocity : 0)
-    }
-
     /// Springs from the current position and velocity to `target`.
     func settle(to target: SheetDetent, velocity: CGFloat) {
         if target != detent {
@@ -245,9 +239,8 @@ final class SheetController {
         let movingDown = isFast ? velocity > 0 : travel > 0
         /// `allCases` runs from the lowest detent (largest top) to the highest.
         if movingDown {
-            let next = SheetDetent.allCases.last { tops[$0] > current + tolerance } ?? .hidden
-            /// Dismissing closes the result: only a release clearly below collapsed does it.
-            return next == .hidden && current < tops.collapsed + tolerance ? .collapsed : next
+            /// Below medium there is only `hidden`: the release dismisses the result.
+            return SheetDetent.allCases.last { tops[$0] > current + tolerance } ?? .hidden
         }
         return SheetDetent.allCases.first { tops[$0] < current - tolerance } ?? .full
     }
@@ -275,7 +268,7 @@ final class SheetController {
     }
 
     /// Rubber-banded to the detent range; drags and spring overshoots past the ends both go through it.
-    /// The range ends at hidden, so below collapsed the sheet follows the finger toward dismissal.
+    /// The range ends at hidden, so below medium the sheet follows the finger toward dismissal.
     private func displayedTop(for raw: CGFloat) -> CGFloat {
         let tops = tops
         guard tops.hidden > tops.full else { return raw }
@@ -321,7 +314,7 @@ final class SheetController {
         reduceMotion ? SheetSprings.reducedMotion : SheetSprings.settled
     }
 
-    /// DEBUG `-SheetInitialDetent collapsed|medium|full`, for scripted runs.
+    /// DEBUG `-SheetInitialDetent hidden|medium|full`, for scripted runs.
     private static var launchDetent: SheetDetent {
         #if DEBUG
         if let name = UserDefaults.standard.string(forKey: "SheetInitialDetent"),
@@ -329,6 +322,6 @@ final class SheetController {
             return detent
         }
         #endif
-        return .collapsed
+        return .hidden
     }
 }

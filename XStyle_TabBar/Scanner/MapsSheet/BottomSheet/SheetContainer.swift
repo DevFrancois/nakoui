@@ -32,7 +32,6 @@ struct SheetContainer<Header: View, Content: View>: View {
                 SheetSurface(
                     geometry: geometry,
                     metrics: controller.metrics,
-                    isCollapsed: controller.detent == .collapsed,
                     surfaceProgress: controller.surfaceProgress,
                     header: header,
                     content: content
@@ -41,8 +40,8 @@ struct SheetContainer<Header: View, Content: View>: View {
                 .accessibilityAction(named: "Expand") {
                     move(by: 1)
                 }
-                /// One step down from collapsed dismisses the sheet.
-                .accessibilityAction(named: controller.detent == .collapsed ? "Close" : "Collapse") {
+                /// One step down from medium dismisses the sheet.
+                .accessibilityAction(named: controller.detent == .medium ? "Close" : "Collapse") {
                     move(by: -1)
                 }
                 /// Dismissed, it is only sliding away.
@@ -98,7 +97,6 @@ private struct SheetSurface<Header: View, Content: View>: View {
 
     var geometry: SheetGeometry
     var metrics: SheetMetrics
-    var isCollapsed: Bool
     /// `SheetController.surfaceProgress`: the opaque backing over the glass fades with it.
     var surfaceProgress: CGFloat
     var header: Header
@@ -111,8 +109,6 @@ private struct SheetSurface<Header: View, Content: View>: View {
 
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .opacity(geometry.showsContent ? 1 : 0)
-                .accessibilityHidden(isCollapsed)
         }
         .frame(width: geometry.contentSize.width, height: geometry.contentSize.height, alignment: .top)
         /// The header is drawn over the column, so its per-frame inset never reaches the scroll view's stack.

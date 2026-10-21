@@ -28,7 +28,7 @@ struct SheetHeader: View {
 
             Spacer(minLength: 0)
 
-            /// Closes the result at every detent, collapsed included: below it there is only the dismissed sheet.
+            /// Closes the result at every detent.
             CloseButton(action: onClose)
         }
         .frame(maxHeight: .infinity)

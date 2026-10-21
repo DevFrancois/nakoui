@@ -31,8 +31,7 @@ struct PaneSheetLayout<Pane: View, PaneFooter: View, Header: View, Content: View
                 TopPaneView(
                     sheet: sheet,
                     model: paneModel,
-                    showsSquash: settings.paneSquash,
-                    onTap: sheet.collapse
+                    showsSquash: settings.paneSquash
                 ) {
                     pane
                 } footer: {
@@ -45,7 +44,7 @@ struct PaneSheetLayout<Pane: View, PaneFooter: View, Header: View, Content: View
                     content
                 }
             }
-            /// Top-aligned: a sheet pulled below collapsed overhangs the screen, and centering the taller
+            /// Top-aligned: a sheet pulled below medium overhangs the screen, and centering the taller
             /// stack would shift everything up by half the overhang.
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
@@ -107,8 +106,8 @@ struct PaneSheetLayout<Pane: View, PaneFooter: View, Header: View, Content: View
     PaneSheetLayoutPreview(detent: .medium)
 }
 
-#Preview("Collapsed · Dark") {
-    PaneSheetLayoutPreview(detent: .collapsed)
+#Preview("Hidden · Dark") {
+    PaneSheetLayoutPreview(detent: .hidden)
         .preferredColorScheme(.dark)
 }
 
