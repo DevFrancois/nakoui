@@ -18,7 +18,7 @@ struct GlassTabBarToolbar: ToolbarContent {
         if #available(iOS 27.1, *) {
             ToolbarItem(placement: .bottomBar) {
                 reportingTop(of: AdaptiveGlassTabBar(selection: $selection, layoutAxis: $layoutAxis,
-                                                     isHidden: isHidden, windowBottom: windowBottom))
+                                                     isHidden: isHidden, windowBottom: windowBottom, restingTop: top))
             }
             .axisBehavior(.verticalPreferred)
             .sharedBackgroundVisibility(.hidden)
@@ -26,7 +26,8 @@ struct GlassTabBarToolbar: ToolbarContent {
             .visibilityPriority(.high)
         } else {
             ToolbarItem(placement: .bottomBar) {
-                reportingTop(of: GlassTabBar(selection: $selection, isHidden: isHidden, windowBottom: windowBottom))
+                reportingTop(of: GlassTabBar(selection: $selection, isHidden: isHidden, windowBottom: windowBottom,
+                                             restingTop: top))
             }
             .sharedBackgroundVisibility(.hidden)
         }
@@ -35,9 +36,12 @@ struct GlassTabBarToolbar: ToolbarContent {
 
     /// Reports where the bar rests while it shows. As its toolbar hides, the
     /// item is laid out elsewhere, which isn't where the bar comes back to.
+    /// Coming back, the toolbar also zooms the item about its center, so the
+    /// top is taken from the center, which the zoom leaves in place, less half
+    /// the bar's own height.
     private func reportingTop(of bar: some View) -> some View {
         bar.onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.frame(in: .global).minY
+            proxy.frame(in: .global).midY - proxy.size.height / 2
         } action: { top in
             if !isHidden {
                 self.top = top
@@ -52,11 +56,12 @@ private struct AdaptiveGlassTabBar: View {
     @Binding var layoutAxis: NSLayoutConstraint.Axis
     let isHidden: Bool
     let windowBottom: CGFloat
+    let restingTop: CGFloat?
     @Environment(\.toolbarVerticalEdge) private var verticalEdge
 
     var body: some View {
         GlassTabBar(selection: $selection, layoutAxis: verticalEdge == nil ? .horizontal : .vertical,
-                    isHidden: isHidden, windowBottom: windowBottom)
+                    isHidden: isHidden, windowBottom: windowBottom, restingTop: restingTop)
             .onChange(of: verticalEdge == nil, initial: true) {
                 layoutAxis = verticalEdge == nil ? .horizontal : .vertical
             }
@@ -71,6 +76,9 @@ struct GlassTabBar: View {
     var isHidden = false
     /// The window's bottom edge in global space, which the bar slides past.
     var windowBottom: CGFloat = 0
+    /// The bar's top edge in global space where it rests, which it slides
+    /// from and back to; see `GlassTabBarToolbar.top`.
+    var restingTop: CGFloat?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var presentation = GlassTabBarPresentation()
 
@@ -100,8 +108,13 @@ struct GlassTabBar: View {
                     .accessibilityHidden(true)
             }
             .padding(.bottom, layoutAxis == .horizontal ? GlassTabBarMetrics.horizontalToolbarBottomPadding : 0)
-            .visualEffect { [isHidden, windowBottom, reduceMotion] content, proxy in
-                content.offset(y: isHidden && !reduceMotion ? max(0, windowBottom - proxy.frame(in: .global).minY) : 0)
+            .visualEffect { [isHidden, windowBottom, restingTop, reduceMotion] content, proxy in
+                // From where the bar rests, not where it's laid out: once its
+                // toolbar hides, the item moves to the window's top, and a
+                // slide measured from there would bring the bar back from far
+                // below the screen, overshooting its place by tens of points.
+                let top = restingTop ?? proxy.frame(in: .global).minY
+                return content.offset(y: isHidden && !reduceMotion ? max(0, windowBottom - top) : 0)
             }
             .opacity(isHidden && reduceMotion ? 0 : 1)
             .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.5, bounce: 0.3), value: isHidden)

@@ -32,6 +32,11 @@ struct RootTabContent<Home: View>: View {
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.frame(in: .global).maxY + proxy.safeAreaInsets.bottom
         } action: { windowBottom in
+            // A hidden bar reports no rest. Resized meanwhile, the window
+            // keeps the bar as far above its bottom edge as it was.
+            if hidesTabBar, let tabBarTop {
+                self.tabBarTop = tabBarTop + windowBottom - self.windowBottom
+            }
             self.windowBottom = windowBottom
         }
         // Let the navigation container coordinate the root toolbar's visibility
