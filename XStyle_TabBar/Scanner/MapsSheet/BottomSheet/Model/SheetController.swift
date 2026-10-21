@@ -60,7 +60,8 @@ final class SheetController {
     @ObservationIgnored private var isHeld = false
     /// Where the running settle started, which tells its overshoot from its approach; nil otherwise.
     @ObservationIgnored private var settleOrigin: CGFloat?
-    /// The running settle has met or passed its destination: what follows is its bounce.
+    /// The settle has met or passed its destination: what follows is its bounce. A touch stopping it there keeps it,
+    /// so the settle it then resumes is the same bounce.
     @ObservationIgnored private var hasReachedDestination = false
 
     private let spring = SpringAnimator<CGFloat>(spring: SheetSprings.bouncy)
@@ -93,12 +94,13 @@ final class SheetController {
         return SheetGeometry(sheetTop: sheetTop, canvas: canvas, metrics: metrics, tops: tops)
     }
 
-    /// The sheet top the pane follows: `sheetTop`, or held at the destination while a settle overshoots it
-    /// with `paneFollowsBounce` off. Reading it subscribes to every move.
+    /// The sheet top the pane follows: `sheetTop`, or held at the destination once a settle reaches it, all through
+    /// its bounce, with `paneFollowsBounce` off. Reading it subscribes to every move.
     var paneSheetTop: CGFloat? {
-        guard let sheetTop, !paneFollowsBounce, let settleOrigin, spring.state == .running else { return sheetTop }
-        let destination = tops[detent]
-        return settleOrigin < destination ? min(sheetTop, destination) : max(sheetTop, destination)
+        guard sheetTop != nil, !paneFollowsBounce, hasReachedDestination, spring.state == .running else {
+            return sheetTop
+        }
+        return tops[detent]
     }
 
     /// At full, or above it while rubber-banding: the only place the content may scroll.
@@ -134,7 +136,6 @@ final class SheetController {
         spring.stop()
         isHeld = true
         settleOrigin = nil
-        hasReachedDestination = false
         onVelocityChange?(0)
         SheetTrace.log("hold top=\(sheetTop ?? .nan)")
     }
@@ -206,6 +207,8 @@ final class SheetController {
         if target != .full {
             restsAtFull = false
         }
+        /// Resuming the same detent after a touch stopped its bounce is still that bounce.
+        let resumesBounce = hasReachedDestination && target == detent
         if target != detent {
             /// Like a native sheet, no detent haptic when it is presented or dismissed.
             let isPresentation = target == .hidden || detent == .hidden
@@ -227,13 +230,13 @@ final class SheetController {
                 spring.stop()
             }
             settleOrigin = nil
-            hasReachedDestination = false
+            hasReachedDestination = resumesBounce
             place(at: destination)
             onVelocityChange?(0)
             return
         }
         settleOrigin = rawTop
-        hasReachedDestination = false
+        hasReachedDestination = resumesBounce
         /// A dismissal doesn't bounce: swinging back above the screen's edge would draw the sheet again.
         spring.spring = target == .hidden ? dismissalSpring : currentSpring
         spring.target = destination
@@ -264,9 +267,16 @@ final class SheetController {
 
     // MARK: - Position
 
-    /// Whether a settle from `origin` has met `destination` or passed it by `value`, into its bounce.
+    /// Whether a settle from `origin` has met `destination` or passed it by `value`, into its bounce. One that starts
+    /// at its destination, with only a release's velocity to spend, is all bounce.
     nonisolated static func hasReached(_ destination: CGFloat, from origin: CGFloat, at value: CGFloat) -> Bool {
         (origin - destination) * (value - destination) <= 0
+    }
+
+    /// Whether `top` is above medium, over the pane. Never where medium isn't below full, as on a short canvas:
+    /// `PaneLayout` counts no cover there either.
+    nonisolated static func isPastMedium(_ top: CGFloat, tops: DetentValues) -> Bool {
+        tops.medium > tops.full && top < tops.medium
     }
 
     private func springDidChange(_ value: CGFloat) {
@@ -297,6 +307,7 @@ final class SheetController {
 
     /// Writes only real changes: every write invalidates the sheet and the pane.
     private func setDisplayedTop(_ top: CGFloat) {
+        let tops = tops
         if sheetTop != top {
             sheetTop = top
         }
@@ -305,7 +316,7 @@ final class SheetController {
         }
         /// Once a settle reaches its detent, it counts as there while it bounces about it.
         let coverTop = hasReachedDestination ? tops[detent] : top
-        let isPast = coverTop < tops.medium
+        let isPast = Self.isPastMedium(coverTop, tops: tops)
         if isPastMedium != isPast {
             isPastMedium = isPast
         }

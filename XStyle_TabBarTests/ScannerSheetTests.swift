@@ -224,6 +224,18 @@ struct ScannerSheetTests {
         // Down from full to medium.
         #expect(!SheetController.hasReached(497, from: 62, at: 300))
         #expect(SheetController.hasReached(497, from: 62, at: 500))
+        // From the detent itself, with only a velocity to spend.
+        #expect(SheetController.hasReached(497, from: 497, at: 480))
+    }
+
+    @Test("Past medium needs medium below full, as the pane's cover does")
+    func pastMediumNeedsMediumBelowFull() {
+        let tops = DetentValues(hidden: 874, medium: 497, full: 62)
+        #expect(SheetController.isPastMedium(490, tops: tops))
+        #expect(!SheetController.isPastMedium(497, tops: tops))
+        // A short canvas puts medium above full.
+        let short = DetentValues(hidden: 430, medium: 53, full: 62)
+        #expect(!SheetController.isPastMedium(40, tops: short))
     }
 
     @Test("A drag counts as past medium wherever it holds the sheet above it")
@@ -260,6 +272,64 @@ struct ScannerSheetTests {
         #expect(changes.count == (start == .full ? 1 : 0))
     }
 
+    @Test("A touch stopping the sheet in its bounce about medium, then letting go, is still the bounce")
+    func holdInBounce() async throws {
+        let tops = metrics.tops(for: canvas)
+        let sheet = sheet(at: .hidden)
+        let changes = ChangeCounter { sheet.isPastMedium }
+
+        sheet.settle(to: .medium, velocity: 0)
+        // Caught above medium, in its overshoot.
+        #expect(try await eventually { (sheet.sheetTop ?? .infinity) < tops.medium })
+        sheet.hold()
+        sheet.releaseHold()
+        #expect(try await eventually { sheet.sheetTop == tops.medium })
+        #expect(!sheet.isPastMedium)
+        #expect(changes.count == 0)
+    }
+
+    @Test("A settle from medium itself, with only a release's velocity, never counts as past it")
+    func velocityFromMedium() async throws {
+        let tops = metrics.tops(for: canvas)
+        let sheet = sheet(at: .medium)
+        let changes = ChangeCounter { sheet.isPastMedium }
+
+        // Upward, short of the next detent's threshold.
+        sheet.settle(to: .medium, velocity: -250)
+        var rose = false
+        #expect(try await eventually {
+            if let top = sheet.sheetTop, top < tops.medium {
+                rose = true
+            }
+            return rose && sheet.sheetTop == tops.medium
+        })
+        #expect(rose)
+        #expect(changes.count == 0)
+    }
+
+    @Test("With the pane not following the bounce, it holds at medium from the moment the sheet first reaches it")
+    func paneHoldsThroughBounce() async throws {
+        let tops = metrics.tops(for: canvas)
+        let sheet = sheet(at: .hidden)
+        sheet.paneFollowsBounce = false
+
+        sheet.settle(to: .medium, velocity: 0)
+        var reached = false
+        var leftMedium = false
+        #expect(try await eventually {
+            guard let top = sheet.sheetTop, let paneTop = sheet.paneSheetTop else { return false }
+            if top <= tops.medium {
+                reached = true
+            }
+            if reached, paneTop != tops.medium {
+                leftMedium = true
+            }
+            return top == tops.medium
+        })
+        #expect(reached)
+        #expect(!leftMedium)
+    }
+
     @Test("From full, a drag down stops at medium")
     func dragFromFull() {
         let sheet = sheet(at: .full)
@@ -286,7 +356,7 @@ struct ScannerSheetTests {
     }
 }
 
-/// Counts every change of an observed value, re-observing after each.
+/// Counts every change of an observed value. It observes again as each one is announced, so none slips by.
 @MainActor
 private final class ChangeCounter {
     private(set) var count = 0
@@ -301,7 +371,8 @@ private final class ChangeCounter {
         withObservationTracking {
             _ = read()
         } onChange: { [weak self] in
-            Task { @MainActor in
+            // Announced on the main actor, where the controller changes.
+            MainActor.assumeIsolated {
                 self?.count += 1
                 self?.observe()
             }
