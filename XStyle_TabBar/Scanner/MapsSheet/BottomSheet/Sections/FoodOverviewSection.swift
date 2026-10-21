@@ -9,6 +9,8 @@ struct FoodOverviewSection: View {
     let recipe: String
     let description: String
     let energyPer100g: Int
+    /// Nil when the label leaves protein out.
+    let protein: ProteinLevel?
 
     var body: some View {
         AnalysisSection(title: "At a glance", symbol: "sparkle.magnifyingglass") {
@@ -47,6 +49,16 @@ struct FoodOverviewSection: View {
                 }
                 .accessibilityElement(children: .combine)
 
+                if let protein {
+                    AnalysisMeasure(
+                        title: "Protein",
+                        subtitle: Text("\(protein.dryMatter, format: .percent.precision(.fractionLength(0))) of dry matter"),
+                        symbol: "dumbbell.fill",
+                        colors: [.cyan, .indigo],
+                        level: protein.level
+                    )
+                }
+
                 Text("A closer look at the nutrients, ingredients and label behind this recipe.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -63,7 +75,8 @@ struct FoodOverviewSection: View {
         FoodOverviewSection(
             recipe: PetFoodAnalysis.example.recipe,
             description: PetFoodAnalysis.example.description,
-            energyPer100g: Int(PetFoodAnalysis.example.calories.perHundredGrams.rounded())
+            energyPer100g: Int(PetFoodAnalysis.example.calories.perHundredGrams.rounded()),
+            protein: PetFoodAnalysis.example.proteinLevel
         )
         .padding(20)
     }

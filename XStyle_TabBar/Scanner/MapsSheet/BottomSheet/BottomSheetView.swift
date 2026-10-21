@@ -53,7 +53,8 @@ private struct FoodAnalysisSections: View {
             FoodOverviewSection(
                 recipe: analysis.recipe,
                 description: analysis.description,
-                energyPer100g: Int(analysis.calories.perHundredGrams.rounded())
+                energyPer100g: Int(analysis.calories.perHundredGrams.rounded()),
+                protein: analysis.proteinLevel
             )
 
             FoodNutrientsSection(analysis: analysis)

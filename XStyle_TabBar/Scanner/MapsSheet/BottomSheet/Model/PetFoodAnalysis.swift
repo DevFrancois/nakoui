@@ -82,6 +82,14 @@ extension PetFoodAnalysis {
         return nutrient.fraction / (1 - moisture)
     }
 
+    /// Nil when the label leaves protein out.
+    var proteinLevel: ProteinLevel? {
+        guard let protein = nutrients.first(where: { $0.id == .protein }), let share = dryMatter(of: protein) else {
+            return nil
+        }
+        return ProteinLevel(dryMatter: share)
+    }
+
     var calories: FoodCalories {
         FoodCalories(
             protein: fraction(of: .protein) ?? 0,
@@ -157,6 +165,18 @@ nonisolated struct FoodCalories: Sendable {
         proteinShare = total > 0 ? proteinKcal / total : 0
         fatShare = total > 0 ? fatKcal / total : 0
         carbohydrateShare = total > 0 ? carbohydrateKcal / total : 0
+    }
+}
+
+/// Protein as a level out of five, from its dry-matter share, so wet and dry foods compare.
+nonisolated struct ProteinLevel: Sendable {
+    /// Of the food with the water removed.
+    let dryMatter: Double
+
+    /// 1 below the AAFCO minimum for adult dogs, 18 %, then one more from 22, 26 and 30 %: steps of this report,
+    /// not a standard.
+    var level: Int {
+        [0.18, 0.22, 0.26, 0.30].filter { dryMatter >= $0 }.count + 1
     }
 }
 
