@@ -12,6 +12,7 @@ struct ScannerAimingHint: View {
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
             .padding(.horizontal)
+            .padding(.vertical, 8)
             // Only the fade: its place is the pane's footer slot, which doesn't animate.
             .animation(.easeOut(duration: 0.15)) { content in
                 content.opacity(isShown ? 1 : 0)
