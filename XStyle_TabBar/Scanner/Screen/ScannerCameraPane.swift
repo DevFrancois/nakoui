@@ -2,9 +2,9 @@ import SwiftUI
 
 /// The camera and everything drawn over it, in the preview layer's space,
 /// which codes are mapped into: this pane's size. Camera-style chrome: dark
-/// over the feed, in any appearance. While aiming, the hint, zoom and the
-/// flashlight sit at its foot. The feed stays live behind a result, and while
-/// the sheet slides over the pane.
+/// over the feed, in any appearance. While aiming, zoom and the flashlight sit
+/// at its foot; the hint is under the pane (`ScannerAimingHint`). The feed
+/// stays live behind a result, and while the sheet slides over the pane.
 struct ScannerCameraPane: View {
     let model: ScannerModel
     /// Owned above this pane, which a layout change rebuilds, so the feed
@@ -70,16 +70,6 @@ struct ScannerCameraPane: View {
     private var aimingControls: some View {
         GlassEffectContainer(spacing: 12) {
             VStack(spacing: 12) {
-                // Not over a result: the pane is short above its sheet, and
-                // scanning on is already the camera's doing.
-                if model.scannedCode == nil {
-                    Label("Point at a product barcode", systemImage: "barcode.viewfinder")
-                        .font(.headline)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .glassEffect(.regular, in: .capsule)
-                }
-
                 #if targetEnvironment(simulator)
                 ScannerSimulateButton(action: model.simulateScan)
                 #endif

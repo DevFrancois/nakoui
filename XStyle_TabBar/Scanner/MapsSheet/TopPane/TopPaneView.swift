@@ -7,7 +7,7 @@ import SwiftUI
 
 /// Rounded pane above the bottom sheet. It resizes with the sheet down to medium, then holds its size as the sheet
 /// rises to full over it, pushed back a little like the content under a stacked sheet.
-struct TopPaneView<Content: View>: View {
+struct TopPaneView<Content: View, Footer: View>: View {
     let sheet: SheetController
     let model: TopPaneModel
     /// Debug setting: whether the stretch narrows the pane.
@@ -15,6 +15,9 @@ struct TopPaneView<Content: View>: View {
     var onTap: () -> Void
     /// What fills the rounded surface, such as the camera.
     @ViewBuilder var content: Content
+    /// Under the pane while the sheet is hidden, one gap above the bottom safe area; see `PaneLayout`.
+    @ViewBuilder var footer: Footer
+    @State private var footerHeight: CGFloat = 0
     var body: some View {
         ZStack(alignment: .top) {
             /// Keeps the root rendering before the canvas is measured.
@@ -24,8 +27,8 @@ struct TopPaneView<Content: View>: View {
                 sheetTop: sheet.paneSheetTop,
                 canvas: sheet.canvas,
                 sideInset: sheet.metrics.paneSideInset,
-                holdTop: sheet.tops.medium,
-                coverEnd: sheet.tops.full
+                tops: sheet.tops,
+                footerHeight: footerHeight
             ) {
                 PaneContainer(
                     layout: layout,
@@ -35,9 +38,19 @@ struct TopPaneView<Content: View>: View {
                     onTap: onTap,
                     content: content
                 )
+
+                footer
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        proxy.size.height
+                    } action: { height in
+                        footerHeight = height
+                    }
+                    .frame(maxWidth: .infinity)
+                    /// Placed from the top like the pane, from the same canvas, so the two never part.
+                    .frame(height: layout.footerBottom, alignment: .bottom)
             }
         }
-        /// The Wave springs are the only animation on the pane.
+        /// Only the Wave springs move the pane and its footer.
         .transaction { transaction in
             transaction.animation = nil
         }
@@ -98,6 +111,8 @@ private struct TopPanePreview: View {
     var body: some View {
         TopPaneView(sheet: sheet, model: model, showsSquash: true, onTap: {}) {
             ScannerBackdropPlaceholder()
+        } footer: {
+            EmptyView()
         }
         .frame(width: PreviewFixtures.canvas.size.width, height: PreviewFixtures.canvas.size.height)
         .background(Color(.systemGroupedBackground))

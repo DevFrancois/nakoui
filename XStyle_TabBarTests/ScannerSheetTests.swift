@@ -8,16 +8,15 @@ struct ScannerSheetTests {
     private let canvas = PaneCanvas(size: CGSize(width: 402, height: 874), safeAreaTop: 62, safeAreaBottom: 96)
     private let metrics = SheetMetrics.floating
 
-    private func paneLayout(sheetTop: CGFloat) throws -> PaneLayout {
-        let tops = metrics.tops(for: canvas)
-        return try #require(PaneLayout(
+    private func paneLayout(sheetTop: CGFloat, footerHeight: CGFloat = 0) throws -> PaneLayout {
+        try #require(PaneLayout(
             sheetTop: sheetTop, canvas: canvas, sideInset: metrics.paneSideInset,
-            holdTop: tops.medium, coverEnd: tops.full
+            tops: metrics.tops(for: canvas), footerHeight: footerHeight
         ))
     }
 
-    private func paneFrame(sheetTop: CGFloat) throws -> CGRect {
-        try paneLayout(sheetTop: sheetTop).paneFrame
+    private func paneFrame(sheetTop: CGFloat, footerHeight: CGFloat = 0) throws -> CGRect {
+        try paneLayout(sheetTop: sheetTop, footerHeight: footerHeight).paneFrame
     }
 
     private func sheet(at detent: SheetDetent) -> SheetController {
@@ -45,6 +44,17 @@ struct ScannerSheetTests {
     func paneClearsTabBar() throws {
         #expect(try paneFrame(sheetTop: 874) == CGRect(x: 8, y: 70, width: 386, height: 700))
         #expect(try paneFrame(sheetTop: 800).maxY == 770)
+    }
+
+    @Test("With the sheet hidden, the pane leaves room for its footer, which closes by collapsed")
+    func paneMakesRoomForFooter() throws {
+        let tops = metrics.tops(for: canvas)
+        // The footer's 30 pt and a gap above it come off the pane.
+        #expect(try paneFrame(sheetTop: tops.hidden, footerHeight: 30) == CGRect(x: 8, y: 70, width: 386, height: 662))
+        #expect(try paneFrame(sheetTop: tops.collapsed, footerHeight: 30) == paneFrame(sheetTop: tops.collapsed))
+        // The footer itself stays one gap above the bottom safe area, wherever the sheet is.
+        #expect(try paneLayout(sheetTop: tops.hidden, footerHeight: 30).footerBottom == 770)
+        #expect(try paneLayout(sheetTop: tops.collapsed, footerHeight: 30).footerBottom == 770)
     }
 
     @Test("At collapsed and medium, the pane keeps one gap above the sheet")

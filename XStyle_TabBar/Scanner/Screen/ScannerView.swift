@@ -40,6 +40,8 @@ struct ScannerView: View {
             } else {
                 PaneSheetLayout(sheet: sheet, settings: settings) {
                     ScannerCameraPane(model: model, previewHost: previewHost)
+                } paneFooter: {
+                    ScannerAimingHint(isShown: model.isAiming && model.scannedCode == nil)
                 } header: {
                     if let shownCode {
                         header(for: shownCode)

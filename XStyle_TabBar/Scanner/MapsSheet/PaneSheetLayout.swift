@@ -8,11 +8,14 @@
 import SwiftUI
 
 /// The top pane over the custom bottom sheet, both following one `SheetController` across the whole screen.
-struct PaneSheetLayout<Pane: View, Header: View, Content: View>: View {
+struct PaneSheetLayout<Pane: View, PaneFooter: View, Header: View, Content: View>: View {
     /// Single source of truth for the sheet's position; the sheet and the pane both read it.
     let sheet: SheetController
     let settings: SheetSettings
     @ViewBuilder var pane: Pane
+    /// Drawn under the pane, one gap above the bottom safe area, while the sheet is hidden. The pane leaves room
+    /// for it, and the rising sheet covers it.
+    @ViewBuilder var paneFooter: PaneFooter
     @ViewBuilder var header: Header
     @ViewBuilder var content: Content
     @State private var paneModel = TopPaneModel()
@@ -32,6 +35,8 @@ struct PaneSheetLayout<Pane: View, Header: View, Content: View>: View {
                     onTap: sheet.collapse
                 ) {
                     pane
+                } footer: {
+                    paneFooter
                 }
 
                 SheetContainer(controller: sheet) {
@@ -118,6 +123,8 @@ private struct PaneSheetLayoutPreview: View {
     var body: some View {
         PaneSheetLayout(sheet: sheet, settings: settings) {
             ScannerBackdropPlaceholder()
+        } paneFooter: {
+            Text(verbatim: "Footer")
         } header: {
             SheetHeader(title: PetFoodAnalysis.example.recipe, subtitle: Text(ScannedCode.sampleEAN13.value), onClose: {})
         } content: {

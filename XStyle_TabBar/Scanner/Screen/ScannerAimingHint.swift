@@ -1,0 +1,25 @@
+import SwiftUI
+
+/// What to do, under the camera and above the tab bar, while aiming. It keeps
+/// its place while hidden, so the camera above it doesn't move as it comes
+/// and goes.
+struct ScannerAimingHint: View {
+    let isShown: Bool
+
+    var body: some View {
+        Label("Point at a product barcode", systemImage: "barcode.viewfinder")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal)
+            // Only the fade: its place is the pane's footer slot, which doesn't animate.
+            .animation(.easeOut(duration: 0.15)) { content in
+                content.opacity(isShown ? 1 : 0)
+            }
+            .accessibilityHidden(!isShown)
+    }
+}
+
+#Preview {
+    ScannerAimingHint(isShown: true)
+}
