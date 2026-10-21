@@ -79,11 +79,18 @@ actor FrameAnalyzer {
         unevenFlicker.forgetFrames()
     }
 
-    /// Scans again after a result, holding `text` back until it has left the frame.
-    func resume(suppressing text: String?) {
-        confirmer.reset(suppressing: text)
+    /// Scans again, holding `text` back as `hold` says: the code a result
+    /// shows, or one just closed.
+    func resume(suppressing text: String?, hold: ReadingConfirmer.Hold = .untilGone(limit: .infinity)) {
+        confirmer.reset(suppressing: text, hold: hold)
         tracked = nil
         mode = .scanning
+    }
+
+    /// Stops looking for codes, such as while the camera is out of view.
+    func pause() {
+        tracked = nil
+        mode = .paused
     }
 
     /// Stops decoding and prepares the newest frame of the tracked code for the reveal.
@@ -115,10 +122,10 @@ actor FrameAnalyzer {
     #if targetEnvironment(simulator)
     /// Feeds `still` as if the camera kept seeing it, until the code it shows
     /// is frozen for the reveal or a few seconds pass. Runs the whole real
-    /// pipeline (decoding, confirmation, tracking, freeze) without a camera.
+    /// pipeline (decoding, confirmation, holding back, tracking, freeze)
+    /// without a camera.
     func playSimulatedCamera(_ still: SimulatedStill) async {
         guard let frame = SimulatedCameraFrame.make(from: still.image) else { return }
-        resume(suppressing: nil)
         let clock = ContinuousClock()
         let end = clock.now + .seconds(3)
         var time = lastFrameTime

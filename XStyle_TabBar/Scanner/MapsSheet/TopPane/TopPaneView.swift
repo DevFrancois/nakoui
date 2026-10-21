@@ -7,7 +7,7 @@ import SwiftUI
 
 /// Rounded pane above the bottom sheet. It resizes with the sheet, then collapses into the
 /// top safe area with the selected effect as the sheet rises to full.
-struct TopPaneView: View {
+struct TopPaneView<Content: View, Underlay: View>: View {
     let sheet: SheetController
     let model: TopPaneModel
     var effect: PaneEffect
@@ -15,6 +15,12 @@ struct TopPaneView: View {
     var showsSquash: Bool
     var showsDeformation: Bool
     var onTap: () -> Void
+    /// What fills the rounded surface, such as the camera's overlays.
+    @ViewBuilder var content: Content
+    /// Drawn under `content`, in the same rounded frame but out of its collapse effects, which flatten what they
+    /// draw: for what can't be flattened, like a camera layer. It fades out while the pane collapses rather than
+    /// leaving the hierarchy.
+    @ViewBuilder var underlay: Underlay
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         ZStack(alignment: .top) {
@@ -35,7 +41,9 @@ struct TopPaneView: View {
                     effect: effect,
                     showsSquash: showsSquash,
                     showsDeformation: showsDeformation,
-                    onTap: onTap
+                    onTap: onTap,
+                    content: content,
+                    underlay: underlay
                 )
             }
         }
@@ -49,8 +57,15 @@ struct TopPaneView: View {
     }
 }
 
+extension EnvironmentValues {
+    /// Whether the pane is collapsing toward the top safe area: the only time its effects flatten it offscreen (see
+    /// `PaneDisappearModifier`), and its underlay fades out. It flips only at the collapse threshold, not on every
+    /// frame.
+    @Entry var paneIsCollapsing = false
+}
+
 /// Transforms the card in its own coordinates, then places it below the top safe area.
-private struct PaneContainer: View {
+private struct PaneContainer<Content: View, Underlay: View>: View {
     var layout: PaneLayout
     var stretch: CGFloat
     var sheetCornerRadius: CGFloat
@@ -58,6 +73,8 @@ private struct PaneContainer: View {
     var showsSquash: Bool
     var showsDeformation: Bool
     var onTap: () -> Void
+    var content: Content
+    var underlay: Underlay
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         let displayedStretch = reduceMotion ? 0 : stretch
@@ -77,23 +94,37 @@ private struct PaneContainer: View {
             width: min(112, layout.paneFrame.width * 0.3),
             height: destinationHeight
         )
-        PaneSurface(sheetCornerRadius: sheetCornerRadius) {
-            PaneCard()
-        }
-        .frame(width: layout.paneFrame.width, height: layout.paneFrame.height)
-        .contentShape(.rect)
-        .onTapGesture(perform: onTap)
-        .scaleEffect(x: squash, y: 1)
-        .modifier(
-            PaneDisappearModifier(
-                motion: motion,
-                effect: effect,
-                size: layout.paneFrame.size,
-                destination: destination,
-                reduceMotion: reduceMotion
+        ZStack(alignment: .top) {
+            /// At rest the card's effects are identities, so the underlay lines up with it exactly.
+            PaneSurface(sheetCornerRadius: sheetCornerRadius) {
+                underlay
+            }
+            .frame(width: layout.paneFrame.width, height: layout.paneFrame.height)
+            .scaleEffect(x: squash, y: 1)
+            .opacity(progress > 0 ? 0 : 1)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .offset(y: layout.paneFrame.minY)
+
+            PaneSurface(sheetCornerRadius: sheetCornerRadius) {
+                content
+            }
+            .frame(width: layout.paneFrame.width, height: layout.paneFrame.height)
+            .contentShape(.rect)
+            .onTapGesture(perform: onTap)
+            .scaleEffect(x: squash, y: 1)
+            .modifier(
+                PaneDisappearModifier(
+                    motion: motion,
+                    effect: effect,
+                    size: layout.paneFrame.size,
+                    destination: destination,
+                    reduceMotion: reduceMotion
+                )
             )
-        )
-        .offset(y: layout.paneFrame.minY)
+            .offset(y: layout.paneFrame.minY)
+        }
+        .environment(\.paneIsCollapsing, progress > 0)
     }
 }
 
@@ -116,10 +147,14 @@ private struct TopPanePreview: View {
     }
 
     var body: some View {
-        TopPaneView(sheet: sheet, model: model, effect: .standard, showsSquash: true, showsDeformation: true, onTap: {})
-            .frame(width: PreviewFixtures.canvas.size.width, height: PreviewFixtures.canvas.size.height)
-            .background(Color(.systemGroupedBackground))
-            .ignoresSafeArea()
+        TopPaneView(sheet: sheet, model: model, effect: .standard, showsSquash: true, showsDeformation: true, onTap: {}) {
+            ScannerBackdropPlaceholder()
+        } underlay: {
+            Color.black
+        }
+        .frame(width: PreviewFixtures.canvas.size.width, height: PreviewFixtures.canvas.size.height)
+        .background(Color(.systemGroupedBackground))
+        .ignoresSafeArea()
     }
 }
 #endif

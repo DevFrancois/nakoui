@@ -76,6 +76,12 @@ nonisolated enum ScanRevealTimeline {
         freezeTime - freeze + (reduceMotion ? 0.6 : resultTime)
     }
 
+    /// Seconds since detection when the reveal has played out and fades back
+    /// to the live camera, over `closeDuration`.
+    static func fadeTime(freezeTime: Double, reduceMotion: Bool) -> Double {
+        freezeTime - freeze + (reduceMotion ? 0.6 : settleTime)
+    }
+
     private static func progress(_ t: Double, from start: Double, over duration: Double) -> Double {
         min(max((t - start) / duration, 0), 1)
     }

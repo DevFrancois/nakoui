@@ -6,13 +6,13 @@ This project includes code adapted from the following projects.
 
 - Author: Balaji Venkatesh, created 20 June 2026.
 - Source: the purchased WSSection project supplied by the project owner.
-- File: `MapsIOS26BottomSheet/BottomSheet/Sections/StickySection.swift` (adapted for this sheet, accessibility preferences and iOS 18 compatibility).
+- File: `XStyle_TabBar/Scanner/MapsSheet/BottomSheet/Sections/StickySection.swift` (adapted for this sheet, accessibility preferences and iOS 18 compatibility).
 - The original author credit is retained. This purchased source is separate from the MIT-licensed dependencies below.
 
 ## Wave
 
 - Source: https://github.com/jtrivedi/Wave (version 0.3.3)
-- Files: `MapsIOS26BottomSheet/Shared/Wave/` (trimmed and modified)
+- Files: `XStyle_TabBar/Scanner/MapsSheet/Shared/Wave/` (trimmed and modified)
 
 ```text
 Copyright (c) 2022 Janum Trivedi
@@ -27,7 +27,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ## SplitPaneKit
 
 - Source: https://github.com/jsmmth/SplitPaneKit
-- Files: `MapsIOS26BottomSheet/BottomSheet/Model/SheetController.swift` (next-detent snap rule), `MapsIOS26BottomSheet/BottomSheet/Model/SheetConstants.swift` (its thresholds and spring)
+- Files: `XStyle_TabBar/Scanner/MapsSheet/BottomSheet/Model/SheetController.swift` (next-detent snap rule), `XStyle_TabBar/Scanner/MapsSheet/BottomSheet/Model/SheetConstants.swift` (its thresholds and spring)
 
 ```text
 Copyright (c) 2025 Joseph Smith

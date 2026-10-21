@@ -59,6 +59,16 @@ final class SheetSettings {
         }
     }
 
+    // MARK: Scanning
+
+    /// The camera keeps scanning while a result shows, another code replacing it; off, it scans again once the
+    /// result is dismissed.
+    var scansWithResultOpen: Bool {
+        didSet {
+            defaults.set(scansWithResultOpen, forKey: Key.scansWithResultOpen)
+        }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -70,6 +80,7 @@ final class SheetSettings {
         paneDeformation = Self.bool(Key.paneDeformation, in: defaults) ?? false
         sheetBounce = Self.bool(Key.sheetBounce, in: defaults) ?? true
         paneFollowsBounce = Self.bool(Key.paneFollowsBounce, in: defaults) ?? true
+        scansWithResultOpen = Self.bool(Key.scansWithResultOpen, in: defaults) ?? true
         /// Settings that are now fixed: forget what earlier builds stored.
         for key in Self.retiredKeys {
             defaults.removeObject(forKey: key)
@@ -90,6 +101,7 @@ final class SheetSettings {
         static let paneDeformation = "sheet.paneDeformation"
         static let sheetBounce = "sheet.sheetBounce"
         static let paneFollowsBounce = "sheet.paneFollowsBounce"
+        static let scansWithResultOpen = "sheet.scansWithResultOpen"
     }
 
     private static let retiredKeys = [

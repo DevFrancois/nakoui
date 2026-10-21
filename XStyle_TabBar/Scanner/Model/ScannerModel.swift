@@ -2,15 +2,25 @@
 import Observation
 
 /// Drives the Scan tab: camera access, the capture run, and the found-code
-/// animation through to the result sheet. The camera and the decoding live in
-/// `BarcodeCaptureService`; this holds only what the views read.
+/// animation through to the result sheet, then back to the live camera. The
+/// camera and the decoding live in `BarcodeCaptureService`; this holds only
+/// what the views read.
 @Observable
 final class ScannerModel {
     private(set) var state: ScannerState
-    /// The found-code animation, from the first sighting until the result has closed.
+    /// The found-code animation, from the first sighting until it has faded
+    /// back to the live camera.
     private(set) var reveal: ScanReveal?
     /// The code in the result sheet.
     var scannedCode: ScannedCode?
+    /// The frozen frame of the latest code found. It stands in for the live
+    /// camera while the pane collapses, which can't draw the camera's layer.
+    private(set) var resultFrame: FrozenScan?
+    /// Whether the camera keeps scanning while a result shows, another code
+    /// replacing it. Off, it scans again once the result is dismissed.
+    var scansWithResultOpen = true {
+        didSet { updateScanning() }
+    }
     /// The live session, for the preview layer. Nil until the camera first
     /// starts, and always in previews and the Simulator.
     private(set) var session: AVCaptureSession?
@@ -38,6 +48,18 @@ final class ScannerModel {
     @ObservationIgnored private var viewportRevision: UInt64 = 0
     @ObservationIgnored private var latestViewport: ScannerViewport?
     @ObservationIgnored private var revealTask: Task<Void, Never>?
+    /// Whether the camera's pane is collapsed out of view, under the result
+    /// sheet at full. Nothing is scanned meanwhile.
+    @ObservationIgnored private var isCameraHidden = false
+    /// The decoder's text of the result last dismissed, held back for a
+    /// moment once scanning goes on.
+    @ObservationIgnored private var closedCode: String?
+    /// What the analyzer was last told: nil while it's paused or a reveal
+    /// has it tracking a code.
+    @ObservationIgnored private var scanningPlan: ScanningPlan?
+    /// The latest pause or resume. Each waits for the one before, so they
+    /// reach the analyzer in order.
+    @ObservationIgnored private var scanningTask: Task<Void, Never>?
     /// The latest torch switch. Each waits for the one before, so quick taps
     /// land in order.
     @ObservationIgnored private var torchTask: Task<Void, Never>?
@@ -59,6 +81,18 @@ final class ScannerModel {
 
     private var viewfinder: CGRect {
         ScannerMetrics.viewfinderRect(in: CGRect(origin: .zero, size: screenSize))
+    }
+
+    /// Whether a result is open and the camera waits for it to close before
+    /// scanning again.
+    var isPausedForResult: Bool {
+        scannedCode != nil && !scansWithResultOpen
+    }
+
+    /// Whether the camera is looking for codes, so the hint and the camera
+    /// controls show: scanning, with no reveal playing and no result waited on.
+    var isAiming: Bool {
+        state == .scanning && reveal == nil && !isPausedForResult
     }
 
     /// Runs the camera until the calling task is cancelled.
@@ -107,9 +141,7 @@ final class ScannerModel {
         defer { torchTracking.cancel() }
         state = .scanning
         publishViewport()
-        if reveal == nil && scannedCode == nil {
-            await capture.analyzer.resume(suppressing: nil)
-        }
+        updateScanning(force: true)
 
         // Ends when the task is cancelled, such as on leaving the tab.
         for await event in events {
@@ -215,23 +247,46 @@ final class ScannerModel {
         isTorchOn = isActive
     }
 
-    /// Clears the result and scans again.
+    /// Closes the result. Scanning goes on, holding its code back for a
+    /// moment, so one still in view doesn't reopen at once.
     func scanAgain() {
+        guard let code = scannedCode else { return }
         scannedCode = nil
-        resultDidClose()
+        closedCode = code.decoderText
+        updateScanning()
     }
 
-    /// Call once the result is gone: the reveal fades and scanning resumes,
-    /// holding the same code back until it leaves the frame.
-    private func resultDidClose() {
-        guard let code = reveal?.code else { return }
-        reveal?.close()
-        revealTask?.cancel()
-        revealTask = Task {
-            try? await Task.sleep(for: .seconds(ScanRevealTimeline.closeDuration))
-            guard !Task.isCancelled else { return }
-            reveal = nil
-            await analyzer?.resume(suppressing: code.decoderText)
+    /// Call with whether the camera's pane is collapsed out of view, under
+    /// the result sheet at full.
+    func setCameraHidden(_ isHidden: Bool) {
+        guard isHidden != isCameraHidden else { return }
+        isCameraHidden = isHidden
+        updateScanning()
+    }
+
+    /// Resumes or pauses the analyzer to match what's shown. It looks for
+    /// codes while the camera shows and no reveal plays, with a result open
+    /// only if `scansWithResultOpen`, holding back the result's code for as
+    /// long as it shows and a dismissed one for a moment.
+    private func updateScanning(force: Bool = false) {
+        let isScanning = state == .scanning && reveal == nil && !isCameraHidden && !isPausedForResult
+        let plan: ScanningPlan? = if !isScanning {
+            nil
+        } else if let scannedCode {
+            ScanningPlan(heldCode: scannedCode.decoderText, hold: .indefinitely)
+        } else {
+            ScanningPlan(heldCode: closedCode, hold: .untilGone(limit: ReadingConfirmer.closedCodeHoldLimit))
+        }
+        guard force || plan != scanningPlan, let analyzer else { return }
+        scanningPlan = plan
+        let previous = scanningTask
+        scanningTask = Task {
+            await previous?.value
+            if let plan {
+                await analyzer.resume(suppressing: plan.heldCode, hold: plan.hold)
+            } else {
+                await analyzer.pause()
+            }
         }
     }
 
@@ -251,6 +306,7 @@ final class ScannerModel {
         previewRotation = .simulated
         publishViewport()
         state = .scanning
+        updateScanning(force: true)
         for await event in events {
             handle(event)
         }
@@ -259,7 +315,7 @@ final class ScannerModel {
     /// Shows the simulated camera the backdrop's barcode label until it's
     /// decoded and revealed.
     func simulateScan() {
-        guard reveal == nil, scannedCode == nil, let analyzer,
+        guard scanningPlan != nil, let analyzer,
               let still = SimulatedStill.render(screenSize: screenSize) else { return }
         Task {
             await analyzer.playSimulatedCamera(still)
@@ -270,7 +326,10 @@ final class ScannerModel {
     private func handle(_ event: ScanEvent) {
         switch event {
         case .detected(let detection):
-            guard reveal == nil, scannedCode == nil, let analyzer else { return }
+            guard reveal == nil, scanningPlan != nil, let analyzer else { return }
+            // The analyzer follows this code now, until the freeze pauses it.
+            scanningPlan = nil
+            closedCode = nil
             reveal = ScanReveal(code: detection.code, geometry: previewRotation.map { detection.geometry.reoriented(to: $0) } ?? detection.geometry)
             playReveal { await analyzer.freeze(viewport: self.latestViewport) }
         case .tracked(let geometry):
@@ -281,7 +340,8 @@ final class ScannerModel {
         }
     }
 
-    /// Freezes the frame on time, then brings up the result as the icon settles.
+    /// Freezes the frame on time, brings up the result as the icon settles,
+    /// then fades back to the live camera, which scans on.
     private func playReveal(freeze: @escaping () async -> FrozenScan?) {
         revealTask?.cancel()
         revealTask = Task {
@@ -297,6 +357,7 @@ final class ScannerModel {
             if let frozen {
                 reveal?.freeze(frozen)
             }
+            resultFrame = frozen
             guard let current = reveal else { return }
             if let freezeTime = current.freezeTime {
                 let resultTime = ScanRevealTimeline.resultTime(freezeTime: freezeTime, reduceMotion: reduceMotion)
@@ -304,7 +365,23 @@ final class ScannerModel {
                 guard !Task.isCancelled else { return }
             }
             scannedCode = current.code
+            if let freezeTime = current.freezeTime {
+                let fadeTime = ScanRevealTimeline.fadeTime(freezeTime: freezeTime, reduceMotion: reduceMotion)
+                try? await Task.sleep(for: .seconds(max(current.startDate.addingTimeInterval(fadeTime).timeIntervalSinceNow, 0)))
+                guard !Task.isCancelled else { return }
+            }
+            reveal?.close()
+            try? await Task.sleep(for: .seconds(ScanRevealTimeline.closeDuration))
+            guard !Task.isCancelled else { return }
+            reveal = nil
+            updateScanning()
         }
+    }
+
+    /// The analyzer's scanning: which code it holds back, and how.
+    private struct ScanningPlan: Equatable {
+        var heldCode: String?
+        var hold: ReadingConfirmer.Hold
     }
 
     private func isCameraAuthorized() async -> Bool {

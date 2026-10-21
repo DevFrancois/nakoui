@@ -22,7 +22,9 @@ struct SheetContainer<Header: View, Content: View>: View {
             /// Not hit-testable: touches outside the surface reach the pane.
             Color.clear
 
-            if let geometry = controller.geometry {
+            /// Nothing while the surface rests below the screen: its glass and content leave the hierarchy, so the
+            /// next presentation starts from unscrolled content.
+            if let geometry = controller.geometry, geometry.surface.minY < controller.canvas.size.height {
                 Color.black
                     .opacity(geometry.dimOpacity)
                     .allowsHitTesting(false)
@@ -39,9 +41,12 @@ struct SheetContainer<Header: View, Content: View>: View {
                 .accessibilityAction(named: "Expand") {
                     move(by: 1)
                 }
-                .accessibilityAction(named: "Collapse") {
+                /// One step down from collapsed dismisses the sheet.
+                .accessibilityAction(named: controller.detent == .collapsed ? "Close" : "Collapse") {
                     move(by: -1)
                 }
+                /// Dismissed, it is only sliding away.
+                .accessibilityHidden(controller.detent == .hidden)
                 /// Padding keeps the surface's layout position, which its concentric corners resolve against.
                 .padding(.leading, geometry.surface.minX)
                 .padding(.top, geometry.surface.minY)
@@ -190,13 +195,15 @@ private struct SheetContainerPreview: View {
             Color(.systemGroupedBackground)
 
             SheetContainer(controller: sheet) {
-                SheetHeader(sheet: sheet, title: PetFoodAnalysis.example.recipe, subtitle: PetFoodAnalysis.example.description)
+                SheetHeader(title: PetFoodAnalysis.example.recipe, subtitle: Text(ScannedCode.sampleEAN13.value), onClose: {})
             } content: {
                 BottomSheetView(
                     analysis: .example,
+                    code: .sampleEAN13,
                     settings: settings,
                     horizontalPadding: sheet.metrics.scrollContentPadding,
-                    bottomPadding: sheet.canvas.safeAreaBottom
+                    bottomPadding: sheet.canvas.safeAreaBottom,
+                    onScanAgain: {}
                 )
             }
         }

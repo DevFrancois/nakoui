@@ -107,7 +107,10 @@ final class SheetPanCoordinator: NSObject, UIGestureRecognizerDelegate {
     // MARK: - Delegate
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        guard !isDragging, !hasTouch, gestureRecognizer.numberOfTouches == 0 else { return false }
+        /// A dismissed sheet can't be caught on its way down.
+        guard !isDragging, !hasTouch, gestureRecognizer.numberOfTouches == 0, controller.detent != .hidden else {
+            return false
+        }
         let location = touch.location(in: nil)
         /// Lock the content even for touches the sheet ignores.
         let enclosing = Self.verticalScrollView(containing: touch.view, below: gestureRecognizer.view)

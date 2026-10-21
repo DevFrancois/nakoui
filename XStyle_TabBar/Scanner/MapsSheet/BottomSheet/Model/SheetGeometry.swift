@@ -15,8 +15,6 @@ nonisolated struct SheetGeometry: Equatable {
     var headerInset: CGFloat
     /// Dimming behind the sheet: 0 at medium and below, `SheetMetrics.dimmingAtFull` at full.
     var dimOpacity: CGFloat
-    /// Header close button: 0 at collapsed and below, 1 at medium and above.
-    var closeButtonOpacity: CGFloat
     /// Hide scroll content in the collapsed sheet's bottom safe-area strip; shown as soon as the sheet rises.
     /// A switch, not a fade: a fractional opacity would composite the whole column offscreen every frame.
     var showsContent: Bool
@@ -38,9 +36,6 @@ nonisolated struct SheetGeometry: Equatable {
             ? clipUnit(value: (tops.medium - sheetTop) / (tops.medium - tops.full))
             : 0
         dimOpacity = SheetMetrics.dimmingAtFull * towardFull
-        closeButtonOpacity = tops.collapsed > tops.medium
-            ? clipUnit(value: (tops.collapsed - sheetTop) / (tops.collapsed - tops.medium))
-            : 1
         showsContent = sheetTop < tops.collapsed - SheetTuning.edgeTolerance
     }
 

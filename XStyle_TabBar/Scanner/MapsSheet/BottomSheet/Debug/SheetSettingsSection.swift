@@ -5,7 +5,7 @@
 
 import SwiftUI
 
-/// Debug settings below the food report.
+/// Debug settings below the food report: the pane's motion, and whether the camera scans with a result open.
 struct SheetSettingsSection: View {
     @Bindable var settings: SheetSettings
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -84,6 +84,20 @@ struct SheetSettingsSection: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Scanning")
+                    .font(.headline)
+                    .accessibilityAddTraits(.isHeader)
+
+                SettingToggle(
+                    title: "Scan with a result open",
+                    caption: "Another barcode replaces the result. Off, the camera scans again once the result is dismissed.",
+                    isOn: $settings.scansWithResultOpen
+                )
             }
         }
         .padding(16)

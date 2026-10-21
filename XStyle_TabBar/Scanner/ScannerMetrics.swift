@@ -12,7 +12,8 @@ nonisolated enum ScannerMetrics {
     /// Width over height: wide, like the product barcodes it frames.
     static let viewfinderAspectRatio = 1.6
     /// The viewfinder's center, as a share of the camera pane's height: the
-    /// middle, as the pane runs under the status bar and has zoom at its foot.
+    /// middle, as the pane sits below the status bar with its controls over
+    /// its foot.
     static let viewfinderCenterFraction = 0.5
     static let viewfinderCornerRadius = 24.0
     /// A bracket's straight part, beyond its rounded corner.
@@ -61,6 +62,9 @@ nonisolated enum ScannerMetrics {
     static let cameraControlSize = 46.0
     /// The zoom buttons' inset inside their capsule.
     static let zoomButtonInset = 4.0
+    /// How long the viewfinder must stay put before the camera focuses and
+    /// meters on it, in seconds, so a moving sheet doesn't re-meter every frame.
+    static let meteringSettleDelay = 0.1
 
     // Flicker detection (see `FlickerDetector`).
     /// Pulses per second of the lights to look for: lamps on 50 Hz mains.

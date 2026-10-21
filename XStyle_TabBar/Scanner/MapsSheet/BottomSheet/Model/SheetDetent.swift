@@ -7,6 +7,8 @@ import CoreGraphics
 
 /// Resting positions of the custom sheet, from lowest to highest. `allCases` keeps this order.
 nonisolated enum SheetDetent: String, CaseIterable, Sendable {
+    /// Below the screen: no result to show, as while the scanner aims. A release past collapsed lands here.
+    case hidden
     /// The old `.height(80)` detent.
     case collapsed
     /// The old `.height(350)` detent.
@@ -17,16 +19,19 @@ nonisolated enum SheetDetent: String, CaseIterable, Sendable {
 
 /// One value per detent: the sheet tops, or a metric interpolated between detents.
 nonisolated struct DetentValues: Equatable, Sendable {
+    var hidden: CGFloat
     var collapsed: CGFloat
     var medium: CGFloat
     var full: CGFloat
 
     static func constant(_ value: CGFloat) -> DetentValues {
-        DetentValues(collapsed: value, medium: value, full: value)
+        DetentValues(hidden: value, collapsed: value, medium: value, full: value)
     }
 
     subscript(detent: SheetDetent) -> CGFloat {
         switch detent {
+        case .hidden:
+            hidden
         case .collapsed:
             collapsed
         case .medium:

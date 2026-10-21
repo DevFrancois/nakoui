@@ -21,6 +21,10 @@ struct ContentView: View {
     /// Owned here, not by the Scan tab, so passes of this body never
     /// construct a throwaway one.
     @State private var scanner = ScannerModel()
+    /// The Scan tab's sheet and its debug settings, owned here for the same
+    /// reason.
+    @State private var scannerSheet = SheetController(initialDetent: .hidden)
+    @State private var sheetSettings = SheetSettings()
     /// Holds sidebar routes and articles, so either can be pushed.
     @State private var navigation = RootNavigation()
     @State private var isSidebarExpanded = false
@@ -73,7 +77,8 @@ struct ContentView: View {
         NavigationStack(path: $navigation.path) {
             // Inside the stack, so articles, quizzes and sidebar pages
             // cover the tab bar when pushed.
-            RootTabContent(selection: $rootTab, scanner: scanner, isTabBarVisible: navigation.path.isEmpty) {
+            RootTabContent(selection: $rootTab, scanner: scanner, scannerSheet: scannerSheet,
+                           sheetSettings: sheetSettings, isTabBarVisible: navigation.path.isEmpty) {
                 HomeRootView(
                     title: mainTitle,
                     pager: pager,

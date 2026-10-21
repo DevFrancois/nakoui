@@ -84,7 +84,10 @@ actor BarcodeCaptureService {
               self.viewport.map({ viewport.revision >= $0.revision }) ?? true else { return }
         self.viewport = viewport
         await analyzer.setViewport(viewport)
-        // The actor may have accepted a newer configuration during the hop.
+        // The pane resizes on every display frame while the result sheet
+        // moves: focus and meter once it has settled, not at each step.
+        try? await Task.sleep(for: .seconds(ScannerMetrics.meteringSettleDelay))
+        // The actor may have accepted a newer configuration during the hops.
         guard self.viewport?.revision == viewport.revision else { return }
         guard let device else { return }
         let dimensions = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)

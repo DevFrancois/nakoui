@@ -1,5 +1,5 @@
 //
-//  ContentView.swift
+//  PaneSheetLayout.swift
 //  MapsIOS26BottomSheet
 //
 //  Created by Balaji Venkatesh on 26/06/25.
@@ -7,19 +7,18 @@
 
 import SwiftUI
 
-struct ContentView: View {
+/// The top pane over the custom bottom sheet, both following one `SheetController` across the whole screen.
+struct PaneSheetLayout<Pane: View, PaneUnderlay: View, Header: View, Content: View>: View {
     /// Single source of truth for the sheet's position; the sheet and the pane both read it.
-    @State private var sheet: SheetController
-    @State private var settings: SheetSettings
-    /// Illustrative until real label data is wired in.
-    private let analysis = PetFoodAnalysis.example
+    let sheet: SheetController
+    let settings: SheetSettings
+    @ViewBuilder var pane: Pane
+    /// Drawn under `pane`, out of its collapse effects: see `TopPaneView.underlay`.
+    @ViewBuilder var paneUnderlay: PaneUnderlay
+    @ViewBuilder var header: Header
+    @ViewBuilder var content: Content
     @State private var paneModel = TopPaneModel()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    init(settings: SheetSettings = SheetSettings(), initialDetent: SheetDetent? = nil) {
-        _sheet = State(initialValue: SheetController(initialDetent: initialDetent))
-        _settings = State(initialValue: settings)
-    }
 
     var body: some View {
         /// A GeometryReader never grows with its children, so the canvas below stays the screen,
@@ -35,17 +34,16 @@ struct ContentView: View {
                     showsSquash: settings.paneSquash,
                     showsDeformation: settings.paneDeformation,
                     onTap: sheet.collapse
-                )
+                ) {
+                    pane
+                } underlay: {
+                    paneUnderlay
+                }
 
                 SheetContainer(controller: sheet) {
-                    SheetHeader(sheet: sheet, title: analysis.recipe, subtitle: analysis.description)
+                    header
                 } content: {
-                    BottomSheetView(
-                        analysis: analysis,
-                        settings: settings,
-                        horizontalPadding: sheet.metrics.scrollContentPadding,
-                        bottomPadding: sheet.canvas.safeAreaBottom
-                    )
+                    content
                 }
             }
             /// Top-aligned: a sheet pulled below collapsed overhangs the screen, and centering the taller
@@ -106,15 +104,43 @@ struct ContentView: View {
 
 #if DEBUG
 #Preview("Full") {
-    ContentView(settings: PreviewFixtures.makeSettings(), initialDetent: .full)
+    PaneSheetLayoutPreview(detent: .full)
 }
 
 #Preview("Medium") {
-    ContentView(settings: PreviewFixtures.makeSettings(), initialDetent: .medium)
+    PaneSheetLayoutPreview(detent: .medium)
 }
 
 #Preview("Collapsed · Dark") {
-    ContentView(settings: PreviewFixtures.makeSettings(), initialDetent: .collapsed)
+    PaneSheetLayoutPreview(detent: .collapsed)
         .preferredColorScheme(.dark)
+}
+
+private struct PaneSheetLayoutPreview: View {
+    @State private var sheet: SheetController
+    @State private var settings = PreviewFixtures.makeSettings()
+
+    init(detent: SheetDetent) {
+        _sheet = State(initialValue: SheetController(initialDetent: detent))
+    }
+
+    var body: some View {
+        PaneSheetLayout(sheet: sheet, settings: settings) {
+            ScannerBackdropPlaceholder()
+        } paneUnderlay: {
+            Color.black
+        } header: {
+            SheetHeader(title: PetFoodAnalysis.example.recipe, subtitle: Text(ScannedCode.sampleEAN13.value), onClose: {})
+        } content: {
+            BottomSheetView(
+                analysis: .example,
+                code: .sampleEAN13,
+                settings: settings,
+                horizontalPadding: sheet.metrics.scrollContentPadding,
+                bottomPadding: sheet.canvas.safeAreaBottom,
+                onScanAgain: {}
+            )
+        }
+    }
 }
 #endif

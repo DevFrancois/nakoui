@@ -11,13 +11,16 @@ import SwiftUI
 /// The cards observe scroll geometry locally; this view never reads per-frame sheet state.
 struct BottomSheetView: View {
     let analysis: PetFoodAnalysis
+    /// The scanned code the report is for; Copy and Scan Again act on it.
+    let code: ScannedCode
     @Bindable var settings: SheetSettings
     var horizontalPadding: CGFloat
     var bottomPadding: CGFloat
+    var onScanAgain: () -> Void
 
     var body: some View {
         ScrollView(.vertical) {
-            FoodAnalysisSections(analysis: analysis, settings: settings)
+            FoodAnalysisSections(analysis: analysis, code: code, settings: settings, onScanAgain: onScanAgain)
                 .padding(.horizontal, horizontalPadding)
                 .padding(.top, 4)
                 .padding(.bottom, bottomPadding + 24)
@@ -29,11 +32,16 @@ struct BottomSheetView: View {
 
 private struct FoodAnalysisSections: View {
     let analysis: PetFoodAnalysis
+    let code: ScannedCode
     let settings: SheetSettings
+    var onScanAgain: () -> Void
 
     var body: some View {
         // Bounded sections stay laid out while their masks collapse during scrolling.
         VStack(alignment: .leading, spacing: 14) {
+            ScannedCodeActions(code: code, onScanAgain: onScanAgain)
+                .frame(maxWidth: .infinity)
+
             FoodOverviewSection(
                 recipe: analysis.recipe,
                 description: analysis.description,
@@ -54,8 +62,10 @@ private struct FoodAnalysisSections: View {
             FoodSuitabilitySection(suitability: analysis.suitability)
             FoodLabelDetailsSection(details: analysis.labelDetails)
 
+            #if DEBUG
             SheetSettingsSection(settings: settings)
                 .padding(.top, 10)
+            #endif
         }
     }
 }
@@ -66,9 +76,11 @@ private struct FoodAnalysisSections: View {
 
     BottomSheetView(
         analysis: .example,
+        code: .sampleEAN13,
         settings: settings,
         horizontalPadding: SheetMetrics.current.scrollContentPadding,
-        bottomPadding: PreviewFixtures.canvas.safeAreaBottom
+        bottomPadding: PreviewFixtures.canvas.safeAreaBottom,
+        onScanAgain: {}
     )
     .background(Color(.systemBackground))
 }
@@ -76,8 +88,11 @@ private struct FoodAnalysisSections: View {
 #Preview("Food analysis · Narrow · Dark", traits: .fixedLayout(width: 320, height: 650)) {
     @Previewable @State var settings = PreviewFixtures.makeSettings()
 
-    BottomSheetView(analysis: .example, settings: settings, horizontalPadding: 18, bottomPadding: 20)
-        .background(Color(.systemBackground))
-        .preferredColorScheme(.dark)
+    BottomSheetView(
+        analysis: .example, code: .sampleEAN13, settings: settings,
+        horizontalPadding: 18, bottomPadding: 20, onScanAgain: {}
+    )
+    .background(Color(.systemBackground))
+    .preferredColorScheme(.dark)
 }
 #endif

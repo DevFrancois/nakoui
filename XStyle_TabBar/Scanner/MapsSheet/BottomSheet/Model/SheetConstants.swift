@@ -44,6 +44,8 @@ nonisolated struct SheetMetrics: Equatable, Sendable {
 
     func tops(for canvas: PaneCanvas) -> DetentValues {
         DetentValues(
+            /// The surface's top at the screen's bottom edge: all of it below the screen.
+            hidden: canvas.size.height,
             collapsed: canvas.size.height - collapsedOffset,
             medium: canvas.size.height - mediumOffset,
             full: canvas.safeAreaTop + fullTopInset
@@ -55,8 +57,9 @@ nonisolated struct SheetMetrics: Equatable, Sendable {
         collapsedOffset: 99.3,
         mediumOffset: 376.72,
         fullTopInset: 0,
-        sideInset: DetentValues(collapsed: 28, medium: 8, full: 0),
-        bottomInset: DetentValues(collapsed: 25.85, medium: 8, full: 0),
+        /// Below collapsed the surface keeps its collapsed shape, so `hidden` repeats it.
+        sideInset: DetentValues(hidden: 28, collapsed: 28, medium: 8, full: 0),
+        bottomInset: DetentValues(hidden: 25.85, collapsed: 25.85, medium: 8, full: 0),
         topCornerRadius: 37,
         fadesToOpaqueAtFull: true,
         headerHeight: 73.45,

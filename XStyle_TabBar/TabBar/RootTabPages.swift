@@ -6,9 +6,14 @@ import UIKit
 struct RootTabPages<Home: View>: UIViewControllerRepresentable {
     let selection: RootTab
     let scanner: ScannerModel
+    let scannerSheet: SheetController
+    let sheetSettings: SheetSettings
     let layoutAxis: NSLayoutConstraint.Axis
     let isVisible: Bool
     let safeAreaInsets: EdgeInsets
+    /// How far the tab bar's slot rises above `safeAreaInsets.bottom`. The
+    /// Scan tab's safe area covers it, so its camera pane stops above the bar.
+    let scannerTabBarClearance: CGFloat
     let home: Home
 
     func makeCoordinator() -> Coordinator {
@@ -41,6 +46,10 @@ struct RootTabPages<Home: View>: UIViewControllerRepresentable {
         let environment = ForwardedEnvironment(context.environment)
         context.coordinator.home?.rootView = HostedTabPage(content: home, environment: environment)
         context.coordinator.scanner?.rootView = HostedTabPage(content: scannerPage, environment: environment)
+        let scannerInsets = UIEdgeInsets(top: 0, left: 0, bottom: scannerTabBarClearance, right: 0)
+        if context.coordinator.scanner?.additionalSafeAreaInsets != scannerInsets {
+            context.coordinator.scanner?.additionalSafeAreaInsets = scannerInsets
+        }
         context.coordinator.profile?.rootView = HostedTabPage(content: RootTabPlaceholder(tab: .profile), environment: environment)
         context.coordinator.search?.rootView = HostedTabPage(content: RootTabPlaceholder(tab: .search), environment: environment)
         controller.update(
@@ -55,7 +64,7 @@ struct RootTabPages<Home: View>: UIViewControllerRepresentable {
     }
 
     private var scannerPage: ScannerView {
-        ScannerView(model: scanner, isActive: selection == .scanner && isVisible)
+        ScannerView(model: scanner, sheet: scannerSheet, settings: sheetSettings, isActive: selection == .scanner && isVisible)
     }
 
     final class Coordinator {

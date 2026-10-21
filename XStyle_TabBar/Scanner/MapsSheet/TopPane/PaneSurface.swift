@@ -20,7 +20,7 @@ struct PaneSurface<Content: View>: View {
 #if DEBUG
 #Preview("Rounded Surface", traits: .sizeThatFitsLayout) {
     PaneSurface(sheetCornerRadius: 36) {
-        PaneCard()
+        ScannerBackdropPlaceholder()
     }
     .frame(width: 377, height: 220)
     .padding(8)

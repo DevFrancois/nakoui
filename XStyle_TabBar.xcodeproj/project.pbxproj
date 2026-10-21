@@ -25,9 +25,22 @@
 		DDB183A4E7DF97D83A5ADAEF /* XStyle_TabBarTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XStyle_TabBarTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A815BAB83018F95600099B0B /* Exceptions for "XStyle_TabBar" folder in "XStyle_TabBar" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A815BAA93018F95500099B0B /* XStyle_TabBar */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A815BAAC3018F95500099B0B /* XStyle_TabBar */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A815BAB83018F95600099B0B /* Exceptions for "XStyle_TabBar" folder in "XStyle_TabBar" target */,
+			);
 			path = XStyle_TabBar;
 			sourceTree = "<group>";
 		};
@@ -368,6 +381,7 @@
 				DEVELOPMENT_TEAM = TM8GM2Y6B8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = XStyle_TabBar/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Nako uses the camera to scan product barcodes.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -406,6 +420,7 @@
 				DEVELOPMENT_TEAM = TM8GM2Y6B8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = XStyle_TabBar/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Nako uses the camera to scan product barcodes.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

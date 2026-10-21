@@ -24,16 +24,16 @@ struct PaneDisappearModifier: ViewModifier {
             reduceMotion: reduceMotion
         )
 
+        /// The shader and the blur flatten the card even when disabled or at radius 0, and a UIKit view, like the
+        /// camera preview, can't be flattened: it draws a placeholder. So they exist only while the card collapses,
+        /// when `paneIsCollapsing` takes such content out; switching them in resets the card's view identity.
+        let isCollapsing = motion.progress > 0
         content
             .clipShape(.rect(cornerRadius: pose.cornerRadius))
-            .distortionEffect(
-                ShaderLibrary.paneFunnel(.boundingRect, .float(pose.funnel)),
-                maxSampleOffset: CGSize(width: size.width, height: 0),
-                isEnabled: pose.funnel > 0
-            )
+            .modifier(PaneFunnelEffect(amount: pose.funnel, size: size, isActive: isCollapsing))
             .scaleEffect(x: pose.scaleX, y: pose.scaleY, anchor: .top)
             .offset(y: pose.offsetY)
-            .blur(radius: pose.blur)
+            .modifier(PaneBlurEffect(radius: pose.blur, isActive: isCollapsing))
             .opacity(pose.opacity)
             .allowsHitTesting(motion.progress < 0.05)
             .accessibilityHidden(motion.progress >= 0.5)
@@ -42,6 +42,41 @@ struct PaneDisappearModifier: ViewModifier {
     static func precompile() async {
         let shader = ShaderLibrary.paneFunnel(.boundingRect, .float(0))
         try? await shader.compile(as: .distortionEffect)
+    }
+}
+
+/// The funnel shader, present only while the card collapses (see `PaneDisappearModifier`).
+private struct PaneFunnelEffect: ViewModifier {
+    var amount: CGFloat
+    var size: CGSize
+    var isActive: Bool
+
+    func body(content: Content) -> some View {
+        if isActive {
+            content
+                .distortionEffect(
+                    ShaderLibrary.paneFunnel(.boundingRect, .float(amount)),
+                    maxSampleOffset: CGSize(width: size.width, height: 0),
+                    isEnabled: amount > 0
+                )
+        } else {
+            content
+        }
+    }
+}
+
+/// The blur, present only while the card collapses (see `PaneDisappearModifier`).
+private struct PaneBlurEffect: ViewModifier {
+    var radius: CGFloat
+    var isActive: Bool
+
+    func body(content: Content) -> some View {
+        if isActive {
+            content
+                .blur(radius: radius)
+        } else {
+            content
+        }
     }
 }
 

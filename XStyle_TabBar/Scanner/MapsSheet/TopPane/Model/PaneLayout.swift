@@ -7,7 +7,7 @@ import CoreGraphics
 
 /// Geometry of the top pane for a displayed sheet top.
 ///
-/// The pane fills the space above the sheet, minus a gap. Once it reaches its minimum height
+/// The pane fills the space above the sheet and the bottom safe area, minus a gap. Once it reaches its minimum height
 /// the frame freezes and the sheet's remaining travel drives `collapseProgress` instead.
 nonisolated struct PaneLayout: Equatable {
     /// Pane frame in window coordinates.
@@ -27,7 +27,9 @@ nonisolated struct PaneLayout: Equatable {
         let minPaneBottom = PaneLayout.minPaneBottom(canvas: canvas)
         let collapseStart = minPaneBottom + gap
         let collapseLimit = min(collapseEnd, collapseStart - 1)
-        let trackedBottom = min(sheetTop - gap, canvas.size.height)
+        /// Never under the bottom safe area, which covers the tab bar's slot even while the bar is hidden: with the
+        /// sheet hidden, the pane rests one gap above the bar.
+        let trackedBottom = min(sheetTop - gap, canvas.size.height - canvas.safeAreaBottom - gap)
         let paneBottom: CGFloat
         if reduceMotion {
             /// No frozen frame under Reduce Motion: the pane keeps shrinking above the sheet while it fades.

@@ -189,17 +189,21 @@ final class SheetController {
 
     // MARK: - Programmatic moves
 
-    /// Tap on the top pane.
+    /// Tap on the top pane. A hidden sheet stays hidden: there is nothing to show.
     func collapse() {
-        guard !isDragging else { return }
+        guard !isDragging, detent != .hidden else { return }
         settle(to: .collapsed, velocity: spring.state == .running ? spring.velocity : 0)
     }
 
     /// Springs from the current position and velocity to `target`.
     func settle(to target: SheetDetent, velocity: CGFloat) {
         if target != detent {
+            /// Like a native sheet, no detent haptic when it is presented or dismissed.
+            let isPresentation = target == .hidden || detent == .hidden
             detent = target
-            playDetentFeedback()
+            if !isPresentation {
+                playDetentFeedback()
+            }
         }
         guard sheetTop != nil, canvas.size.height > 0 else { return }
         isHeld = false
@@ -219,7 +223,8 @@ final class SheetController {
             return
         }
         settleOrigin = rawTop
-        spring.spring = currentSpring
+        /// A dismissal doesn't bounce: swinging back above the screen's edge would draw the sheet again.
+        spring.spring = target == .hidden ? dismissalSpring : currentSpring
         spring.target = destination
         spring.restart(value: rawTop, velocity: injected)
     }
@@ -240,7 +245,9 @@ final class SheetController {
         let movingDown = isFast ? velocity > 0 : travel > 0
         /// `allCases` runs from the lowest detent (largest top) to the highest.
         if movingDown {
-            return SheetDetent.allCases.last { tops[$0] > current + tolerance } ?? .collapsed
+            let next = SheetDetent.allCases.last { tops[$0] > current + tolerance } ?? .hidden
+            /// Dismissing closes the result: only a release clearly below collapsed does it.
+            return next == .hidden && current < tops.collapsed + tolerance ? .collapsed : next
         }
         return SheetDetent.allCases.first { tops[$0] < current - tolerance } ?? .full
     }
@@ -268,12 +275,13 @@ final class SheetController {
     }
 
     /// Rubber-banded to the detent range; drags and spring overshoots past the ends both go through it.
+    /// The range ends at hidden, so below collapsed the sheet follows the finger toward dismissal.
     private func displayedTop(for raw: CGFloat) -> CGFloat {
         let tops = tops
-        guard tops.collapsed > tops.full else { return raw }
+        guard tops.hidden > tops.full else { return raw }
         return rubberband(
             value: raw,
-            range: tops.full...tops.collapsed,
+            range: tops.full...tops.hidden,
             interval: SheetTuning.rubberBandInterval,
             c: SheetTuning.rubberBandConstant
         )
@@ -282,8 +290,8 @@ final class SheetController {
     /// Velocity of the displayed top: the raw velocity scaled by the rubber band's slope.
     private func displayedVelocity(raw: CGFloat, velocity: CGFloat) -> CGFloat {
         let tops = tops
-        guard tops.collapsed > tops.full, raw < tops.full || raw > tops.collapsed else { return velocity }
-        let overshoot = raw > tops.collapsed ? raw - tops.collapsed : tops.full - raw
+        guard tops.hidden > tops.full, raw < tops.full || raw > tops.hidden else { return velocity }
+        let overshoot = raw > tops.hidden ? raw - tops.hidden : tops.full - raw
         let constant = SheetTuning.rubberBandConstant
         let factor = overshoot * constant / SheetTuning.rubberBandInterval + 1
         return velocity * constant / (factor * factor)
@@ -307,6 +315,10 @@ final class SheetController {
             return SheetSprings.reducedMotion
         }
         return bounces ? SheetSprings.bouncy : SheetSprings.settled
+    }
+
+    private var dismissalSpring: WaveSpring {
+        reduceMotion ? SheetSprings.reducedMotion : SheetSprings.settled
     }
 
     /// DEBUG `-SheetInitialDetent collapsed|medium|full`, for scripted runs.

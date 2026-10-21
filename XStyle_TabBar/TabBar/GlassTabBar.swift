@@ -9,12 +9,16 @@ struct GlassTabBarToolbar: ToolbarContent {
     /// Slides the bar off the bottom of the screen; see `GlassTabBar`.
     var isHidden = false
     var windowBottom: CGFloat = 0
+    /// The bar's top edge in global space, measured where it rests: its slide
+    /// and press are visual only.
+    @Binding var top: CGFloat?
 
     var body: some ToolbarContent {
         ToolbarSpacer(.flexible, placement: .bottomBar)
         if #available(iOS 27.1, *) {
             ToolbarItem(placement: .bottomBar) {
-                AdaptiveGlassTabBar(selection: $selection, layoutAxis: $layoutAxis, isHidden: isHidden, windowBottom: windowBottom)
+                reportingTop(of: AdaptiveGlassTabBar(selection: $selection, layoutAxis: $layoutAxis,
+                                                     isHidden: isHidden, windowBottom: windowBottom))
             }
             .axisBehavior(.verticalPreferred)
             .sharedBackgroundVisibility(.hidden)
@@ -22,11 +26,23 @@ struct GlassTabBarToolbar: ToolbarContent {
             .visibilityPriority(.high)
         } else {
             ToolbarItem(placement: .bottomBar) {
-                GlassTabBar(selection: $selection, isHidden: isHidden, windowBottom: windowBottom)
+                reportingTop(of: GlassTabBar(selection: $selection, isHidden: isHidden, windowBottom: windowBottom))
             }
             .sharedBackgroundVisibility(.hidden)
         }
         ToolbarSpacer(.flexible, placement: .bottomBar)
+    }
+
+    /// Reports where the bar rests while it shows. As its toolbar hides, the
+    /// item is laid out elsewhere, which isn't where the bar comes back to.
+    private func reportingTop(of bar: some View) -> some View {
+        bar.onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.frame(in: .global).minY
+        } action: { top in
+            if !isHidden {
+                self.top = top
+            }
+        }
     }
 }
 
@@ -50,8 +66,8 @@ private struct AdaptiveGlassTabBar: View {
 struct GlassTabBar: View {
     @Binding var selection: RootTab
     var layoutAxis: NSLayoutConstraint.Axis = .horizontal
-    /// Springs the bar down off the screen, or fades it with Reduce Motion.
-    /// The toolbar keeps its place, so the content's safe area doesn't change.
+    /// Springs the bar down off the screen, or fades it with Reduce Motion,
+    /// as its toolbar hides.
     var isHidden = false
     /// The window's bottom edge in global space, which the bar slides past.
     var windowBottom: CGFloat = 0
