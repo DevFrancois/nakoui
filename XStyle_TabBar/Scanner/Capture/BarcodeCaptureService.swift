@@ -20,6 +20,14 @@ actor BarcodeCaptureService {
     /// is ignored.
     private var runToken = 0
     private var isRunActive = false
+    /// Whether the camera is held stopped without ending the run, such as
+    /// under the result sheet; see `setSuspended`.
+    private var isSuspended = false
+    /// Whether the next resume starts the run's tuning afresh: a run that
+    /// started suspended hasn't had its first look at the light yet.
+    private var resumeStartsFresh = false
+    /// Whether the torch was lit when the camera was suspended.
+    private var resumeLightsTorch = false
     private var adjustmentTask: Task<Void, Never>?
     private var recoveryTask: Task<Void, Never>?
     /// What the user can zoom through, and where scanning starts. Set with
@@ -55,11 +63,12 @@ actor BarcodeCaptureService {
             CameraTuning.resetExposure(on: device)
             device.unlockForConfiguration()
         }
-        if !session.isRunning {
-            session.startRunning()
+        // A suspended run waits for `setSuspended(false)` to start the camera.
+        if isSuspended {
+            resumeStartsFresh = true
+        } else {
+            runCamera(startingFresh: true)
         }
-        adjustmentTask?.cancel()
-        adjustmentTask = Task { await adjustPeriodically() }
         return runToken
     }
 
@@ -70,11 +79,49 @@ actor BarcodeCaptureService {
         isRunActive = false
         adjustmentTask?.cancel()
         adjustmentTask = nil
+        resumeStartsFresh = false
+        resumeLightsTorch = false
         _ = setTorch(false)
         if session.isRunning {
             session.stopRunning()
         }
         return true
+    }
+
+    /// Holds the camera stopped without ending the run, or starts it again,
+    /// such as while the result sheet covers it. Stopping the session turns
+    /// the camera indicator off; resuming only starts it, the quickest way
+    /// back to a live camera, keeping the run's exposure, flicker tuning and
+    /// torch. Also holds back the next run if none is active.
+    func setSuspended(_ suspended: Bool) {
+        guard suspended != isSuspended else { return }
+        isSuspended = suspended
+        guard isRunActive else { return }
+        if suspended {
+            adjustmentTask?.cancel()
+            adjustmentTask = nil
+            resumeLightsTorch = device?.torchMode == .on
+            _ = setTorch(false)
+            if session.isRunning {
+                session.stopRunning()
+            }
+        } else {
+            runCamera(startingFresh: resumeStartsFresh)
+            resumeStartsFresh = false
+            if resumeLightsTorch {
+                _ = setTorch(true)
+            }
+            resumeLightsTorch = false
+        }
+    }
+
+    /// Starts the session, and the tuning that follows the light.
+    private func runCamera(startingFresh: Bool) {
+        if !session.isRunning {
+            session.startRunning()
+        }
+        adjustmentTask?.cancel()
+        adjustmentTask = Task { await adjustPeriodically(startingFresh: startingFresh) }
     }
 
     /// Tells the analyzer where the frames are shown, and focuses and meters
@@ -216,7 +263,7 @@ actor BarcodeCaptureService {
     /// reset, stops it while a run is active.
     private func recoverFromRuntimeErrors() async {
         for await _ in NotificationCenter.default.notifications(named: AVCaptureSession.runtimeErrorNotification, object: session) {
-            if isRunActive && !session.isRunning {
+            if isRunActive && !isSuspended && !session.isRunning {
                 session.startRunning()
             }
         }
@@ -224,9 +271,12 @@ actor BarcodeCaptureService {
 
     /// Ten times a second, exposes for whole pulses under flickering light;
     /// twice a second, eases the exposure cap in dim light and fits the frame
-    /// rate to the exposure and thermal pressure.
-    private func adjustPeriodically() async {
-        await analyzer.resetFlicker()
+    /// rate to the exposure and thermal pressure. A resume carries on with
+    /// the flicker the run found.
+    private func adjustPeriodically(startingFresh: Bool) async {
+        if startingFresh {
+            await analyzer.resetFlicker()
+        }
         var tick = 0
         #if DEBUG
         var lastMode = ""

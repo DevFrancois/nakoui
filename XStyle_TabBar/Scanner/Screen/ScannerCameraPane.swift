@@ -4,7 +4,9 @@ import SwiftUI
 /// which codes are mapped into: this pane's size. Camera-style chrome: dark
 /// over the feed, in any appearance. While aiming, zoom and the flashlight sit
 /// at its foot; the hint is under the pane (`ScannerAimingHint`). The feed
-/// stays live behind a result, and while the sheet slides over the pane.
+/// stays live behind a result and while the sheet slides over the pane, though
+/// nothing is scanned past medium; the camera stops with the sheet at full
+/// (`ScannerView`).
 struct ScannerCameraPane: View {
     let model: ScannerModel
     /// Owned above this pane, which a layout change rebuilds, so the feed

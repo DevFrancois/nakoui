@@ -45,9 +45,15 @@ final class ScannerModel {
     @ObservationIgnored private var viewportRevision: UInt64 = 0
     @ObservationIgnored private var latestViewport: ScannerViewport?
     @ObservationIgnored private var revealTask: Task<Void, Never>?
-    /// Whether the camera's pane is collapsed out of view, under the result
-    /// sheet at full. Nothing is scanned meanwhile.
+    /// Whether the result sheet covers the camera's pane, past medium.
+    /// Nothing is scanned meanwhile.
     @ObservationIgnored private var isCameraHidden = false
+    /// Whether the result sheet rests at full over the camera, which stops
+    /// meanwhile; see `setCameraSuspended`.
+    @ObservationIgnored private var isCameraSuspended = false
+    /// The latest suspension or resumption. Each waits for the one before,
+    /// so they reach the camera in order.
+    @ObservationIgnored private var suspensionTask: Task<Void, Never>?
     /// The decoder's text of the result last dismissed, held back for a
     /// moment once scanning goes on.
     @ObservationIgnored private var closedCode: String?
@@ -112,6 +118,8 @@ final class ScannerModel {
         let capture = capture ?? BarcodeCaptureService()
         self.capture = capture
         analyzer = capture.analyzer
+        // Under the result sheet at full, the run starts with the camera held stopped.
+        await capture.setSuspended(isCameraSuspended)
         let events = await capture.analyzer.events()
         let token: Int
         do {
@@ -253,12 +261,27 @@ final class ScannerModel {
         updateScanning()
     }
 
-    /// Call with whether the camera's pane is collapsed out of view, under
-    /// the result sheet at full.
+    /// Call with whether the result sheet covers the camera's pane, past
+    /// medium.
     func setCameraHidden(_ isHidden: Bool) {
         guard isHidden != isCameraHidden else { return }
         isCameraHidden = isHidden
         updateScanning()
+    }
+
+    /// Call with whether the result sheet rests at full over the camera. The
+    /// camera stops there, turning the camera indicator off, and starts again
+    /// as the sheet leaves full, with the run's tuning and torch as they were.
+    func setCameraSuspended(_ isSuspended: Bool) {
+        guard isSuspended != isCameraSuspended else { return }
+        isCameraSuspended = isSuspended
+        // Before the first run there's no camera: `run()` applies it.
+        guard let capture else { return }
+        let previous = suspensionTask
+        suspensionTask = Task {
+            await previous?.value
+            await capture.setSuspended(isSuspended)
+        }
     }
 
     /// Resumes or pauses the analyzer to match what's shown. It looks for

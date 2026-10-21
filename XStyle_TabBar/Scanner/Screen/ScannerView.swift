@@ -14,7 +14,6 @@ struct ScannerView: View {
     /// Whether the Scan tab is showing. The camera only runs while it is.
     let isActive: Bool
     @Environment(\.displayScale) private var displayScale
-    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The latest code found. The sheet keeps showing it while it slides
     /// away after the result closes.
@@ -88,14 +87,7 @@ struct ScannerView: View {
         .onChange(of: displayScale) {
             model.updateDisplayScale(displayScale)
         }
-        .task(id: isCameraActive) {
-            guard isCameraActive else { return }
-            await model.run()
-        }
-    }
-
-    private var isCameraActive: Bool {
-        isActive && scenePhase == .active
+        .modifier(ScannerCameraLifecycle(model: model, sheet: sheet, isActive: isActive, isSideBySide: isSideBySide))
     }
 
     private func header(for code: ScannedCode) -> some View {
@@ -140,6 +132,31 @@ struct ScannerView: View {
             }
         }
         .animation(.smooth, value: model.scannedCode)
+    }
+}
+
+/// Runs the camera while the Scan tab shows, and holds it stopped while the
+/// result sheet rests at full over it: the camera indicator turns off, and
+/// the camera starts again as the sheet leaves full. Its own modifier, so
+/// these changes don't re-run the scanner's layout.
+private struct ScannerCameraLifecycle: ViewModifier {
+    let model: ScannerModel
+    let sheet: SheetController
+    let isActive: Bool
+    /// Side by side, there's no sheet over the camera.
+    let isSideBySide: Bool
+    @Environment(\.scenePhase) private var scenePhase
+
+    func body(content: Content) -> some View {
+        let isCameraActive = isActive && scenePhase == .active
+        content
+            .task(id: isCameraActive) {
+                guard isCameraActive else { return }
+                await model.run()
+            }
+            .onChange(of: !isSideBySide && sheet.restsAtFull, initial: true) { _, isCovered in
+                model.setCameraSuspended(isCovered)
+            }
     }
 }
 

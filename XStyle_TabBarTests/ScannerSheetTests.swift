@@ -130,6 +130,53 @@ struct ScannerSheetTests {
         #expect(sheet.detent == .hidden)
     }
 
+    @Test("Resting at full holds through pulls that spring back, and ends once a drag would leave full")
+    func restsAtFull() {
+        #expect(!sheet(at: .medium).restsAtFull)
+
+        let sheet = sheet(at: .full)
+        #expect(sheet.restsAtFull)
+        // A drag the content takes leaves the sheet at full.
+        sheet.beginDrag()
+        sheet.drag(by: 0, velocity: 0)
+        #expect(sheet.restsAtFull)
+        // A pull past the top of the content, which the release snaps back.
+        sheet.drag(by: SheetTuning.nextDetentDistance, velocity: 0)
+        #expect(sheet.restsAtFull)
+        // Past the snap distance, the release leaves full.
+        sheet.drag(by: 1, velocity: 0)
+        #expect(!sheet.restsAtFull)
+    }
+
+    @Test("A flick down from full ends resting there at once")
+    func flickLeavesFull() {
+        let sheet = sheet(at: .full)
+        sheet.beginDrag()
+        sheet.drag(by: 10, velocity: SheetTuning.nextDetentVelocity + 1)
+        #expect(sheet.restsAtFull)
+        sheet.endDrag(velocity: SheetTuning.nextDetentVelocity + 1)
+        #expect(sheet.detent == .medium)
+        #expect(!sheet.restsAtFull)
+    }
+
+    @Test("Settling at full rests there only once the spring arrives, not as it bounces")
+    func restsAtFullOnArrival() async throws {
+        let tops = metrics.tops(for: canvas)
+        let sheet = sheet(at: .medium)
+        sheet.settle(to: .full, velocity: 0)
+        #expect(!sheet.restsAtFull)
+        var restedAway = false
+        let arrived = try await eventually {
+            if sheet.restsAtFull, sheet.sheetTop != tops.full {
+                restedAway = true
+            }
+            return sheet.restsAtFull
+        }
+        #expect(arrived)
+        #expect(!restedAway)
+        #expect(sheet.sheetTop == tops.full)
+    }
+
     @Test("From full, a drag down stops at medium")
     func dragFromFull() {
         let sheet = sheet(at: .full)
@@ -145,5 +192,13 @@ struct ScannerSheetTests {
         #expect(sheet.feedbackTrigger == trigger)
         sheet.settle(to: .full, velocity: 0)
         #expect(sheet.feedbackTrigger == trigger + 1)
+    }
+
+    private func eventually(_ condition: () -> Bool) async throws -> Bool {
+        for _ in 0..<150 {
+            try await Task.sleep(for: .milliseconds(20))
+            if condition() { return true }
+        }
+        return false
     }
 }

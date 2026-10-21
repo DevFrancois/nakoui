@@ -34,6 +34,11 @@ final class SheetController {
     private(set) var surfaceProgress: CGFloat
     /// Incremented when a detent change should play a haptic.
     private(set) var feedbackTrigger = 0
+    /// Whether the sheet has settled at full and not left it since: set once a settle there ends, not as it bounces
+    /// about full. It ends when the sheet settles toward another detent, or a drag takes it far enough below full to
+    /// leave it on release (`SheetTuning.nextDetentDistance`); a pull past the top of the content that springs back
+    /// keeps it.
+    private(set) var restsAtFull = false
 
     let metrics = SheetMetrics.current
 
@@ -191,6 +196,9 @@ final class SheetController {
 
     /// Springs from the current position and velocity to `target`.
     func settle(to target: SheetDetent, velocity: CGFloat) {
+        if target != .full {
+            restsAtFull = false
+        }
         if target != detent {
             /// Like a native sheet, no detent haptic when it is presented or dismissed.
             let isPresentation = target == .hidden || detent == .hidden
@@ -251,19 +259,32 @@ final class SheetController {
         guard !isDragging else { return }
         rawTop = value
         setDisplayedTop(displayedTop(for: value))
-        let velocity = value == spring.target ? 0 : spring.velocity
-        onVelocityChange?(displayedVelocity(raw: value, velocity: velocity))
+        let hasArrived = value == spring.target
+        if hasArrived {
+            settleDidEnd()
+        }
+        onVelocityChange?(displayedVelocity(raw: value, velocity: hasArrived ? 0 : spring.velocity))
     }
 
     private func place(at top: CGFloat) {
         rawTop = top
         setDisplayedTop(displayedTop(for: top))
+        settleDidEnd()
+    }
+
+    private func settleDidEnd() {
+        if detent == .full {
+            restsAtFull = true
+        }
     }
 
     /// Writes only real changes: every write invalidates the sheet and the pane.
     private func setDisplayedTop(_ top: CGFloat) {
         if sheetTop != top {
             sheetTop = top
+        }
+        if restsAtFull, top > tops.full + SheetTuning.nextDetentDistance {
+            restsAtFull = false
         }
     }
 
