@@ -19,8 +19,9 @@ nonisolated struct SheetMetrics: Equatable, Sendable {
     /// Gaps between the surface and the screen's side and bottom edges.
     var sideInset: DetentValues
     var bottomInset: DetentValues
-    /// Continuous top corner radius; the pane's bottom corners mirror it.
-    var topCornerRadius: CGFloat
+    /// Continuous radius of the sheet's two top corners, along its top edge, under the viewport. Its bottom corners
+    /// follow the screen's (`minimumBottomCornerRadius`); the viewport has its own, `PaneMetrics.viewportCornerRadius`.
+    var sheetTopCornerRadius: CGFloat
     /// The native iOS 26 sheet turns opaque (elevated system background) as it reaches full.
     var fadesToOpaqueAtFull: Bool
     /// The surface's visible height at the collapsed detent; the header fills it.
@@ -30,6 +31,7 @@ nonisolated struct SheetMetrics: Equatable, Sendable {
 
     /// Padding between the surface edge and the header or content.
     static let contentPadding: CGFloat = 18
+    /// The sheet's bottom corners follow the screen's while it floats, never tighter than this.
     static let minimumBottomCornerRadius: CGFloat = 20
     /// The glass sheet's grouped backing below full: enough that the camera or map behind barely tints the sheet, so
     /// its opaque cards always sit on a neutral surface; the glass still shows at the edges and in its highlights.
@@ -60,7 +62,7 @@ nonisolated struct SheetMetrics: Equatable, Sendable {
         /// Below collapsed the surface keeps its collapsed shape, so `hidden` repeats it.
         sideInset: DetentValues(hidden: 28, collapsed: 28, medium: 8, full: 0),
         bottomInset: DetentValues(hidden: 25.85, collapsed: 25.85, medium: 8, full: 0),
-        topCornerRadius: 37,
+        sheetTopCornerRadius: 37,
         fadesToOpaqueAtFull: true,
         headerHeight: 73.45,
         paneSideInset: 8
@@ -73,7 +75,7 @@ nonisolated struct SheetMetrics: Equatable, Sendable {
         fullTopInset: 10,
         sideInset: .constant(0),
         bottomInset: .constant(0),
-        topCornerRadius: 30,
+        sheetTopCornerRadius: 30,
         fadesToOpaqueAtFull: false,
         headerHeight: 82.5,
         paneSideInset: 0

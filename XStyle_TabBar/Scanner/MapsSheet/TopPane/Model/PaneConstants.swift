@@ -11,6 +11,8 @@ nonisolated enum PaneMetrics {
     /// Gap between the pane and the sheet when the sheet is edge-attached (iOS 18).
     /// Floating sheets (iOS 26+) use their own side inset instead, so every gutter matches.
     static let legacyGap: CGFloat = 10
+    /// The scanner viewport's continuous corner radius, on all four corners. Separate from the sheet's.
+    static let viewportCornerRadius: CGFloat = 60
 }
 
 /// Wave springs used by the top pane.

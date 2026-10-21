@@ -30,7 +30,7 @@ struct TopPaneView<Content: View>: View {
                 PaneContainer(
                     layout: layout,
                     stretch: model.stretch,
-                    sheetCornerRadius: sheet.metrics.topCornerRadius,
+                    cornerRadius: PaneMetrics.viewportCornerRadius,
                     showsSquash: showsSquash,
                     onTap: onTap,
                     content: content
@@ -53,7 +53,7 @@ extension EnvironmentValues {
 private struct PaneContainer<Content: View>: View {
     var layout: PaneLayout
     var stretch: CGFloat
-    var sheetCornerRadius: CGFloat
+    var cornerRadius: CGFloat
     var showsSquash: Bool
     var onTap: () -> Void
     var content: Content
@@ -64,7 +64,7 @@ private struct PaneContainer<Content: View>: View {
         let progress = layout.coverProgress
         /// Follows the sheet linearly, so the pane recedes as fast as the finger covers it.
         let coverScale = reduceMotion ? 1 : 1 - (1 - PaneTuning.coveredScale) * progress
-        PaneSurface(sheetCornerRadius: sheetCornerRadius) {
+        PaneSurface(cornerRadius: cornerRadius) {
             content
                 .environment(\.paneIsCovered, progress > 0)
         }

@@ -143,7 +143,7 @@ private struct SheetBackground: ViewModifier {
     @available(iOS 26, *)
     private func glass(_ content: Content) -> some View {
         let shape = ConcentricRectangle(
-            uniformTopCorners: .fixed(metrics.topCornerRadius),
+            uniformTopCorners: .fixed(metrics.sheetTopCornerRadius),
             uniformBottomCorners: .concentric(minimum: .fixed(SheetMetrics.minimumBottomCornerRadius))
         )
         return content
@@ -160,8 +160,8 @@ private struct SheetBackground: ViewModifier {
 
     private func material(_ content: Content) -> some View {
         let shape = UnevenRoundedRectangle(
-            topLeadingRadius: metrics.topCornerRadius,
-            topTrailingRadius: metrics.topCornerRadius,
+            topLeadingRadius: metrics.sheetTopCornerRadius,
+            topTrailingRadius: metrics.sheetTopCornerRadius,
             style: .continuous
         )
         return content
