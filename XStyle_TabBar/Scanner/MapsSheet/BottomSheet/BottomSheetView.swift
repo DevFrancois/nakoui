@@ -27,6 +27,9 @@ struct BottomSheetView: View {
                 /// Headers morph before the content slides under them.
                 .stickySectionScrollContent()
         }
+        /// The tab bar's toolbar comes back as the sheet slides away, and its edge effect would frost the sheet's
+        /// bottom for the length of the slide. The sheet never rests under the bar.
+        .scrollEdgeEffectHidden(true, for: .bottom)
     }
 }
 

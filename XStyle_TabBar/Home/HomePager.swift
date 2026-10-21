@@ -70,8 +70,10 @@ struct HomePager: View {
         }
         // Pages keep their vertical indicators.
         .scrollIndicators(.hidden, axes: .horizontal)
-        // Keep content clear beneath the top menu's safe-area bar.
-        .scrollEdgeEffectHidden(true, for: .top)
+        // Keep content clear beneath the top menu's safe-area bar. The pages
+        // hide their own bottom effect; the pager's, under the tab bar, would
+        // still frost whatever slides there on the Scan tab, like its sheet.
+        .scrollEdgeEffectHidden(true, for: [.top, .bottom])
         .scrollTargetBehavior(HomePagingBehavior(
             gestureID: pager.gestureID,
             pageCount: AppTab.allCases.count,
