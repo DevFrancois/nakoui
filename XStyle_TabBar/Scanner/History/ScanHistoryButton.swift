@@ -25,7 +25,7 @@ struct ScanHistoryButton: View {
     private let tip = ScanHistoryTip()
 
     /// How long the "+1" stays.
-    static let badgeDuration: Duration = .seconds(1.5)
+    static let badgeDuration: Duration = .seconds(1)
 
     var body: some View {
         // The button first, so the tip below never moves it. The tip spans
@@ -76,8 +76,9 @@ struct ScanHistoryButton: View {
                     .transition(badgeTransition)
             }
         }
-        // The pane above drops its transactions' animations; this one is its own.
-        .animation(reduceMotion ? .easeOut(duration: 0.2) : .snappy, value: isBadgeShown)
+        // The pane above drops its transactions' animations; this one is its
+        // own: springy, so the "+1" lands past its spot and settles back.
+        .animation(reduceMotion ? .easeOut(duration: 0.2) : .bouncy(duration: 0.4, extraBounce: 0.1), value: isBadgeShown)
         // A scan happens only with the camera in view, the sheet at medium at
         // most, so the "+1" shows at once. A scan while it shows starts it
         // over.
@@ -98,10 +99,16 @@ struct ScanHistoryButton: View {
         }
     }
 
+    /// Drops in from its own height above, landing with the spring's bounce,
+    /// then floats back up as it fades, like a score. With Reduce Motion, it
+    /// only fades.
     private var badgeTransition: AnyTransition {
         reduceMotion
             ? .opacity
-            : .asymmetric(insertion: .scale(scale: 0.6, anchor: .bottomTrailing).combined(with: .opacity), removal: .opacity)
+            : .asymmetric(
+                insertion: .move(edge: .top).combined(with: .opacity),
+                removal: .move(edge: .top).combined(with: .opacity)
+            )
     }
 }
 
@@ -124,5 +131,23 @@ private struct ScanHistoryBadge: View {
 #if DEBUG
 #Preview {
     ScanHistoryButton(history: PreviewFixtures.makeHistory(seeded: true), showsTip: true, cornerInset: 16, action: {})
+}
+
+/// Each tap records a scan, which plays the "+1", as over the camera.
+#Preview("+1") {
+    @Previewable @State var history = PreviewFixtures.makeHistory(seeded: true)
+
+    VStack(alignment: .leading) {
+        ScanHistoryButton(history: history, showsTip: false, cornerInset: 16, action: {})
+
+        Button("Play +1") {
+            history.record(ScannedCode(value: "4006381333931", symbology: .ean13))
+        }
+        .buttonStyle(.glass)
+        .padding()
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .background(.black)
+    .preferredColorScheme(.dark)
 }
 #endif
