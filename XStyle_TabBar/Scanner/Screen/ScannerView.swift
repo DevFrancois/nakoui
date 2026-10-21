@@ -2,9 +2,9 @@ import SwiftUI
 
 /// The Scan tab: a live camera in the rounded top pane, above the custom
 /// bottom sheet. A code that comes into view raises the sheet to medium with
-/// its report at once, while the camera reveals it with Code Scanner's
-/// animation, then fades back to live; closing the result sends the sheet
-/// below the screen again. Wide windows put the camera and the report side by side.
+/// its report at once, while the camera shows it (`ScanRevealStyle`): brackets
+/// closing on it over the live feed, or Code Scanner's frozen reveal fading
+/// back to live. Closing the result sends the sheet below the screen again. Wide windows put the camera and the report side by side.
 struct ScannerView: View {
     let model: ScannerModel
     /// Owned above the Scan tab, which is rebuilt with every update of the
@@ -53,6 +53,7 @@ struct ScannerView: View {
                 }
             }
         }
+        .environment(\.scanRevealBlur, settings.revealBlur)
         .onGeometryChange(for: Bool.self) { proxy in
             ScannerMetrics.usesSideBySide(in: proxy.size)
         } action: { isSideBySide in
@@ -83,6 +84,9 @@ struct ScannerView: View {
         }
         .onChange(of: settings.scansWithResultOpen, initial: true) {
             model.scansWithResultOpen = settings.scansWithResultOpen
+        }
+        .onChange(of: settings.revealStyle, initial: true) {
+            model.revealStyle = settings.revealStyle
         }
         .onChange(of: displayScale) {
             model.updateDisplayScale(displayScale)

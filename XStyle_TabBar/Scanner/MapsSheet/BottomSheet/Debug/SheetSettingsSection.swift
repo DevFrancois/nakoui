@@ -88,6 +88,27 @@ struct SheetSettingsSection: View {
                     caption: "Another barcode replaces the result. Off, the camera scans again once the result is dismissed.",
                     isOn: $settings.scansWithResultOpen
                 )
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Picker("Found code", selection: $settings.revealStyle) {
+                        ForEach(ScanRevealStyle.allCases, id: \.self) { style in
+                            Text(style.title)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Text(settings.revealStyle.caption)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                SettingToggle(
+                    title: "Blur behind the found code",
+                    caption: "The frozen camera frame blurs as the code lifts off it. Off, it stays sharp.",
+                    isOn: $settings.revealBlur
+                )
+                /// Only the full reveal freezes the camera.
+                .disabled(settings.revealStyle != .fullReveal)
             }
         }
         .padding(16)
@@ -109,6 +130,22 @@ private extension ViewportMode {
         case .resizing: "The camera shrinks above the sheet down to medium, then recedes as the sheet covers it."
         case .fixed: "The camera keeps its size and place, and the sheet covers it."
         case .receding: "The camera stays in place under the sheet, shrinking a little as it opens and more at full."
+        }
+    }
+}
+
+private extension ScanRevealStyle {
+    var title: LocalizedStringResource {
+        switch self {
+        case .liveBrackets: "Live brackets"
+        case .fullReveal: "Full reveal"
+        }
+    }
+
+    var caption: LocalizedStringResource {
+        switch self {
+        case .liveBrackets: "The camera stays live: the brackets close on the code and follow it, then let go."
+        case .fullReveal: "The camera freezes, and the code lifts off the frame into a card with the product icon."
         }
     }
 }

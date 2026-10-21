@@ -34,6 +34,8 @@ final class ScannerModel {
     private(set) var isTorchOn = false
     /// Read when timing the result sheet; the view keeps it current.
     @ObservationIgnored var reduceMotion = false
+    /// How the next found code is shown; the view keeps it current.
+    @ObservationIgnored var revealStyle = ScanRevealStyle.liveBrackets
 
     /// Made on the first run, so creating the model costs nothing at launch.
     @ObservationIgnored private var capture: BarcodeCaptureService?
@@ -353,7 +355,12 @@ final class ScannerModel {
             reveal = ScanReveal(code: detection.code, geometry: previewRotation.map { detection.geometry.reoriented(to: $0) } ?? detection.geometry)
             // The result comes up at once, as the reveal plays in the camera.
             scannedCode = detection.code
-            playReveal { await analyzer.freeze(viewport: self.latestViewport) }
+            switch revealStyle {
+            case .liveBrackets:
+                holdLiveBrackets()
+            case .fullReveal:
+                playReveal { await analyzer.freeze(viewport: self.latestViewport) }
+            }
         case .tracked(let geometry):
             guard let current = reveal, current.frozen == nil else { return }
             // A little smoothing against jitter between frames.
@@ -385,12 +392,28 @@ final class ScannerModel {
                 try? await Task.sleep(for: .seconds(max(current.startDate.addingTimeInterval(fadeTime).timeIntervalSinceNow, 0)))
                 guard !Task.isCancelled else { return }
             }
-            reveal?.close()
-            try? await Task.sleep(for: .seconds(ScanRevealTimeline.closeDuration))
-            guard !Task.isCancelled else { return }
-            reveal = nil
-            updateScanning()
+            await closeReveal()
         }
+    }
+
+    /// Keeps the camera live: the brackets close on the code and follow it,
+    /// then let go, and the camera scans on. The torch stays as it was.
+    private func holdLiveBrackets() {
+        revealTask?.cancel()
+        revealTask = Task {
+            try? await Task.sleep(for: .seconds(ScanRevealTimeline.liveHold))
+            guard !Task.isCancelled else { return }
+            await closeReveal()
+        }
+    }
+
+    /// Fades the reveal out, then scans on.
+    private func closeReveal() async {
+        reveal?.close()
+        try? await Task.sleep(for: .seconds(ScanRevealTimeline.closeDuration))
+        guard !Task.isCancelled else { return }
+        reveal = nil
+        updateScanning()
     }
 
     /// The analyzer's scanning: which code it holds back, and how.

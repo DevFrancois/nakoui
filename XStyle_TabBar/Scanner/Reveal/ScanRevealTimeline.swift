@@ -20,6 +20,9 @@ nonisolated enum ScanRevealTimeline {
     /// When nothing moves any more.
     static let settleTime = 1.75
     static let closeDuration = 0.3
+    /// How long the live brackets hold the code before letting go, over
+    /// `closeDuration`.
+    static let liveHold = 1.0
 
     static let bracketSpring = Spring(duration: 0.24, bounce: 0)
     /// About 8% overshoot, peaking 0.1 s in.

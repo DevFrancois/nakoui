@@ -63,6 +63,20 @@ final class SheetSettings {
         }
     }
 
+    /// How a found code is shown in the camera.
+    var revealStyle: ScanRevealStyle {
+        didSet {
+            defaults.set(revealStyle.rawValue, forKey: Key.revealStyle)
+        }
+    }
+
+    /// The full reveal blurs the frozen camera frame behind the found code; off, the frame stays sharp.
+    var revealBlur: Bool {
+        didSet {
+            defaults.set(revealBlur, forKey: Key.revealBlur)
+        }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -74,6 +88,8 @@ final class SheetSettings {
         sheetBounce = Self.bool(Key.sheetBounce, in: defaults) ?? true
         paneFollowsBounce = Self.bool(Key.paneFollowsBounce, in: defaults) ?? true
         scansWithResultOpen = Self.bool(Key.scansWithResultOpen, in: defaults) ?? true
+        revealStyle = defaults.string(forKey: Key.revealStyle).flatMap(ScanRevealStyle.init(rawValue:)) ?? .liveBrackets
+        revealBlur = Self.bool(Key.revealBlur, in: defaults) ?? true
         /// Settings that are now fixed: forget what earlier builds stored.
         for key in Self.retiredKeys {
             defaults.removeObject(forKey: key)
@@ -93,6 +109,8 @@ final class SheetSettings {
         static let sheetBounce = "sheet.sheetBounce"
         static let paneFollowsBounce = "sheet.paneFollowsBounce"
         static let scansWithResultOpen = "sheet.scansWithResultOpen"
+        static let revealStyle = "sheet.revealStyle"
+        static let revealBlur = "sheet.revealBlur"
     }
 
     private static let retiredKeys = [
