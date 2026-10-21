@@ -4,7 +4,8 @@ import SwiftUI
 /// bottom sheet. A code that comes into view raises the sheet to medium with
 /// its report at once, while the camera shows it (`ScanRevealStyle`): brackets
 /// closing on it over the live feed, or Code Scanner's frozen reveal fading
-/// back to live. Closing the result sends the sheet below the screen again. Wide windows put the camera and the report side by side.
+/// back to live. Closing the result sends the sheet below the screen again.
+/// Wide windows put the camera and the report side by side.
 struct ScannerView: View {
     let model: ScannerModel
     /// Owned above the Scan tab, which is rebuilt with every update of the
@@ -53,7 +54,6 @@ struct ScannerView: View {
                 }
             }
         }
-        .environment(\.scanRevealBlur, settings.revealBlur)
         .onGeometryChange(for: Bool.self) { proxy in
             ScannerMetrics.usesSideBySide(in: proxy.size)
         } action: { isSideBySide in
@@ -76,7 +76,7 @@ struct ScannerView: View {
                 model.scanAgain()
             }
         }
-        .sensoryFeedback(.success, trigger: model.reveal?.code) { _, newCode in
+        .sensoryFeedback(.success, trigger: model.revealedCode) { _, newCode in
             newCode != nil
         }
         .onChange(of: reduceMotion, initial: true) {
@@ -87,6 +87,9 @@ struct ScannerView: View {
         }
         .onChange(of: settings.revealStyle, initial: true) {
             model.revealStyle = settings.revealStyle
+        }
+        .onChange(of: settings.revealBlur, initial: true) {
+            model.revealBlurs = settings.revealBlur
         }
         .onChange(of: displayScale) {
             model.updateDisplayScale(displayScale)

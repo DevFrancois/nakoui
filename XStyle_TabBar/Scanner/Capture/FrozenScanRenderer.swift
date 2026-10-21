@@ -18,8 +18,9 @@ nonisolated enum FrozenScanRenderer {
     ///   - codeQuad: The code in the image, in pixels with y down, in reading
     ///     orientation.
     ///   - viewQuad: The same quad in full-screen view points.
+    ///   - blurs: Whether to make the blurred copy too.
     static func render(_ image: CIImage, rotation: CameraImageRotation, codeQuad: Quad,
-                       viewQuad: Quad, viewSize: CGSize, displayScale: CGFloat) -> FrozenScan? {
+                       viewQuad: Quad, viewSize: CGSize, displayScale: CGFloat, blurs: Bool = true) -> FrozenScan? {
         let layout = RevealLayout(viewSize: viewSize, codeQuad: viewQuad)
 
         let rotated = image.transformed(by: rotation.coreImageTransform(for: image.extent.size))
@@ -28,16 +29,20 @@ nonisolated enum FrozenScanRenderer {
         let upright = rotated.cropped(to: rotated.extent.integral)
         guard let sharp = makeImage(upright, from: upright.extent) else { return nil }
 
-        // A big blur hides the downscale, which makes it about 16x cheaper.
-        // Clamping keeps the edges from fading to transparent.
-        let small = upright.transformed(by: CGAffineTransform(scaleX: 0.25, y: 0.25))
-        let frosted = small.clampedToExtent()
-            .applyingGaussianBlur(sigma: 14)
-            .applyingFilter("CIColorControls", parameters: [
-                kCIInputSaturationKey: 0.9, kCIInputBrightnessKey: 0.08, kCIInputContrastKey: 0.85,
-            ])
-            .cropped(to: small.extent)
-        guard let blurred = makeImage(frosted, from: small.extent) else { return nil }
+        var blurred: CGImage?
+        if blurs {
+            // A big blur hides the downscale, which makes it about 16x cheaper.
+            // Clamping keeps the edges from fading to transparent.
+            let small = upright.transformed(by: CGAffineTransform(scaleX: 0.25, y: 0.25))
+            let frosted = small.clampedToExtent()
+                .applyingGaussianBlur(sigma: 14)
+                .applyingFilter("CIColorControls", parameters: [
+                    kCIInputSaturationKey: 0.9, kCIInputBrightnessKey: 0.08, kCIInputContrastKey: 0.85,
+                ])
+                .cropped(to: small.extent)
+            guard let image = makeImage(frosted, from: small.extent) else { return nil }
+            blurred = image
+        }
 
         guard let patch = flatten(image, codeQuad: codeQuad, size: layout.liftTarget.size, displayScale: displayScale) else { return nil }
         return FrozenScan(

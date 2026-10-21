@@ -23,6 +23,8 @@ nonisolated enum ScanRevealTimeline {
     /// How long the live brackets hold the code before letting go, over
     /// `closeDuration`.
     static let liveHold = 1.0
+    /// With Reduce Motion, how long crossfades take in place of motion.
+    static let reducedMotionFade = 0.2
 
     static let bracketSpring = Spring(duration: 0.24, bounce: 0)
     /// About 8% overshoot, peaking 0.1 s in.
@@ -33,12 +35,20 @@ nonisolated enum ScanRevealTimeline {
     ///   - freezeTime: Seconds since detection when the frozen frame arrived,
     ///     or nil while still live.
     ///   - closeTime: Seconds since the result closed, or nil.
-    static func frame(at time: Double, freezeTime: Double?, closeTime: Double?, reduceMotion: Bool) -> ScanRevealFrame {
+    ///   - style: Live brackets keep their brackets with Reduce Motion, as
+    ///     nothing else shows the code was found.
+    static func frame(
+        at time: Double, freezeTime: Double?, closeTime: Double?, style: ScanRevealStyle = .fullReveal, reduceMotion: Bool
+    ) -> ScanRevealFrame {
         var frame = ScanRevealFrame()
         if let closeTime {
             frame.overlayOpacity = 1 - UnitCurve.easeOut.value(at: progress(closeTime, from: 0, over: closeDuration))
         }
-        if reduceMotion {
+        if reduceMotion, style == .liveBrackets {
+            // Faded in on the code, with no flight.
+            frame.bracketProgress = 1
+            frame.bracketOpacity = progress(time, from: 0, over: reducedMotionFade)
+        } else if reduceMotion {
             frame.bracketOpacity = 0
         } else {
             frame.bracketProgress = CGFloat(bracketSpring.value(target: 1.0, time: max(time, 0)))
@@ -55,7 +65,7 @@ nonisolated enum ScanRevealTimeline {
             frame.lift = 1
             frame.patchOpacity = 0
             frame.bloomTime = .infinity
-            frame.cardOpacity = progress(t, from: freeze, over: 0.2)
+            frame.cardOpacity = progress(t, from: freeze, over: reducedMotionFade)
             frame.iconScale = 1
             frame.iconOpacity = frame.cardOpacity
             return frame

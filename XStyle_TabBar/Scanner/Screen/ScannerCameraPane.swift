@@ -36,11 +36,11 @@ struct ScannerCameraPane: View {
             }
 
             if (model.state == .idle || model.state == .scanning) && !model.isPausedForResult {
-                ScannerViewfinder(isRevealing: model.reveal != nil)
+                ScannerViewfinder(isRevealing: model.revealedCode != nil)
             }
 
-            if let reveal = model.reveal {
-                ScanRevealView(reveal: reveal)
+            if model.revealedCode != nil {
+                ScanRevealLayer(model: model)
             }
 
             if model.state == .denied || model.state == .unavailable {
@@ -107,5 +107,18 @@ struct ScannerCameraPane: View {
                 start = base
                 model.setZoom(base * value.magnification, animated: false)
             }
+    }
+}
+
+/// The reveal over the camera. Its own view, as the only one reading the
+/// reveal as it follows the code, so the pane around it doesn't redraw each
+/// camera frame.
+private struct ScanRevealLayer: View {
+    let model: ScannerModel
+
+    var body: some View {
+        if let reveal = model.reveal {
+            ScanRevealView(reveal: reveal)
+        }
     }
 }

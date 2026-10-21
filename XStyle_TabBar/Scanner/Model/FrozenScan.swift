@@ -6,8 +6,9 @@ nonisolated struct FrozenScan: @unchecked Sendable {
     /// The whole frame, upright, at buffer resolution. Drawn aspect-filled it
     /// lines up with the live preview.
     let sharp: CGImage
-    /// The same frame, downscaled, blurred and frosted.
-    let blurred: CGImage
+    /// The same frame, downscaled, blurred and frosted; nil when the reveal
+    /// keeps the frame sharp.
+    let blurred: CGImage?
     /// The code cut out and flattened at its lifted size, with `patchPadding`
     /// points of transparent border so warped edges stay smooth.
     let patch: CGImage

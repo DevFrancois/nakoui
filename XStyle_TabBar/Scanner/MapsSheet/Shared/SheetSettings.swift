@@ -88,7 +88,7 @@ final class SheetSettings {
         sheetBounce = Self.bool(Key.sheetBounce, in: defaults) ?? true
         paneFollowsBounce = Self.bool(Key.paneFollowsBounce, in: defaults) ?? true
         scansWithResultOpen = Self.bool(Key.scansWithResultOpen, in: defaults) ?? true
-        revealStyle = defaults.string(forKey: Key.revealStyle).flatMap(ScanRevealStyle.init(rawValue:)) ?? .liveBrackets
+        revealStyle = defaults.string(forKey: Key.revealStyle).flatMap(ScanRevealStyle.init(rawValue:)) ?? .standard
         revealBlur = Self.bool(Key.revealBlur, in: defaults) ?? true
         /// Settings that are now fixed: forget what earlier builds stored.
         for key in Self.retiredKeys {

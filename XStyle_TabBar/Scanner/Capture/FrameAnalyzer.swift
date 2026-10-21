@@ -30,6 +30,9 @@ actor FrameAnalyzer {
     private var tracked: (reading: BarcodeReading, frame: CVPixelBuffer)?
     private var lastFrameTime = 0.0
     private var isWarmedUp = false
+    /// Whether found codes are frozen for the reveal, so the freeze's renderer
+    /// is worth warming up.
+    private var freezesCodes = true
     private var flicker = FlickerDetector()
     /// Looks for the faint flicker left once exposures last one whole pulse.
     private var unevenFlicker = FlickerDetector(
@@ -87,14 +90,21 @@ actor FrameAnalyzer {
         mode = .scanning
     }
 
+    /// Call with whether found codes are frozen for the reveal: only then is
+    /// the freeze's renderer warmed up, on a frame with nothing to show.
+    func setFreezesCodes(_ freezes: Bool) {
+        freezesCodes = freezes
+    }
+
     /// Stops looking for codes, such as while the camera is out of view.
     func pause() {
         tracked = nil
         mode = .paused
     }
 
-    /// Stops decoding and prepares the newest frame of the tracked code for the reveal.
-    func freeze(viewport: ScannerViewport?) -> FrozenScan? {
+    /// Stops decoding and prepares the newest frame of the tracked code for the
+    /// reveal, with a blurred copy if `blurs`.
+    func freeze(viewport: ScannerViewport?, blurs: Bool) -> FrozenScan? {
         // The capture queue may still be forwarding the scene's newest
         // geometry. Freeze the retained raw frame in that same configuration.
         if let viewport { setViewport(viewport) }
@@ -109,7 +119,8 @@ actor FrameAnalyzer {
         let bufferQuad = Self.outline(of: tracked.reading)
         return FrozenScanRenderer.render(
             CIImage(cvPixelBuffer: tracked.frame), rotation: screen.rotation, codeQuad: bufferQuad,
-            viewQuad: bufferQuad.map(mapper.viewPoint), viewSize: screen.size, displayScale: screen.displayScale
+            viewQuad: bufferQuad.map(mapper.viewPoint), viewSize: screen.size, displayScale: screen.displayScale,
+            blurs: blurs
         )
     }
 
@@ -156,7 +167,7 @@ actor FrameAnalyzer {
         case .scanning:
             guard let reading = confirmer.confirm(readings, at: time) else {
                 // On a frame with nothing to show, so it never delays a detection.
-                if !isWarmedUp {
+                if freezesCodes, !isWarmedUp {
                     FrozenScanRenderer.warmUp(with: CIImage(cvPixelBuffer: frame))
                     isWarmedUp = true
                 }

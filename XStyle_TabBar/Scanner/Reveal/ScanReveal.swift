@@ -8,6 +8,7 @@ nonisolated struct ScanReveal: Sendable {
     let code: ScannedCode
     /// The code in the live source image, while the camera still runs.
     var geometry: ScanFrameGeometry
+    let style: ScanRevealStyle
     let startDate: Date
     /// The frozen frame, once the camera has stopped.
     private(set) var frozen: FrozenScan?
@@ -15,9 +16,10 @@ nonisolated struct ScanReveal: Sendable {
     private(set) var freezeDate: Date?
     private(set) var closeDate: Date?
 
-    init(code: ScannedCode, geometry: ScanFrameGeometry, startDate: Date = .now) {
+    init(code: ScannedCode, geometry: ScanFrameGeometry, style: ScanRevealStyle = .fullReveal, startDate: Date = .now) {
         self.code = code
         self.geometry = geometry
+        self.style = style
         self.startDate = startDate
     }
 
@@ -42,6 +44,7 @@ nonisolated struct ScanReveal: Sendable {
             at: date.timeIntervalSince(startDate),
             freezeTime: freezeTime,
             closeTime: closeDate.map { date.timeIntervalSince($0) },
+            style: style,
             reduceMotion: reduceMotion
         )
     }
