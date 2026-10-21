@@ -23,7 +23,11 @@ nonisolated enum ScannerMetrics {
     static let bracketOutset = 6.0
     /// Keeps white brackets visible on white labels.
     static let bracketShadowOpacity = 0.35
-    static let scrimOpacity = 0.45
+    /// Dims the camera around the viewfinder.
+    static let scrimOpacity = 0.35
+    /// Dims what's behind a message that takes the camera's place, such as
+    /// the last frame of a camera that failed to start again.
+    static let messageScrimOpacity = 0.45
 
     /// Wide windows at least this wide put the result pane beside the camera.
     static let sideBySideMinimumWidth = 600.0

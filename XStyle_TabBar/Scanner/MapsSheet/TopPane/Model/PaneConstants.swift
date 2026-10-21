@@ -13,6 +13,8 @@ nonisolated enum PaneMetrics {
     static let legacyGap: CGFloat = 10
     /// The scanner viewport's continuous corner radius, on all four corners. Separate from the sheet's.
     static let viewportCornerRadius: CGFloat = 60
+    /// The white edge around the viewport in dark mode, so it stands out from the black background.
+    static let darkEdgeOpacity = 0.15
 }
 
 /// Wave springs used by the top pane.

@@ -32,7 +32,7 @@ struct ScannerCameraPane: View {
                 CameraPreview(host: previewHost, session: session, device: device,
                               onRotationChange: model.updatePreviewRotation)
             } else {
-                ScannerBackdropPlaceholder()
+                ScannerBackdropPlaceholder(showsLabel: Self.showsSimulatedLabel && !isUnavailable)
             }
 
             if (model.state == .idle || model.state == .scanning) && !model.isPausedForResult {
@@ -43,10 +43,10 @@ struct ScannerCameraPane: View {
                 ScanRevealLayer(model: model)
             }
 
-            if model.state == .denied || model.state == .unavailable {
+            if isUnavailable {
                 ScannerUnavailableView(state: model.state)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.black.opacity(ScannerMetrics.scrimOpacity))
+                    .background(.black.opacity(ScannerMetrics.messageScrimOpacity))
             }
         }
         .background(.black)
@@ -93,6 +93,23 @@ struct ScannerCameraPane: View {
     /// revealed, a result is waited on, or the sheet covers the pane.
     private var isAiming: Bool {
         model.isAiming && !paneIsCovered
+    }
+
+    /// The placeholder's product label is the simulated camera's subject, so
+    /// it only shows where there's no camera: on a device, nothing stands in
+    /// while the camera starts. Never behind a message that takes the
+    /// camera's place.
+    private static let showsSimulatedLabel: Bool = {
+        #if targetEnvironment(simulator)
+        true
+        #else
+        false
+        #endif
+    }()
+
+    /// Access was refused, or there's no camera to use.
+    private var isUnavailable: Bool {
+        model.state == .denied || model.state == .unavailable
     }
 
     private var canZoom: Bool {

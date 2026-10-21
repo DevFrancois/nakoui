@@ -3,8 +3,8 @@ import SwiftUI
 /// Stands in for the camera feed in previews and the Simulator: a dim scene
 /// with a product barcode label lined up in the viewfinder.
 struct ScannerBackdropPlaceholder: View {
-    /// A real EAN-13, so the simulated camera has something to decode.
-    private static let modules = EAN13Modules.modules(for: ScannedCode.sampleEAN13.value) ?? []
+    /// Off behind a message that takes the camera's place.
+    var showsLabel = true
     private static let labelTilt = Angle.degrees(-3)
 
     /// The label's corners in `bounds`, the full screen. The simulated scan
@@ -27,25 +27,37 @@ struct ScannerBackdropPlaceholder: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let label = Self.labelRect(in: CGRect(origin: .zero, size: proxy.size))
+            if showsLabel {
+                let label = Self.labelRect(in: CGRect(origin: .zero, size: proxy.size))
 
-            VStack(spacing: 4) {
-                Canvas(renderer: drawBars)
-
-                Text(ScannedCode.sampleEAN13.value)
-                    .font(.footnote.monospaced())
-                    .foregroundStyle(.black)
+                ScannerBarcodeLabel()
+                    .frame(width: label.width, height: label.height)
+                    .rotationEffect(Self.labelTilt)
+                    .position(x: label.midX, y: label.midY)
             }
-            .padding()
-            .frame(width: label.width, height: label.height)
-            .background(.white, in: .rect(cornerRadius: 8))
-            .rotationEffect(Self.labelTilt)
-            .position(x: label.midX, y: label.midY)
         }
         .background {
             LinearGradient(colors: [Color(white: 0.3), Color(white: 0.08)], startPoint: .top, endPoint: .bottom)
         }
         .accessibilityHidden(true)
+    }
+}
+
+/// A white product label printed with the sample EAN-13, filling its frame.
+private struct ScannerBarcodeLabel: View {
+    /// A real EAN-13, so the simulated camera has something to decode.
+    private static let modules = EAN13Modules.modules(for: ScannedCode.sampleEAN13.value) ?? []
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Canvas(renderer: drawBars)
+
+            Text(ScannedCode.sampleEAN13.value)
+                .font(.footnote.monospaced())
+                .foregroundStyle(.black)
+        }
+        .padding()
+        .background(.white, in: .rect(cornerRadius: 8))
     }
 
     private func drawBars(in context: inout GraphicsContext, size: CGSize) {
