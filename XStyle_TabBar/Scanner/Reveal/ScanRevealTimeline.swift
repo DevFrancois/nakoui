@@ -17,8 +17,6 @@ nonisolated enum ScanRevealTimeline {
     static let bracketFadeDuration = 0.05
     static let bloomStart = 1.13
     static let iconStart = 1.47
-    /// When the result sheet comes up: as the icon settles.
-    static let resultTime = 1.6
     /// When nothing moves any more.
     static let settleTime = 1.75
     static let closeDuration = 0.3
@@ -69,11 +67,6 @@ nonisolated enum ScanRevealTimeline {
             frame.iconScale = CGFloat(iconSpring.value(target: 1.0, time: t - iconStart))
         }
         return frame
-    }
-
-    /// Seconds since detection when the result sheet should appear.
-    static func resultTime(freezeTime: Double, reduceMotion: Bool) -> Double {
-        freezeTime - freeze + (reduceMotion ? 0.6 : resultTime)
     }
 
     /// Seconds since detection when the reveal has played out and fades back

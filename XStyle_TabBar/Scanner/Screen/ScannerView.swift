@@ -1,10 +1,10 @@
 import SwiftUI
 
 /// The Scan tab: a live camera in the rounded top pane, above the custom
-/// bottom sheet. A code that comes into view is revealed with Code Scanner's
-/// animation, then the sheet rises to medium with its report while the reveal
-/// fades back to the live camera; closing the result sends it below the
-/// screen again. Wide windows put the camera and the report side by side.
+/// bottom sheet. A code that comes into view raises the sheet to medium with
+/// its report at once, while the camera reveals it with Code Scanner's
+/// animation, then fades back to live; closing the result sends the sheet
+/// below the screen again. Wide windows put the camera and the report side by side.
 struct ScannerView: View {
     let model: ScannerModel
     /// Owned above the Scan tab, which is rebuilt with every update of the

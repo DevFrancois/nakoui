@@ -328,6 +328,8 @@ final class ScannerModel {
             scanningPlan = nil
             closedCode = nil
             reveal = ScanReveal(code: detection.code, geometry: previewRotation.map { detection.geometry.reoriented(to: $0) } ?? detection.geometry)
+            // The result comes up at once, as the reveal plays in the camera.
+            scannedCode = detection.code
             playReveal { await analyzer.freeze(viewport: self.latestViewport) }
         case .tracked(let geometry):
             guard let current = reveal, current.frozen == nil else { return }
@@ -337,8 +339,8 @@ final class ScannerModel {
         }
     }
 
-    /// Freezes the frame on time, brings up the result as the icon settles,
-    /// then fades back to the live camera, which scans on.
+    /// Freezes the frame on time, then fades back to the live camera, which
+    /// scans on.
     private func playReveal(freeze: @escaping () async -> FrozenScan?) {
         revealTask?.cancel()
         revealTask = Task {
@@ -355,12 +357,6 @@ final class ScannerModel {
                 reveal?.freeze(frozen)
             }
             guard let current = reveal else { return }
-            if let freezeTime = current.freezeTime {
-                let resultTime = ScanRevealTimeline.resultTime(freezeTime: freezeTime, reduceMotion: reduceMotion)
-                try? await Task.sleep(for: .seconds(max(current.startDate.addingTimeInterval(resultTime).timeIntervalSinceNow, 0)))
-                guard !Task.isCancelled else { return }
-            }
-            scannedCode = current.code
             if let freezeTime = current.freezeTime {
                 let fadeTime = ScanRevealTimeline.fadeTime(freezeTime: freezeTime, reduceMotion: reduceMotion)
                 try? await Task.sleep(for: .seconds(max(current.startDate.addingTimeInterval(fadeTime).timeIntervalSinceNow, 0)))
