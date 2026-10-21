@@ -10,7 +10,7 @@ struct ScanHistoryTip: Tip {
     }
 
     var message: Text? {
-        Text("Every product you scan is kept here, to look at again.")
+        Text("Every product you scan is kept here.")
     }
 
     var image: Image? {

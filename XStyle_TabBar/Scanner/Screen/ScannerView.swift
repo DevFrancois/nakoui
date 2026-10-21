@@ -6,7 +6,7 @@ import SwiftUI
 /// closing on it over the live feed, or Code Scanner's frozen reveal fading
 /// back to live. Closing the result sends the sheet below the screen again.
 /// Every scan goes into the history, which a button in the camera's top-leading
-/// corner opens in the same sheet once the first result has closed. Wide windows put the
+/// corner opens in the same sheet, at full, once the first result has closed. Wide windows put the
 /// camera and the report side by side.
 struct ScannerView: View {
     let model: ScannerModel
@@ -195,14 +195,19 @@ struct ScannerView: View {
         apply(sheetState.close())
     }
 
-    /// Carries out a route change, after the route itself has changed: closing
-    /// a result for the history then leaves the sheet up.
+    /// Carries out a route change, after the route itself has changed: the
+    /// sheet takes the new route's detents, and closing a result for the
+    /// history then leaves the sheet up.
     private func apply(_ effects: [ScanSheetEffect]) {
+        if let detents = sheetState.route?.detents, sheet.presentationDetents != detents {
+            sheet.presentationDetents = detents
+        }
         for effect in effects {
             switch effect {
-            case .present:
-                if sheet.detent == .hidden {
-                    sheet.settle(to: .medium, velocity: 0)
+            case .present(let detent):
+                // Never down: a result found over the history keeps its place.
+                if sheet.detent < detent {
+                    sheet.settle(to: detent, velocity: 0)
                 }
             case .hide:
                 // Already hidden when dragged away: settling again would drop

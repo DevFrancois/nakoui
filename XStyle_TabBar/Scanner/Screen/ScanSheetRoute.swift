@@ -6,12 +6,24 @@ nonisolated enum ScanSheetRoute: Equatable, Sendable {
     case history
     /// A product from the history, with a way back to the list.
     case entry(ScannedCode)
+
+    /// Where the sheet may rest showing it: a result at medium too, under the
+    /// camera; the history and its products only at full, so a swipe down
+    /// closes them at once.
+    var detents: Set<SheetDetent> {
+        switch self {
+        case .result:
+            [.medium, .full]
+        case .history, .entry:
+            [.full]
+        }
+    }
 }
 
 /// What the view does for a route change.
 nonisolated enum ScanSheetEffect: Equatable, Sendable {
-    /// Bring the sheet up, if it's hidden.
-    case present
+    /// Bring the sheet up to this detent, if it's lower: never down.
+    case present(SheetDetent)
     /// Send the sheet below the screen.
     case hide
     /// Close the live result, which scans again.
@@ -26,7 +38,7 @@ nonisolated struct ScanSheetState: Equatable, Sendable {
     /// A code was found: its result replaces whatever shows.
     mutating func found(_ code: ScannedCode) -> [ScanSheetEffect] {
         route = .result(code)
-        return [.present]
+        return [.present(.medium)]
     }
 
     /// The live result closed. The sheet goes away only if it was showing it:
@@ -37,11 +49,11 @@ nonisolated struct ScanSheetState: Equatable, Sendable {
     }
 
     /// The history button: the list replaces a live result, which closes, as
-    /// it's now at the top of the history.
+    /// it's now at the top of the history. It opens at full.
     mutating func showHistory() -> [ScanSheetEffect] {
         let wasResult = if case .result = route { true } else { false }
         route = .history
-        return wasResult ? [.closeResult, .present] : [.present]
+        return wasResult ? [.closeResult, .present(.full)] : [.present(.full)]
     }
 
     /// A product picked from the history.

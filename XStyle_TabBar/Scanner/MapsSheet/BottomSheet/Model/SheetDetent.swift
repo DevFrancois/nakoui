@@ -15,6 +15,13 @@ nonisolated enum SheetDetent: String, CaseIterable, Sendable {
     case full
 }
 
+extension SheetDetent: Comparable {
+    /// Lower detents first, in `allCases` order.
+    static func < (lhs: SheetDetent, rhs: SheetDetent) -> Bool {
+        allCases.firstIndex(of: lhs)! < allCases.firstIndex(of: rhs)!
+    }
+}
+
 /// One value per detent: the sheet tops, or a metric interpolated between detents.
 nonisolated struct DetentValues: Equatable, Sendable {
     var hidden: CGFloat

@@ -8,7 +8,7 @@ struct ScanSheetRouteTests {
     @Test("A found code shows its result and brings the sheet up")
     func foundShowsResult() {
         var state = ScanSheetState()
-        #expect(state.found(found) == [.present])
+        #expect(state.found(found) == [.present(.medium)])
         #expect(state.route == .result(found))
     }
 
@@ -22,24 +22,24 @@ struct ScanSheetRouteTests {
         #expect(state.route == .result(found))
     }
 
-    @Test("The history replaces a live result, closing it, and leaves the sheet up as the result closes")
+    @Test("The history replaces a live result, closing it, and raises the sheet to full as the result closes")
     func historyReplacesResult() {
         var state = ScanSheetState()
         _ = state.found(found)
 
-        #expect(state.showHistory() == [.closeResult, .present])
+        #expect(state.showHistory() == [.closeResult, .present(.full)])
         #expect(state.route == .history)
         #expect(state.resultClosed() == [])
     }
 
-    @Test("The history opens the sheet when nothing shows", arguments: [false, true])
+    @Test("The history opens the sheet at full when nothing shows", arguments: [false, true])
     func historyPresents(afterPicking: Bool) {
         var state = ScanSheetState()
         if afterPicking {
             _ = state.showHistory()
             _ = state.show(picked)
         }
-        #expect(state.showHistory() == [.present])
+        #expect(state.showHistory() == [.present(.full)])
         #expect(state.route == .history)
     }
 
@@ -80,13 +80,20 @@ struct ScanSheetRouteTests {
         #expect(state.route == .entry(picked))
     }
 
+    @Test("A result rests at medium or full; the history and its products only at full")
+    func detentsByRoute() {
+        #expect(ScanSheetRoute.result(found).detents == [.medium, .full])
+        #expect(ScanSheetRoute.history.detents == [.full])
+        #expect(ScanSheetRoute.entry(picked).detents == [.full])
+    }
+
     @Test("A scan while the history shows switches to its result")
     func scanOverHistory() {
         var state = ScanSheetState()
         _ = state.showHistory()
         _ = state.show(picked)
 
-        #expect(state.found(found) == [.present])
+        #expect(state.found(found) == [.present(.medium)])
         #expect(state.route == .result(found))
     }
 }

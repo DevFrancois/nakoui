@@ -45,6 +45,10 @@ final class SheetController {
 
     let metrics = SheetMetrics.current
 
+    /// The detents a release or VoiceOver may rest the sheet at besides hidden, as `presentationDetents(_:)` sets them
+    /// for a native sheet. Without medium, a swipe down from full dismisses it.
+    var presentationDetents: Set<SheetDetent> = [.medium, .full]
+
     @ObservationIgnored var reduceMotion = false
     /// Debug settings: settle with the bouncy spring, and let the pane follow the overshoot.
     @ObservationIgnored var bounces = true
@@ -107,6 +111,11 @@ final class SheetController {
     var isAtOrAboveFull: Bool {
         guard let sheetTop, canvas.size.height > 0 else { return false }
         return sheetTop <= tops.full + SheetTuning.edgeTolerance
+    }
+
+    /// Where the sheet may rest, from the lowest: hidden, then `presentationDetents`.
+    var availableDetents: [SheetDetent] {
+        SheetDetent.allCases.filter { $0 == .hidden || presentationDetents.contains($0) }
     }
 
     /// How far the sheet can still rise before it reaches full.
@@ -245,7 +254,7 @@ final class SheetController {
 
     // MARK: - Snap rule
 
-    /// SplitPaneKit's rule: past 70 pt of travel or 300 pt/s, the nearest detent beyond the sheet in that
+    /// SplitPaneKit's rule: past 70 pt of travel or 300 pt/s, the nearest available detent beyond the sheet in that
     /// direction (never skipping one); otherwise the current detent.
     private func nextDetent(releaseVelocity velocity: CGFloat) -> SheetDetent {
         guard let current = sheetTop else { return detent }
@@ -257,12 +266,13 @@ final class SheetController {
         let tops = tops
         let tolerance = canvas.size.height * SheetTuning.nextDetentTolerance
         let movingDown = isFast ? velocity > 0 : travel > 0
-        /// `allCases` runs from the lowest detent (largest top) to the highest.
+        /// Runs from the lowest detent (largest top) to the highest.
+        let detents = availableDetents
         if movingDown {
-            /// Below medium there is only `hidden`: the release dismisses the result.
-            return SheetDetent.allCases.last { tops[$0] > current + tolerance } ?? .hidden
+            /// Below the lowest presented detent there is only `hidden`: the release dismisses the sheet.
+            return detents.last { tops[$0] > current + tolerance } ?? .hidden
         }
-        return SheetDetent.allCases.first { tops[$0] < current - tolerance } ?? .full
+        return detents.first { tops[$0] < current - tolerance } ?? detents.last ?? .full
     }
 
     // MARK: - Position

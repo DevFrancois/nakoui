@@ -40,8 +40,10 @@ struct SheetContainer<Header: View, Content: View>: View {
                 .accessibilityAction(named: "Expand") {
                     move(by: 1)
                 }
-                /// One step down from medium dismisses the sheet.
-                .accessibilityAction(named: controller.detent == .medium ? "Close" : "Collapse") {
+                /// One step down from the lowest presented detent dismisses the sheet.
+                .accessibilityAction(
+                    named: controller.availableDetents.dropFirst().first == controller.detent ? "Close" : "Collapse"
+                ) {
                     move(by: -1)
                 }
                 /// Dismissed, it is only sliding away.
@@ -66,9 +68,9 @@ struct SheetContainer<Header: View, Content: View>: View {
         }
     }
 
-    /// One detent up (positive) or down (negative), for VoiceOver.
+    /// One available detent up (positive) or down (negative), for VoiceOver.
     private func move(by step: Int) {
-        let detents = SheetDetent.allCases
+        let detents = controller.availableDetents
         guard let index = detents.firstIndex(of: controller.detent) else { return }
         let target = detents[min(max(index + step, 0), detents.count - 1)]
         controller.settle(to: target, velocity: 0)

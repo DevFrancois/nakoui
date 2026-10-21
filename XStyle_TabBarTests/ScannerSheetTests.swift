@@ -34,6 +34,13 @@ struct ScannerSheetTests {
         sheet.endDrag(velocity: 0)
     }
 
+    @Test("Detents order from the lowest to the highest")
+    func detentOrder() {
+        #expect(SheetDetent.hidden < .medium)
+        #expect(SheetDetent.medium < .full)
+        #expect(!(SheetDetent.full < .full))
+    }
+
     @Test("The hidden sheet rests below the screen, under every detent")
     func hiddenIsLowest() {
         let tops = metrics.tops(for: canvas)
@@ -195,6 +202,27 @@ struct ScannerSheetTests {
         sheet.endDrag(velocity: SheetTuning.nextDetentVelocity + 1)
         #expect(sheet.detent == .medium)
         #expect(!sheet.restsAtFull)
+    }
+
+    @Test("Presented only at full, a drag down past the threshold or a flick dismisses; a short drag stays")
+    func dragFromFullOnly() {
+        let short = sheet(at: .full)
+        short.presentationDetents = [.full]
+        #expect(short.availableDetents == [.hidden, .full])
+        release(short, afterDraggingBy: SheetTuning.nextDetentDistance - 1)
+        #expect(short.detent == .full)
+
+        let long = sheet(at: .full)
+        long.presentationDetents = [.full]
+        release(long, afterDraggingBy: SheetTuning.nextDetentDistance + 1)
+        #expect(long.detent == .hidden)
+
+        let flick = sheet(at: .full)
+        flick.presentationDetents = [.full]
+        flick.beginDrag()
+        flick.drag(by: 10, velocity: SheetTuning.nextDetentVelocity + 1)
+        flick.endDrag(velocity: SheetTuning.nextDetentVelocity + 1)
+        #expect(flick.detent == .hidden)
     }
 
     @Test("Settling at full rests there only once the spring arrives, not as it bounces")
