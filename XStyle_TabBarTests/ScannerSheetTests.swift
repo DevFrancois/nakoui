@@ -1,4 +1,5 @@
 import CoreGraphics
+import Observation
 import Testing
 @testable import XStyle_TabBar
 
@@ -214,6 +215,51 @@ struct ScannerSheetTests {
         #expect(sheet.sheetTop == tops.full)
     }
 
+    @Test("A settle reaches its detent once it meets or passes it, from either side")
+    func settleReachesDetent() {
+        // Up from hidden to medium.
+        #expect(!SheetController.hasReached(497, from: 874, at: 600))
+        #expect(SheetController.hasReached(497, from: 874, at: 497))
+        #expect(SheetController.hasReached(497, from: 874, at: 490))
+        // Down from full to medium.
+        #expect(!SheetController.hasReached(497, from: 62, at: 300))
+        #expect(SheetController.hasReached(497, from: 62, at: 500))
+    }
+
+    @Test("A drag counts as past medium wherever it holds the sheet above it")
+    func dragPastMedium() {
+        let sheet = sheet(at: .medium)
+        #expect(!sheet.isPastMedium)
+        sheet.beginDrag()
+        sheet.drag(by: -10, velocity: 0)
+        #expect(sheet.isPastMedium)
+        sheet.drag(by: 20, velocity: 0)
+        #expect(!sheet.isPastMedium)
+    }
+
+    @Test("A settle's bounce about medium never counts as past it", arguments: [SheetDetent.hidden, .full])
+    func bounceAboutMedium(from start: SheetDetent) async throws {
+        let tops = metrics.tops(for: canvas)
+        let sheet = sheet(at: start)
+        #expect(sheet.bounces)
+        #expect(sheet.isPastMedium == (start == .full))
+        let changes = ChangeCounter { sheet.isPastMedium }
+
+        sheet.settle(to: .medium, velocity: 0)
+        // The sheet itself does swing past medium, away from where it came from.
+        var overshot = false
+        #expect(try await eventually {
+            if let top = sheet.sheetTop, start == .full ? top > tops.medium : top < tops.medium {
+                overshot = true
+            }
+            return sheet.sheetTop == tops.medium
+        })
+        #expect(overshot)
+        #expect(!sheet.isPastMedium)
+        // From full it leaves past medium once, as it first reaches medium; from hidden it never gets there.
+        #expect(changes.count == (start == .full ? 1 : 0))
+    }
+
     @Test("From full, a drag down stops at medium")
     func dragFromFull() {
         let sheet = sheet(at: .full)
@@ -237,5 +283,28 @@ struct ScannerSheetTests {
             if condition() { return true }
         }
         return false
+    }
+}
+
+/// Counts every change of an observed value, re-observing after each.
+@MainActor
+private final class ChangeCounter {
+    private(set) var count = 0
+    private let read: () -> Bool
+
+    init(_ read: @escaping () -> Bool) {
+        self.read = read
+        observe()
+    }
+
+    private func observe() {
+        withObservationTracking {
+            _ = read()
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.count += 1
+                self?.observe()
+            }
+        }
     }
 }

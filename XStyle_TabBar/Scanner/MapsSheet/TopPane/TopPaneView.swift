@@ -50,6 +50,7 @@ struct TopPaneView<Content: View, Footer: View>: View {
 
                 PaneContainer(
                     layout: layout,
+                    isCovered: sheet.isPastMedium,
                     stretch: model.stretch,
                     cornerRadius: PaneMetrics.viewportCornerRadius,
                     /// The stretch only shows on a pane that follows the sheet.
@@ -66,13 +67,16 @@ struct TopPaneView<Content: View, Footer: View>: View {
 }
 
 extension EnvironmentValues {
-    /// Whether the sheet has risen past medium, over the pane. It flips only at medium, not on every frame.
+    /// Whether the sheet has risen past medium, over the pane. It flips as the sheet is carried past medium, not on
+    /// every frame, nor as it bounces about a detent.
     @Entry var paneIsCovered = false
 }
 
 /// Scales the card in its own coordinates, then places it below the top safe area.
 private struct PaneContainer<Content: View>: View {
     var layout: PaneLayout
+    /// The sheet past medium, leaving out its bounce: the cover the content reacts to. The scale follows the bounce.
+    var isCovered: Bool
     var stretch: CGFloat
     var cornerRadius: CGFloat
     var showsSquash: Bool
@@ -85,7 +89,7 @@ private struct PaneContainer<Content: View>: View {
         let coverScale = reduceMotion ? 1 : layout.scale
         PaneSurface(cornerRadius: cornerRadius) {
             content
-                .environment(\.paneIsCovered, progress > 0)
+                .environment(\.paneIsCovered, isCovered)
         }
         .frame(width: layout.paneFrame.width, height: layout.paneFrame.height)
         .scaleEffect(x: squash * coverScale, y: coverScale)

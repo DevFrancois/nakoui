@@ -39,6 +39,9 @@ final class SheetController {
     /// leave it on release (`SheetTuning.nextDetentDistance`); a pull past the top of the content that springs back
     /// keeps it.
     private(set) var restsAtFull = false
+    /// Whether the sheet is above medium, over the pane: where a drag holds it, or where a settle carries it until it
+    /// first reaches its detent. The bounce about that detent never counts, so it flips once per move past medium.
+    private(set) var isPastMedium = false
 
     let metrics = SheetMetrics.current
 
@@ -57,6 +60,8 @@ final class SheetController {
     @ObservationIgnored private var isHeld = false
     /// Where the running settle started, which tells its overshoot from its approach; nil otherwise.
     @ObservationIgnored private var settleOrigin: CGFloat?
+    /// The running settle has met or passed its destination: what follows is its bounce.
+    @ObservationIgnored private var hasReachedDestination = false
 
     private let spring = SpringAnimator<CGFloat>(spring: SheetSprings.bouncy)
     private let surfaceSpring = SpringAnimator<CGFloat>(spring: SheetSprings.surface)
@@ -129,6 +134,7 @@ final class SheetController {
         spring.stop()
         isHeld = true
         settleOrigin = nil
+        hasReachedDestination = false
         onVelocityChange?(0)
         SheetTrace.log("hold top=\(sheetTop ?? .nan)")
     }
@@ -149,6 +155,7 @@ final class SheetController {
         isHeld = false
         isDragging = true
         settleOrigin = nil
+        hasReachedDestination = false
         dragStartTop = sheetTop
     }
 
@@ -220,11 +227,13 @@ final class SheetController {
                 spring.stop()
             }
             settleOrigin = nil
+            hasReachedDestination = false
             place(at: destination)
             onVelocityChange?(0)
             return
         }
         settleOrigin = rawTop
+        hasReachedDestination = false
         /// A dismissal doesn't bounce: swinging back above the screen's edge would draw the sheet again.
         spring.spring = target == .hidden ? dismissalSpring : currentSpring
         spring.target = destination
@@ -255,8 +264,16 @@ final class SheetController {
 
     // MARK: - Position
 
+    /// Whether a settle from `origin` has met `destination` or passed it by `value`, into its bounce.
+    nonisolated static func hasReached(_ destination: CGFloat, from origin: CGFloat, at value: CGFloat) -> Bool {
+        (origin - destination) * (value - destination) <= 0
+    }
+
     private func springDidChange(_ value: CGFloat) {
         guard !isDragging else { return }
+        if !hasReachedDestination, let settleOrigin, let destination = spring.target {
+            hasReachedDestination = Self.hasReached(destination, from: settleOrigin, at: value)
+        }
         rawTop = value
         setDisplayedTop(displayedTop(for: value))
         let hasArrived = value == spring.target
@@ -285,6 +302,12 @@ final class SheetController {
         }
         if restsAtFull, top > tops.full + SheetTuning.nextDetentDistance {
             restsAtFull = false
+        }
+        /// Once a settle reaches its detent, it counts as there while it bounces about it.
+        let coverTop = hasReachedDestination ? tops[detent] : top
+        let isPast = coverTop < tops.medium
+        if isPastMedium != isPast {
+            isPastMedium = isPast
         }
     }
 
