@@ -5,8 +5,8 @@ import SwiftUI
 /// its report at once, while the camera shows it (`ScanRevealStyle`): brackets
 /// closing on it over the live feed, or Code Scanner's frozen reveal fading
 /// back to live. Closing the result sends the sheet below the screen again.
-/// Every scan goes into the history, which a button under the camera opens in
-/// the same sheet once the first result has closed. Wide windows put the
+/// Every scan goes into the history, which a button in the camera's top-leading
+/// corner opens in the same sheet once the first result has closed. Wide windows put the
 /// camera and the report side by side.
 struct ScannerView: View {
     let model: ScannerModel
@@ -36,40 +36,25 @@ struct ScannerView: View {
                     breakpoint: .constant(.half), breakpoints: [.half],
                     sideBySideFraction: ScannerMetrics.sideBySideResultFraction
                 ) {
-                    ScannerCameraPane(model: model, previewHost: previewHost)
-                        // Over the camera's top-leading corner, clear of the
-                        // island; its tip stays over the camera too.
-                        .overlay(alignment: .topLeading) {
-                            if history.isButtonRevealed {
-                                historyButton
-                                    .padding(16)
-                            }
-                        }
+                    // The pane's top-leading corner is the screen's: inset
+                    // clear of the island.
+                    cameraPane(historyButtonInset: 16)
                 } bottom: {
                     sideResult
                 }
             } else {
                 PaneSheetLayout(sheet: sheet, settings: settings) {
-                    ScannerCameraPane(model: model, previewHost: previewHost)
+                    // Concentric with the viewport's rounded corner.
+                    cameraPane(historyButtonInset: PaneMetrics.viewportCornerRadius - TopMenuMetrics.minimumTapSize / 2)
                 } paneFooter: {
-                    // The hint until the first result closes, then the
-                    // history button in its place, at the far left, with its
-                    // tip beside it the first time.
+                    // The hint until the first result closes; then the
+                    // camera eases into its room. In a stack, which reports
+                    // no height once it's empty.
                     ZStack {
-                        if history.isButtonRevealed {
-                            historyButton
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .transition(.opacity)
-                        } else {
+                        if !history.isButtonRevealed {
                             ScannerAimingHint(isShown: model.isAiming && model.scannedCode == nil && !history.hasScanned)
                         }
                     }
-                    // The button's height from the start, so the camera
-                    // keeps its frame as the button takes the hint's place.
-                    .frame(minHeight: TopMenuMetrics.minimumTapSize)
-                    // The pane drops its transactions' animations; this one
-                    // is its own.
-                    .animation(.easeOut(duration: 0.2), value: history.isButtonRevealed)
                 } header: {
                     sheetHeader(for: sheetState.route)
                 } content: {
@@ -119,9 +104,26 @@ struct ScannerView: View {
         .modifier(ScannerCameraLifecycle(model: model, sheet: sheet, isActive: isActive, isSideBySide: isSideBySide))
     }
 
-    /// Shown once the first result has closed.
-    private var historyButton: some View {
-        ScanHistoryButton(history: history, action: openHistory)
+    /// The camera, with the history button over its top-leading corner once
+    /// the first result has closed. Its tip waits for the sheet to go.
+    private func cameraPane(historyButtonInset: CGFloat) -> some View {
+        ScannerCameraPane(model: model, previewHost: previewHost)
+            .overlay(alignment: .topLeading) {
+                ZStack {
+                    if history.isButtonRevealed {
+                        ScanHistoryButton(
+                            history: history, showsTip: sheet.detent == .hidden, cornerInset: historyButtonInset,
+                            action: openHistory
+                        )
+                        .transition(.opacity)
+                    }
+                }
+                // The pane drops its transactions' animations; this one is
+                // its own.
+                .animation(.easeOut(duration: 0.2), value: history.isButtonRevealed)
+                // Camera chrome, like the controls at its foot.
+                .environment(\.colorScheme, .dark)
+            }
     }
 
     @ViewBuilder

@@ -35,7 +35,6 @@ struct TopPaneView<Content: View, Footer: View>: View {
                 /// Under the pane: the footer takes its new height at once while the pane eases, so growing it
                 /// comes out from under the pane rather than over it.
                 footer
-                    .environment(\.paneFooterIsCovered, layout.isFooterCovered)
                     .onGeometryChange(for: CGFloat.self) { proxy in
                         proxy.size.height
                     } action: { height in
@@ -69,8 +68,6 @@ struct TopPaneView<Content: View, Footer: View>: View {
 extension EnvironmentValues {
     /// Whether the sheet has risen past medium, over the pane. It flips only at medium, not on every frame.
     @Entry var paneIsCovered = false
-    /// Whether the sheet covers the pane's footer. It flips only as the sheet crosses the footer's bottom edge.
-    @Entry var paneFooterIsCovered = false
 }
 
 /// Scales the card in its own coordinates, then places it below the top safe area.
