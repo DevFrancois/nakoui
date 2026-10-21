@@ -1,0 +1,134 @@
+//
+//  TopPaneModel.swift
+//  MapsIOS26BottomSheet
+//
+
+import CoreGraphics
+import Foundation
+import Observation
+import QuartzCore
+
+/// The pane's own motion: velocity-driven deformation and horizontal squash.
+/// Its position comes straight from `SheetController.sheetTop`, so it never trails the sheet.
+@Observable
+final class TopPaneModel {
+    private(set) var stretch: CGFloat = 0
+
+    @ObservationIgnored var reduceMotion = false {
+        didSet {
+            if reduceMotion, reduceMotion != oldValue {
+                stop()
+            }
+        }
+    }
+
+    /// Debug setting: off, the pane ignores the sheet's speed and keeps its shape.
+    @ObservationIgnored var stretchEnabled = true {
+        didSet {
+            if !stretchEnabled, stretchEnabled != oldValue {
+                stop()
+            }
+        }
+    }
+
+    @ObservationIgnored private var lastVelocityTime: CFTimeInterval = 0
+    @ObservationIgnored private var staleCheckTask: Task<Void, Never>?
+    @ObservationIgnored private var effect: PaneEffect = .standard
+    @ObservationIgnored private var isSmoothed = false
+    /// The speed the stretch follows: filtered when smoothed, raw otherwise.
+    @ObservationIgnored private var followedVelocity: CGFloat = 0
+
+    private let stretchAnimator = SpringAnimator<CGFloat>(
+        spring: PaneSprings.stretch(effect: .standard, isSmoothed: false),
+        value: 0,
+        target: 0
+    )
+
+    init() {
+        stretchAnimator.valueChanged = { [weak self] value in
+            // Bound the visible deformation without discarding the spring's internal momentum.
+            self?.stretch = clip(value: value, lower: -1, upper: 1)
+        }
+    }
+
+    /// Change the motion character while preserving the current presentation value and velocity.
+    func configure(effect: PaneEffect, isSmoothed: Bool) {
+        guard effect != self.effect || isSmoothed != self.isSmoothed else { return }
+        self.effect = effect
+        self.isSmoothed = isSmoothed
+        stretchAnimator.spring = PaneSprings.stretch(effect: effect, isSmoothed: isSmoothed)
+        if stretchAnimator.state == .running, let value = stretchAnimator.value {
+            // Refresh the settling clock for the new spring without resetting its momentum.
+            stretchAnimator.restart(value: value, velocity: stretchAnimator.velocity)
+        }
+    }
+
+    /// Displayed sheet velocity in pt/s, positive downward; 0 once the sheet stops.
+    func sheetVelocityDidChange(_ velocity: CGFloat) {
+        guard !reduceMotion, stretchEnabled else { return }
+        /// A touch move without movement reports 0 mid-drag; smoothed, real stops are left to the stale check.
+        if isSmoothed, velocity == 0 { return }
+        let now = CACurrentMediaTime()
+        if isSmoothed {
+            /// UIKit's touch speed jumps between moves: follow a moving average with a fixed time constant.
+            let elapsed = lastVelocityTime > 0 ? now - lastVelocityTime : .infinity
+            let weight = CGFloat(1 - exp(-elapsed / PaneTuning.velocitySmoothing))
+            followedVelocity += (velocity - followedVelocity) * weight
+        } else {
+            followedVelocity = velocity
+        }
+        lastVelocityTime = now
+        retarget(velocity: followedVelocity)
+    }
+
+    private func retarget(velocity: CGFloat) {
+        let target = clip(value: velocity / PaneTuning.stretchReferenceVelocity, lower: -1, upper: 1)
+        // Like Wave's interactive examples, retarget the same animator rather than restarting each update.
+        if stretchAnimator.target != target {
+            stretchAnimator.target = target
+        }
+        if stretchAnimator.state != .running, stretchAnimator.value != target {
+            stretchAnimator.start()
+        }
+        if target != 0 {
+            scheduleStaleCheck()
+        } else {
+            staleCheckTask?.cancel()
+            staleCheckTask = nil
+        }
+    }
+
+    /// Immediately neutralize motion when the pane disappears or Reduce Motion is enabled.
+    func stop() {
+        staleCheckTask?.cancel()
+        staleCheckTask = nil
+        lastVelocityTime = 0
+        followedVelocity = 0
+        // Keep the animator ended so the display-link controller removes its registration.
+        stretchAnimator.stop()
+        stretchAnimator.value = 0
+        stretchAnimator.target = 0
+        stretchAnimator.velocity = 0
+        stretch = 0
+    }
+
+    /// A finger can stop without lifting and nothing reports it, so drop the stretch once the velocity goes stale.
+    private func scheduleStaleCheck() {
+        guard staleCheckTask == nil else { return }
+        staleCheckTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(PaneTuning.freshInterval))
+            } catch {
+                return
+            }
+            guard let self, !Task.isCancelled else { return }
+            staleCheckTask = nil
+            if CACurrentMediaTime() - lastVelocityTime >= PaneTuning.freshInterval {
+                followedVelocity = 0
+                retarget(velocity: 0)
+            } else {
+                scheduleStaleCheck()
+            }
+        }
+    }
+}
