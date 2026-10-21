@@ -41,4 +41,6 @@ nonisolated enum PaneTuning {
     /// The pane's scale once the sheet covers it at full: pushed back a little, like the content under a stacked
     /// sheet.
     static let coveredScale: CGFloat = 0.94
+    /// The receding pane's scale with the sheet at each detent, linear between them.
+    static let recedingScale = DetentValues(hidden: 1, medium: 0.95, full: 0.9)
 }

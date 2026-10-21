@@ -31,7 +31,8 @@ struct PaneSheetLayout<Pane: View, PaneFooter: View, Header: View, Content: View
                 TopPaneView(
                     sheet: sheet,
                     model: paneModel,
-                    showsSquash: settings.paneSquash
+                    showsSquash: settings.paneSquash,
+                    mode: settings.viewportMode
                 ) {
                     pane
                 } footer: {

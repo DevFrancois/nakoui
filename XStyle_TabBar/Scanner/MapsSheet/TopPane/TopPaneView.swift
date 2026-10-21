@@ -6,12 +6,15 @@
 import SwiftUI
 
 /// Rounded pane above the bottom sheet. It resizes with the sheet down to medium, then holds its size as the sheet
-/// rises to full over it, pushed back a little like the content under a stacked sheet.
+/// rises to full over it, pushed back a little like the content under a stacked sheet. The other `ViewportMode`s keep
+/// its frame, and the sheet slides over it all the way.
 struct TopPaneView<Content: View, Footer: View>: View {
     let sheet: SheetController
     let model: TopPaneModel
     /// Debug setting: whether the stretch narrows the pane.
     var showsSquash: Bool
+    /// Debug setting: how the pane makes way for the sheet.
+    var mode = ViewportMode.resizing
     /// What fills the rounded surface, such as the camera.
     @ViewBuilder var content: Content
     /// Under the pane while the sheet is hidden, one gap above the bottom safe area; see `PaneLayout`.
@@ -27,13 +30,15 @@ struct TopPaneView<Content: View, Footer: View>: View {
                 canvas: sheet.canvas,
                 sideInset: sheet.metrics.paneSideInset,
                 tops: sheet.tops,
-                footerHeight: footerHeight
+                footerHeight: footerHeight,
+                mode: mode
             ) {
                 PaneContainer(
                     layout: layout,
                     stretch: model.stretch,
                     cornerRadius: PaneMetrics.viewportCornerRadius,
-                    showsSquash: showsSquash,
+                    /// The stretch only shows on a pane that follows the sheet.
+                    showsSquash: showsSquash && mode == .resizing,
                     content: content
                 )
 
@@ -72,8 +77,7 @@ private struct PaneContainer<Content: View>: View {
         let displayedStretch = reduceMotion ? 0 : stretch
         let squash = showsSquash ? 1 - PaneTuning.maxSquash * abs(displayedStretch) : 1
         let progress = layout.coverProgress
-        /// Follows the sheet linearly, so the pane recedes as fast as the finger covers it.
-        let coverScale = reduceMotion ? 1 : 1 - (1 - PaneTuning.coveredScale) * progress
+        let coverScale = reduceMotion ? 1 : layout.scale
         PaneSurface(cornerRadius: cornerRadius) {
             content
                 .environment(\.paneIsCovered, progress > 0)

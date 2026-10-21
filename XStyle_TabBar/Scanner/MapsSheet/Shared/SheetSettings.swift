@@ -11,6 +11,13 @@ import Observation
 final class SheetSettings {
     // MARK: Motion, to compare what makes the pane move
 
+    /// How the pane makes way for the rising sheet.
+    var viewportMode: ViewportMode {
+        didSet {
+            defaults.set(viewportMode.rawValue, forKey: Key.viewportMode)
+        }
+    }
+
     /// The pane stretches with the sheet's speed; off, it only follows the sheet's position.
     var paneStretch: Bool {
         didSet {
@@ -60,6 +67,7 @@ final class SheetSettings {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        viewportMode = defaults.string(forKey: Key.viewportMode).flatMap(ViewportMode.init(rawValue:)) ?? .fixed
         paneStretch = Self.bool(Key.paneStretch, in: defaults) ?? false
         smoothStretch = Self.bool(Key.smoothStretch, in: defaults) ?? true
         paneSquash = Self.bool(Key.paneSquash, in: defaults) ?? false
@@ -78,6 +86,7 @@ final class SheetSettings {
     }
 
     private enum Key {
+        static let viewportMode = "sheet.viewportMode"
         static let paneStretch = "sheet.paneStretch"
         static let smoothStretch = "sheet.smoothStretch"
         static let paneSquash = "sheet.paneSquash"
@@ -94,5 +103,6 @@ final class SheetSettings {
         "sheet.tapPaneToCollapse",
         "sheet.paneEffect",
         "sheet.paneDeformation",
+        "sheet.fixedViewport",
     ]
 }

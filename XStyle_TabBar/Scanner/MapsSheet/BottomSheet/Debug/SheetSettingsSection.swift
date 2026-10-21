@@ -17,27 +17,44 @@ struct SheetSettingsSection: View {
                     .font(.headline)
                     .accessibilityAddTraits(.isHeader)
 
-                SettingToggle(
-                    title: "Stretch",
-                    caption: "The pane narrows with the sheet's speed.",
-                    isOn: $settings.paneStretch
-                )
+                VStack(alignment: .leading, spacing: 6) {
+                    Picker("Viewport", selection: $settings.viewportMode) {
+                        ForEach(ViewportMode.allCases, id: \.self) { mode in
+                            Text(mode.title)
+                        }
+                    }
+                    .pickerStyle(.segmented)
 
-                /// Each depends on the stretch.
+                    Text(settings.viewportMode.caption)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                /// The pane only moves when it follows the sheet.
                 Group {
                     SettingToggle(
-                        title: "Smooth the stretch",
-                        caption: "No overshoot, a filtered speed, and still touch moves ignored.",
-                        isOn: $settings.smoothStretch
+                        title: "Stretch",
+                        caption: "The pane narrows with the sheet's speed.",
+                        isOn: $settings.paneStretch
                     )
 
-                    SettingToggle(
-                        title: "Horizontal squash",
-                        caption: "Narrows the pane by up to \(PaneTuning.maxSquash, format: .percent.precision(.fractionLength(0...1))).",
-                        isOn: $settings.paneSquash
-                    )
+                    /// Each depends on the stretch.
+                    Group {
+                        SettingToggle(
+                            title: "Smooth the stretch",
+                            caption: "No overshoot, a filtered speed, and still touch moves ignored.",
+                            isOn: $settings.smoothStretch
+                        )
+
+                        SettingToggle(
+                            title: "Horizontal squash",
+                            caption: "Narrows the pane by up to \(PaneTuning.maxSquash, format: .percent.precision(.fractionLength(0...1))).",
+                            isOn: $settings.paneSquash
+                        )
+                    }
+                    .disabled(!settings.paneStretch)
                 }
-                .disabled(!settings.paneStretch)
+                .disabled(settings.viewportMode != .resizing)
 
                 SettingToggle(
                     title: "Sheet bounce",
@@ -50,7 +67,7 @@ struct SheetSettingsSection: View {
                     caption: "Off, the pane waits at the detent while the sheet overshoots it.",
                     isOn: $settings.paneFollowsBounce
                 )
-                .disabled(!settings.sheetBounce)
+                .disabled(!settings.sheetBounce || settings.viewportMode != .resizing)
 
                 if reduceMotion {
                     Text("Reduce Motion is on: no stretch and no bounce.")
@@ -75,6 +92,24 @@ struct SheetSettingsSection: View {
         }
         .padding(16)
         .background(SheetCardFill.color, in: .rect(cornerRadius: 22, style: .continuous))
+    }
+}
+
+private extension ViewportMode {
+    var title: LocalizedStringResource {
+        switch self {
+        case .resizing: "Resizing"
+        case .fixed: "Fixed"
+        case .receding: "Receding"
+        }
+    }
+
+    var caption: LocalizedStringResource {
+        switch self {
+        case .resizing: "The camera shrinks above the sheet down to medium, then recedes as the sheet covers it."
+        case .fixed: "The camera keeps its size and place, and the sheet covers it."
+        case .receding: "The camera stays in place under the sheet, shrinking a little as it opens and more at full."
+        }
     }
 }
 

@@ -8,10 +8,12 @@ struct ScannerSheetTests {
     private let canvas = PaneCanvas(size: CGSize(width: 402, height: 874), safeAreaTop: 62, safeAreaBottom: 96)
     private let metrics = SheetMetrics.floating
 
-    private func paneLayout(sheetTop: CGFloat, footerHeight: CGFloat = 0) throws -> PaneLayout {
+    private func paneLayout(
+        sheetTop: CGFloat, footerHeight: CGFloat = 0, mode: ViewportMode = .resizing
+    ) throws -> PaneLayout {
         try #require(PaneLayout(
             sheetTop: sheetTop, canvas: canvas, sideInset: metrics.paneSideInset,
-            tops: metrics.tops(for: canvas), footerHeight: footerHeight
+            tops: metrics.tops(for: canvas), footerHeight: footerHeight, mode: mode
         ))
     }
 
@@ -73,6 +75,32 @@ struct ScannerSheetTests {
         #expect(full.paneFrame == medium.paneFrame)
         #expect(full.coverProgress == 1)
         #expect(try paneFrame(sheetTop: (tops.medium + tops.full) / 2) == medium.paneFrame)
+    }
+
+    @Test("Fixed and receding panes keep their resting frame wherever the sheet is", arguments: [ViewportMode.fixed, .receding])
+    func fixedPaneKeepsFrame(mode: ViewportMode) throws {
+        let tops = metrics.tops(for: canvas)
+        let resting = try paneLayout(sheetTop: tops.hidden, footerHeight: 30, mode: mode)
+        #expect(resting.paneFrame == CGRect(x: 8, y: 70, width: 386, height: 662))
+        for top in [tops.medium, (tops.medium + tops.full) / 2, tops.full] {
+            #expect(try paneLayout(sheetTop: top, footerHeight: 30, mode: mode).paneFrame == resting.paneFrame)
+        }
+        // Covering past medium still pauses the camera at full.
+        #expect(try paneLayout(sheetTop: tops.full, mode: mode).coverProgress == 1)
+    }
+
+    @Test("A fixed pane never scales; a receding one shrinks a little by medium and more by full")
+    func paneScales() throws {
+        let tops = metrics.tops(for: canvas)
+        for top in [tops.hidden, tops.medium, tops.full] {
+            #expect(try paneLayout(sheetTop: top, mode: .fixed).scale == 1)
+        }
+        let scales = PaneTuning.recedingScale
+        #expect(try paneLayout(sheetTop: tops.hidden, mode: .receding).scale == scales.hidden)
+        #expect(try paneLayout(sheetTop: tops.medium, mode: .receding).scale == scales.medium)
+        #expect(try paneLayout(sheetTop: tops.full, mode: .receding).scale == scales.full)
+        #expect(scales.hidden > scales.medium && scales.medium > scales.full)
+        #expect(try paneLayout(sheetTop: tops.full).scale == PaneTuning.coveredScale)
     }
 
     @Test("At and below medium, nothing covers the pane")
