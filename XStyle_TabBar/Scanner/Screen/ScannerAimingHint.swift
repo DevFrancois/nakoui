@@ -7,7 +7,7 @@ struct ScannerAimingHint: View {
     let isShown: Bool
 
     var body: some View {
-        Label("Point at a product barcode", systemImage: "barcode.viewfinder")
+        Text("Point at a product barcode")
             .font(.footnote)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
