@@ -4,10 +4,13 @@
 //
 
 import SwiftUI
+import TipKit
 
-/// Debug settings below the food report: the pane's motion, and whether the camera scans with a result open.
+/// Debug settings below the food report: the pane's motion, whether the camera scans with a result open, and a way
+/// to go through the scan history's first run again.
 struct SheetSettingsSection: View {
     @Bindable var settings: SheetSettings
+    let history: ScanHistory
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -110,6 +113,30 @@ struct SheetSettingsSection: View {
                 /// Only the full reveal freezes the camera.
                 .disabled(settings.revealStyle != .fullReveal)
             }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Scan History")
+                    .font(.headline)
+                    .accessibilityAddTraits(.isHeader)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Button("Reset Scan History", role: .destructive) {
+                        history.reset()
+                        Task {
+                            await ScanHistoryTip().resetEligibility()
+                        }
+                    }
+                    .buttonStyle(.glass)
+                    /// Nothing to reset before the first scan.
+                    .disabled(!history.hasScanned)
+
+                    Text("Forgets every scan, as on a first launch: the hint comes back, and the history button and its tip return once the next result closes.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .padding(16)
         .background(SheetCardFill.color, in: .rect(cornerRadius: 22, style: .continuous))
@@ -172,9 +199,10 @@ private struct SettingToggle: View {
 #if DEBUG
 #Preview("Debug settings", traits: .fixedLayout(width: 393, height: 650)) {
     @Previewable @State var settings = PreviewFixtures.makeSettings()
+    @Previewable @State var history = PreviewFixtures.makeHistory(seeded: true)
 
     ScrollView {
-        SheetSettingsSection(settings: settings)
+        SheetSettingsSection(settings: settings, history: history)
             .padding(SheetMetrics.current.scrollContentPadding)
     }
     .background(Color(.systemBackground))
@@ -182,9 +210,10 @@ private struct SettingToggle: View {
 
 #Preview("Large Text · Dark", traits: .fixedLayout(width: 393, height: 650)) {
     @Previewable @State var settings = PreviewFixtures.makeSettings()
+    @Previewable @State var history = PreviewFixtures.makeHistory(seeded: true)
 
     ScrollView {
-        SheetSettingsSection(settings: settings)
+        SheetSettingsSection(settings: settings, history: history)
             .padding(SheetMetrics.current.scrollContentPadding)
     }
     .background(Color(.systemBackground))

@@ -8,11 +8,14 @@ import Foundation
 import Observation
 import QuartzCore
 
-/// The pane's own motion: the velocity-driven stretch behind its horizontal squash.
-/// Its position comes straight from `SheetController.sheetTop`, so it never trails the sheet.
+/// The pane's own motion: the velocity-driven stretch behind its horizontal squash, and the footer under it easing to
+/// its measured height. Its position comes straight from `SheetController.sheetTop`, so it never trails the sheet.
 @Observable
 final class TopPaneModel {
     private(set) var stretch: CGFloat = 0
+    /// The footer height the pane makes room for: the first measurement at once, later ones eased, so the pane slides
+    /// as the footer grows or shrinks.
+    private(set) var footerHeight: CGFloat = 0
 
     @ObservationIgnored var reduceMotion = false {
         didSet {
@@ -42,11 +45,33 @@ final class TopPaneModel {
         value: 0,
         target: 0
     )
+    private let footerAnimator = SpringAnimator<CGFloat>(spring: PaneSprings.footer, value: 0, target: 0)
+    @ObservationIgnored private var hasMeasuredFooter = false
 
     init() {
         stretchAnimator.valueChanged = { [weak self] value in
             // Bound the visible stretch without discarding the spring's internal momentum.
             self?.stretch = clip(value: value, lower: -1, upper: 1)
+        }
+        footerAnimator.valueChanged = { [weak self] value in
+            self?.footerHeight = max(value, 0)
+        }
+    }
+
+    /// Call with the footer's measured height. The first lands at once, so the pane first appears in place; later
+    /// ones ease there, retargeting a move under way.
+    func setMeasuredFooter(_ height: CGFloat) {
+        guard hasMeasuredFooter else {
+            hasMeasuredFooter = true
+            footerAnimator.value = height
+            footerAnimator.target = height
+            footerAnimator.valueChanged?(height)
+            return
+        }
+        guard footerAnimator.target != height else { return }
+        footerAnimator.target = height
+        if footerAnimator.state != .running {
+            footerAnimator.start()
         }
     }
 
@@ -96,7 +121,8 @@ final class TopPaneModel {
         }
     }
 
-    /// Immediately neutralize motion when the pane disappears or Reduce Motion is enabled.
+    /// Immediately neutralize motion when the pane disappears or Reduce Motion is enabled. The footer keeps its
+    /// height: the pane must reappear where it was.
     func stop() {
         staleCheckTask?.cancel()
         staleCheckTask = nil

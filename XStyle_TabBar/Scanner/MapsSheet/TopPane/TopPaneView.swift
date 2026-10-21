@@ -19,7 +19,6 @@ struct TopPaneView<Content: View, Footer: View>: View {
     @ViewBuilder var content: Content
     /// Under the pane while the sheet is hidden, one gap above the bottom safe area; see `PaneLayout`.
     @ViewBuilder var footer: Footer
-    @State private var footerHeight: CGFloat = 0
     var body: some View {
         ZStack(alignment: .top) {
             /// Keeps the root rendering before the canvas is measured.
@@ -30,7 +29,7 @@ struct TopPaneView<Content: View, Footer: View>: View {
                 canvas: sheet.canvas,
                 sideInset: sheet.metrics.paneSideInset,
                 tops: sheet.tops,
-                footerHeight: footerHeight,
+                footerHeight: model.footerHeight,
                 mode: mode
             ) {
                 PaneContainer(
@@ -46,9 +45,11 @@ struct TopPaneView<Content: View, Footer: View>: View {
                     .onGeometryChange(for: CGFloat.self) { proxy in
                         proxy.size.height
                     } action: { height in
-                        footerHeight = height
+                        model.setMeasuredFooter(height)
                     }
                     .frame(maxWidth: .infinity)
+                    /// As wide as the pane, so what it leads with lines up with the pane's edge.
+                    .padding(.horizontal, sheet.metrics.paneSideInset)
                     /// Placed from the top like the pane, from the same canvas, so the two never part.
                     .frame(height: layout.footerBottom, alignment: .bottom)
             }

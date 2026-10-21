@@ -185,6 +185,7 @@ private struct SheetBackground: ViewModifier {
 private struct SheetContainerPreview: View {
     let sheet: SheetController
     @State private var settings = PreviewFixtures.makeSettings()
+    @State private var history = PreviewFixtures.makeHistory()
 
     var body: some View {
         ZStack {
@@ -197,6 +198,7 @@ private struct SheetContainerPreview: View {
                     analysis: .example,
                     code: .sampleEAN13,
                     settings: settings,
+                    history: history,
                     horizontalPadding: sheet.metrics.scrollContentPadding,
                     bottomPadding: sheet.canvas.safeAreaBottom,
                     onScanAgain: {}

@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// What to do, under the camera and above the tab bar, while aiming. It keeps
-/// its place while hidden, so the camera above it doesn't move as it comes
-/// and goes.
+/// What to do, under the camera and above the tab bar, while aiming, until the
+/// first scan. It keeps its place while hidden, so the camera above it doesn't
+/// move as it comes and goes. Once the history button shows, the button takes
+/// its place for good.
 struct ScannerAimingHint: View {
     let isShown: Bool
 

@@ -565,12 +565,14 @@ private struct HomeChromePagerFixture: View {
     private let scanner = ScannerModel()
     private let scannerSheet = SheetController(initialDetent: .hidden)
     private let sheetSettings = PreviewFixtures.makeSettings()
+    private let scanHistory = PreviewFixtures.makeHistory()
     @State private var rootTab: RootTab = .home
     @Namespace private var zoomNamespace
 
     var body: some View {
         NavigationStack {
-            RootTabContent(selection: $rootTab, scanner: scanner, scannerSheet: scannerSheet, sheetSettings: sheetSettings) {
+            RootTabContent(selection: $rootTab, scanner: scanner, scannerSheet: scannerSheet, sheetSettings: sheetSettings,
+                           scanHistory: scanHistory) {
                 HomeRootView(
                     title: "Nako", pager: pager, logoCollapse: logoCollapse,
                     taskList: taskList, zoomNamespace: zoomNamespace,

@@ -22,6 +22,28 @@ enum PreviewFixtures {
         return SheetSettings(defaults: defaults)
     }
 
+    /// A history of its own, empty or with a few products scanned over the
+    /// last days.
+    static func makeHistory(seeded: Bool = false) -> ScanHistory {
+        guard let defaults = UserDefaults(suiteName: "ScanHistory.preview.\(UUID().uuidString)") else {
+            preconditionFailure("Unable to create preview preferences")
+        }
+        let history = ScanHistory(defaults: defaults)
+        if seeded {
+            let codes = [
+                ScannedCode(value: "4006381333931", symbology: .ean13),
+                ScannedCode(value: "036000291452", symbology: .upcA),
+                ScannedCode(value: "96385074", symbology: .ean8),
+                ScannedCode(value: "4006381333931", symbology: .ean13),
+            ]
+            for (index, code) in codes.enumerated() {
+                history.record(code, at: .now.addingTimeInterval(Double(index - codes.count) * 86_400))
+            }
+            history.revealButton()
+        }
+        return history
+    }
+
     static func makeSheet(detent: SheetDetent) -> SheetController {
         let sheet = SheetController(initialDetent: detent)
         sheet.updateCanvas(canvas)

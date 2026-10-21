@@ -5,20 +5,23 @@ import SwiftUI
 /// its report at once, while the camera shows it (`ScanRevealStyle`): brackets
 /// closing on it over the live feed, or Code Scanner's frozen reveal fading
 /// back to live. Closing the result sends the sheet below the screen again.
-/// Wide windows put the camera and the report side by side.
+/// Every scan goes into the history, which a button under the camera opens in
+/// the same sheet once the first result has closed. Wide windows put the
+/// camera and the report side by side.
 struct ScannerView: View {
     let model: ScannerModel
     /// Owned above the Scan tab, which is rebuilt with every update of the
     /// tabs, so a pass never constructs throwaway ones.
     let sheet: SheetController
     let settings: SheetSettings
+    let history: ScanHistory
     /// Whether the Scan tab is showing. The camera only runs while it is.
     let isActive: Bool
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// The latest code found. The sheet keeps showing it while it slides
-    /// away after the result closes.
-    @State private var shownCode: ScannedCode?
+    /// What the sheet shows: a result, the history, or a product from it. It
+    /// keeps showing it while it slides away.
+    @State private var sheetState = ScanSheetState()
     /// The camera's one preview layer, kept across layout changes, which
     /// rebuild the camera pane.
     @State private var previewHost = CameraPreviewHost()
@@ -37,20 +40,40 @@ struct ScannerView: View {
                 } bottom: {
                     sideResult
                 }
+                // Over the camera's top-leading corner, clear of the island.
+                .overlay(alignment: .topLeading) {
+                    if history.isButtonRevealed {
+                        historyButton
+                            .padding(16)
+                    }
+                }
             } else {
                 PaneSheetLayout(sheet: sheet, settings: settings) {
                     ScannerCameraPane(model: model, previewHost: previewHost)
                 } paneFooter: {
-                    ScannerAimingHint(isShown: model.isAiming && model.scannedCode == nil)
+                    // The hint until the first result closes, then the
+                    // history button in its place, at the far left, with its
+                    // tip beside it the first time.
+                    ZStack {
+                        if history.isButtonRevealed {
+                            historyButton
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .transition(.opacity)
+                        } else {
+                            ScannerAimingHint(isShown: model.isAiming && model.scannedCode == nil && !history.hasScanned)
+                        }
+                    }
+                    // The button's height from the start, so the camera
+                    // keeps its frame as the button takes the hint's place.
+                    .frame(minHeight: TopMenuMetrics.minimumTapSize)
+                    // The pane drops its transactions' animations; this one
+                    // is its own.
+                    .animation(.easeOut(duration: 0.2), value: history.isButtonRevealed)
                 } header: {
-                    if let shownCode {
-                        header(for: shownCode)
-                    }
+                    sheetHeader(for: sheetState.route)
                 } content: {
-                    if let shownCode {
-                        report(for: shownCode, horizontalPadding: sheet.metrics.scrollContentPadding,
-                               bottomPadding: sheet.canvas.safeAreaBottom)
-                    }
+                    sheetContent(for: sheetState.route, horizontalPadding: sheet.metrics.scrollContentPadding,
+                                 bottomPadding: sheet.canvas.safeAreaBottom)
                 }
             }
         }
@@ -59,16 +82,23 @@ struct ScannerView: View {
         } action: { isSideBySide in
             self.isSideBySide = isSideBySide
         }
-        // A found code opens the sheet; a closed one sends it away.
-        .onChange(of: model.scannedCode?.id, initial: true) {
+        // A found code goes into the history and opens the sheet; a closed
+        // one sends it away, and reveals the history button the first time.
+        .onChange(of: model.scannedCode?.id, initial: true) { oldID, newID in
             if let code = model.scannedCode {
-                shownCode = code
-                sheet.settle(to: .medium, velocity: 0)
-            } else if sheet.detent != .hidden {
-                // Already hidden when dragged away: settling again would
-                // drop the fling's speed.
-                sheet.settle(to: .hidden, velocity: 0)
+                // Not when the view first shows a code it already had.
+                if oldID != newID {
+                    history.record(code)
+                }
+                apply(sheetState.found(code))
+            } else {
+                history.revealButton()
+                apply(sheetState.resultClosed())
             }
+        }
+        // The history tip waits for its button.
+        .onChange(of: history.isButtonRevealed, initial: true) {
+            ScanHistoryTip.isButtonShown = history.isButtonRevealed
         }
         // Dragging the sheet below the screen closes the result.
         .onChange(of: sheet.detent) {
@@ -97,37 +127,118 @@ struct ScannerView: View {
         .modifier(ScannerCameraLifecycle(model: model, sheet: sheet, isActive: isActive, isSideBySide: isSideBySide))
     }
 
-    private func header(for code: ScannedCode) -> some View {
+    /// Shown once the first result has closed.
+    private var historyButton: some View {
+        ScanHistoryButton(history: history, action: openHistory)
+    }
+
+    @ViewBuilder
+    private func sheetHeader(for route: ScanSheetRoute?) -> some View {
+        switch route {
+        case .result(let code):
+            productHeader(for: code, onBack: nil, onClose: model.scanAgain)
+        case .history:
+            SheetHeader(
+                title: Text("Scan History"),
+                subtitle: Text("^[\(history.entries.count) product](inflect: true)"),
+                onClose: closeSheet
+            ) {
+                ScanHistoryClearButton(history: history)
+            }
+        case .entry(let code):
+            productHeader(for: code, onBack: { apply(sheetState.back()) }, onClose: closeSheet)
+        case nil:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private func sheetContent(for route: ScanSheetRoute?, horizontalPadding: CGFloat, bottomPadding: CGFloat) -> some View {
+        switch route {
+        case .result(let code):
+            report(for: code, horizontalPadding: horizontalPadding, bottomPadding: bottomPadding, onScanAgain: model.scanAgain)
+        case .history:
+            ScanHistoryList(history: history, horizontalPadding: horizontalPadding, bottomPadding: bottomPadding) { entry in
+                apply(sheetState.show(entry.makeCode()))
+            }
+        case .entry(let code):
+            // Scanning again means going back to the camera.
+            report(for: code, horizontalPadding: horizontalPadding, bottomPadding: bottomPadding, onScanAgain: closeSheet)
+        case nil:
+            EmptyView()
+        }
+    }
+
+    private func productHeader(for code: ScannedCode, onBack: (() -> Void)?, onClose: @escaping () -> Void) -> some View {
         SheetHeader(
             title: analysis.recipe,
             // Digit by digit, not as one huge number.
             subtitle: Text("\(Text(code.symbology.title)) · \(Text(code.value).speechSpellsOutCharacters())"),
-            onClose: model.scanAgain
+            onBack: onBack,
+            onClose: onClose
         )
     }
 
-    private func report(for code: ScannedCode, horizontalPadding: CGFloat, bottomPadding: CGFloat) -> some View {
+    private func report(
+        for code: ScannedCode, horizontalPadding: CGFloat, bottomPadding: CGFloat, onScanAgain: @escaping () -> Void
+    ) -> some View {
         BottomSheetView(
             analysis: analysis,
             code: code,
             settings: settings,
+            history: history,
             horizontalPadding: horizontalPadding,
             bottomPadding: bottomPadding,
-            onScanAgain: model.scanAgain
+            onScanAgain: onScanAgain
         )
     }
 
-    /// The trailing pane side by side: the sheet's header over its report,
+    private func openHistory() {
+        apply(sheetState.showHistory())
+    }
+
+    private func closeSheet() {
+        apply(sheetState.close())
+    }
+
+    /// Carries out a route change, after the route itself has changed: closing
+    /// a result for the history then leaves the sheet up.
+    private func apply(_ effects: [ScanSheetEffect]) {
+        for effect in effects {
+            switch effect {
+            case .present:
+                if sheet.detent == .hidden {
+                    sheet.settle(to: .medium, velocity: 0)
+                }
+            case .hide:
+                // Already hidden when dragged away: settling again would drop
+                // the fling's speed.
+                if sheet.detent != .hidden {
+                    sheet.settle(to: .hidden, velocity: 0)
+                }
+            case .closeResult:
+                model.scanAgain()
+            }
+        }
+    }
+
+    /// What the sheet shows while it's up; side by side, the trailing pane
+    /// shows it with room to spare.
+    private var presentedRoute: ScanSheetRoute? {
+        sheet.detent == .hidden ? nil : sheetState.route
+    }
+
+    /// The trailing pane side by side: the sheet's header over its content,
     /// always open, as there is room for both.
     private var sideResult: some View {
         ZStack {
-            if let code = model.scannedCode {
+            if let route = presentedRoute {
                 VStack(spacing: 0) {
-                    header(for: code)
+                    sheetHeader(for: route)
                         .padding(.horizontal, SheetMetrics.contentPadding)
                         .frame(height: SheetMetrics.current.headerHeight)
 
-                    report(for: code, horizontalPadding: SheetMetrics.contentPadding, bottomPadding: 0)
+                    sheetContent(for: route, horizontalPadding: SheetMetrics.contentPadding, bottomPadding: 0)
                 }
                 .transition(.blurReplace)
             } else {
@@ -138,7 +249,7 @@ struct ScannerView: View {
                 .transition(.blurReplace)
             }
         }
-        .animation(.smooth, value: model.scannedCode)
+        .animation(.smooth, value: presentedRoute)
     }
 }
 
@@ -174,28 +285,32 @@ private struct ScannerCameraLifecycle: ViewModifier {
 #Preview("Scanning") {
     ScannerView(
         model: ScannerModel(state: .scanning, zoom: CameraZoom(range: 1...5, recommended: 2.6), hasTorch: true),
-        sheet: SheetController(initialDetent: .hidden), settings: PreviewFixtures.makeSettings(), isActive: false
+        sheet: SheetController(initialDetent: .hidden), settings: PreviewFixtures.makeSettings(),
+        history: PreviewFixtures.makeHistory(), isActive: false
     )
 }
 
 #Preview("Result") {
     ScannerView(
         model: ScannerModel(state: .scanning, scannedCode: .sampleEAN13),
-        sheet: SheetController(initialDetent: .hidden), settings: PreviewFixtures.makeSettings(), isActive: false
+        sheet: SheetController(initialDetent: .hidden), settings: PreviewFixtures.makeSettings(),
+        history: PreviewFixtures.makeHistory(), isActive: false
     )
 }
 
 #Preview("Camera Denied") {
     ScannerView(
         model: ScannerModel(state: .denied),
-        sheet: SheetController(initialDetent: .hidden), settings: PreviewFixtures.makeSettings(), isActive: false
+        sheet: SheetController(initialDetent: .hidden), settings: PreviewFixtures.makeSettings(),
+        history: PreviewFixtures.makeHistory(), isActive: false
     )
 }
 
 #Preview("Camera Unavailable") {
     ScannerView(
         model: ScannerModel(state: .unavailable),
-        sheet: SheetController(initialDetent: .hidden), settings: PreviewFixtures.makeSettings(), isActive: false
+        sheet: SheetController(initialDetent: .hidden), settings: PreviewFixtures.makeSettings(),
+        history: PreviewFixtures.makeHistory(), isActive: false
     )
 }
 #endif

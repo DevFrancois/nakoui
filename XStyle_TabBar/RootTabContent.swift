@@ -7,6 +7,7 @@ struct RootTabContent<Home: View>: View {
     let scanner: ScannerModel
     let scannerSheet: SheetController
     let sheetSettings: SheetSettings
+    let scanHistory: ScanHistory
     var isTabBarVisible = true
     @ViewBuilder let home: Home
     @State private var layoutAxis: NSLayoutConstraint.Axis = .horizontal
@@ -17,12 +18,16 @@ struct RootTabContent<Home: View>: View {
     @State private var tabBarTop: CGFloat?
 
     var body: some View {
+        // The scan sheet takes the bar's band whatever it shows, a result or
+        // the history. The result counts from the moment it's found: the
+        // sheet starts rising an update later.
         let hidesTabBar = GlassTabBar.hidesForScanResult(
-            selection: selection, hasResult: scanner.scannedCode != nil, layoutAxis: layoutAxis
+            selection: selection, hasResult: scanner.scannedCode != nil || scannerSheet.detent != .hidden,
+            layoutAxis: layoutAxis
         )
         GeometryReader { geometry in
             RootTabPages(selection: selection, scanner: scanner, scannerSheet: scannerSheet,
-                         sheetSettings: sheetSettings, layoutAxis: layoutAxis,
+                         sheetSettings: sheetSettings, scanHistory: scanHistory, layoutAxis: layoutAxis,
                          isVisible: isTabBarVisible, safeAreaInsets: geometry.safeAreaInsets,
                          scannerTabBarClearance: tabBarClearance(beyond: geometry.safeAreaInsets.bottom), home: home)
                 // Keep the paging viewport full width while explicitly carrying

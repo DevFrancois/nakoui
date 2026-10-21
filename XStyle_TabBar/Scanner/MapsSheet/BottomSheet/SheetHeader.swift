@@ -7,16 +7,23 @@
 
 import SwiftUI
 
-/// Header: the analyzed recipe and the scanned code, and a close button; no grabber, no search field.
-struct SheetHeader: View {
-    var title: String
+/// Header: a title and subtitle, such as the analyzed recipe and the scanned code, an optional back button, an
+/// accessory such as the history's Clear, and a close button; no grabber, no search field.
+struct SheetHeader<Accessory: View>: View {
+    var title: Text
     var subtitle: Text
+    var onBack: (() -> Void)?
     var onClose: () -> Void
+    @ViewBuilder var accessory: Accessory
 
     var body: some View {
         HStack(spacing: 12) {
+            if let onBack {
+                HeaderCircleButton(systemImage: "chevron.backward", label: "Back", action: onBack)
+            }
+
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+                title
                     .font(.title2.bold())
                     .lineLimit(1)
 
@@ -28,40 +35,52 @@ struct SheetHeader: View {
 
             Spacer(minLength: 0)
 
-            /// Closes the result at every detent.
-            CloseButton(action: onClose)
+            accessory
+
+            /// Closes the sheet at every detent.
+            HeaderCircleButton(systemImage: "xmark", label: "Close", action: onClose)
         }
         .frame(maxHeight: .infinity)
         .dynamicTypeSize(...DynamicTypeSize.xxLarge)
     }
 }
 
-/// Circular xmark button: the system glass button on iOS 26, material below.
-private struct CloseButton: View {
+extension SheetHeader where Accessory == EmptyView {
+    init(title: String, subtitle: Text, onBack: (() -> Void)? = nil, onClose: @escaping () -> Void) {
+        self.init(title: Text(title), subtitle: subtitle, onBack: onBack, onClose: onClose) {
+            EmptyView()
+        }
+    }
+}
+
+/// Circular icon button: the system glass button on iOS 26, material below.
+private struct HeaderCircleButton: View {
+    var systemImage: String
+    var label: LocalizedStringResource
     var action: () -> Void
 
     var body: some View {
         if #available(iOS 26, *) {
             Button(action: action) {
-                label
+                icon
             }
             .buttonStyle(.glass)
             .buttonBorderShape(.circle)
-            .accessibilityLabel("Close")
+            .accessibilityLabel(Text(label))
         } else {
             Button(action: action) {
-                label
+                icon
                     .frame(width: 44, height: 44)
                     .background(.thinMaterial, in: .circle)
                     .contentShape(.circle)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Close")
+            .accessibilityLabel(Text(label))
         }
     }
 
-    private var label: some View {
-        Image(systemName: "xmark")
+    private var icon: some View {
+        Image(systemName: systemImage)
             .font(.body.weight(.semibold))
             .foregroundStyle(.primary)
     }

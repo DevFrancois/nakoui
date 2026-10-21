@@ -8,6 +8,7 @@ struct RootTabPages<Home: View>: UIViewControllerRepresentable {
     let scanner: ScannerModel
     let scannerSheet: SheetController
     let sheetSettings: SheetSettings
+    let scanHistory: ScanHistory
     let layoutAxis: NSLayoutConstraint.Axis
     let isVisible: Bool
     let safeAreaInsets: EdgeInsets
@@ -64,7 +65,8 @@ struct RootTabPages<Home: View>: UIViewControllerRepresentable {
     }
 
     private var scannerPage: ScannerView {
-        ScannerView(model: scanner, sheet: scannerSheet, settings: sheetSettings, isActive: selection == .scanner && isVisible)
+        ScannerView(model: scanner, sheet: scannerSheet, settings: sheetSettings, history: scanHistory,
+                    isActive: selection == .scanner && isVisible)
     }
 
     final class Coordinator {

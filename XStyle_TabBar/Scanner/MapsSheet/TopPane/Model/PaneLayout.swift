@@ -36,7 +36,8 @@ nonisolated struct PaneLayout: Equatable {
         let paneTop = canvas.safeAreaTop + sideInset
         /// Never under the bottom safe area, which covers the tab bar's slot even while the bar is hidden: with the
         /// sheet hidden, the pane rests one gap above the bar, or above its footer.
-        let footerRoom = footerHeight > 0 ? footerHeight + gap : 0
+        /// The footer's gap comes with it over its first `gap` points, so a height easing to or from 0 never jumps.
+        let footerRoom = max(footerHeight, 0) + gap * min(max(footerHeight, 0) / gap, 1)
         let footerBottom = canvas.size.height - canvas.safeAreaBottom - gap
         let lowestBottom = footerBottom - footerRoom
         let trackedBottom = mode == .resizing ? min(max(sheetTop, tops.medium) - gap, lowestBottom) : lowestBottom

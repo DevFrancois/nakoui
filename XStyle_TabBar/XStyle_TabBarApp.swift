@@ -6,9 +6,16 @@
 //
 
 import SwiftUI
+import TipKit
 
 @main
 struct XStyle_TabBarApp: App {
+    init() {
+        // Before any tip shows. To see tips afresh, launch with
+        // `-com.apple.TipKit.ResetDatastore 1`.
+        try? Tips.configure([.displayFrequency(.immediate)])
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

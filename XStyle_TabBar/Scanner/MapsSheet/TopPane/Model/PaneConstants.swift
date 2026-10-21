@@ -25,6 +25,10 @@ nonisolated enum PaneSprings {
         isSmoothed ? smoothed : standard
     }
 
+    /// The footer under the pane changing height, and the pane with it: critically damped, so it settles without a
+    /// wobble.
+    static let footer = WaveSpring(dampingRatio: 1.0, response: 0.35)
+
     private static let standard = WaveSpring(dampingRatio: 0.76, response: 0.28)
     /// Critically damped: follows the speed without overshooting it, so it never wobbles.
     private static let smoothed = WaveSpring(dampingRatio: 1.0, response: 0.28)

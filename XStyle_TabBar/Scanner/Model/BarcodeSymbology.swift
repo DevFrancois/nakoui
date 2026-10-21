@@ -1,7 +1,8 @@
 import Foundation
 
-/// The product barcodes the scanner reads, as shown to the user.
-nonisolated enum BarcodeSymbology: Hashable, Sendable {
+/// The product barcodes the scanner reads, as shown to the user. The raw
+/// values are saved with the scan history: never rename them.
+nonisolated enum BarcodeSymbology: String, Codable, Hashable, Sendable {
     case ean13
     case upcA
     case ean8

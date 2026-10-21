@@ -97,6 +97,7 @@ private final class TabIntegrationState {
     let scanner = ScannerModel()
     let scannerSheet = SheetController(initialDetent: .hidden)
     let sheetSettings = PreviewFixtures.makeSettings()
+    let scanHistory = PreviewFixtures.makeHistory()
     let logo = LogoCollapse()
     let tasks = ForYouTaskList()
 }
@@ -110,7 +111,8 @@ private struct TabIntegrationFixture: View {
         @Bindable var navigation = state.navigation
         NavigationStack(path: $navigation.path) {
             RootTabContent(selection: $state.selection, scanner: state.scanner, scannerSheet: state.scannerSheet,
-                           sheetSettings: state.sheetSettings, isTabBarVisible: state.navigation.path.isEmpty) {
+                           sheetSettings: state.sheetSettings, scanHistory: state.scanHistory,
+                           isTabBarVisible: state.navigation.path.isEmpty) {
                 HomeRootView(
                     title: "Nako", pager: state.pager, logoCollapse: state.logo,
                     taskList: state.tasks, zoomNamespace: zoom,

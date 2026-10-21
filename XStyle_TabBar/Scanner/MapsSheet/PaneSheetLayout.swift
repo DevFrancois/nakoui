@@ -115,6 +115,7 @@ struct PaneSheetLayout<Pane: View, PaneFooter: View, Header: View, Content: View
 private struct PaneSheetLayoutPreview: View {
     @State private var sheet: SheetController
     @State private var settings = PreviewFixtures.makeSettings()
+    @State private var history = PreviewFixtures.makeHistory()
 
     init(detent: SheetDetent) {
         _sheet = State(initialValue: SheetController(initialDetent: detent))
@@ -132,6 +133,7 @@ private struct PaneSheetLayoutPreview: View {
                 analysis: .example,
                 code: .sampleEAN13,
                 settings: settings,
+                history: history,
                 horizontalPadding: sheet.metrics.scrollContentPadding,
                 bottomPadding: sheet.canvas.safeAreaBottom,
                 onScanAgain: {}

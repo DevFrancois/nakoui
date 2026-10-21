@@ -25,6 +25,8 @@ struct ContentView: View {
     /// reason.
     @State private var scannerSheet = SheetController(initialDetent: .hidden)
     @State private var sheetSettings = SheetSettings()
+    /// The products scanned, kept across launches.
+    @State private var scanHistory = ScanHistory()
     /// Holds sidebar routes and articles, so either can be pushed.
     @State private var navigation = RootNavigation()
     @State private var isSidebarExpanded = false
@@ -78,7 +80,8 @@ struct ContentView: View {
             // Inside the stack, so articles, quizzes and sidebar pages
             // cover the tab bar when pushed.
             RootTabContent(selection: $rootTab, scanner: scanner, scannerSheet: scannerSheet,
-                           sheetSettings: sheetSettings, isTabBarVisible: navigation.path.isEmpty) {
+                           sheetSettings: sheetSettings, scanHistory: scanHistory,
+                           isTabBarVisible: navigation.path.isEmpty) {
                 HomeRootView(
                     title: mainTitle,
                     pager: pager,

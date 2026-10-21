@@ -14,13 +14,17 @@ struct BottomSheetView: View {
     /// The scanned code the report is for; Copy and Scan Again act on it.
     let code: ScannedCode
     @Bindable var settings: SheetSettings
+    /// For the debug settings' reset.
+    let history: ScanHistory
     var horizontalPadding: CGFloat
     var bottomPadding: CGFloat
     var onScanAgain: () -> Void
 
     var body: some View {
         ScrollView(.vertical) {
-            FoodAnalysisSections(analysis: analysis, code: code, settings: settings, onScanAgain: onScanAgain)
+            FoodAnalysisSections(
+                analysis: analysis, code: code, settings: settings, history: history, onScanAgain: onScanAgain
+            )
                 .padding(.horizontal, horizontalPadding)
                 .padding(.top, 4)
                 .padding(.bottom, bottomPadding + 24)
@@ -37,6 +41,7 @@ private struct FoodAnalysisSections: View {
     let analysis: PetFoodAnalysis
     let code: ScannedCode
     let settings: SheetSettings
+    let history: ScanHistory
     var onScanAgain: () -> Void
 
     var body: some View {
@@ -66,7 +71,7 @@ private struct FoodAnalysisSections: View {
             FoodLabelDetailsSection(details: analysis.labelDetails)
 
             #if DEBUG
-            SheetSettingsSection(settings: settings)
+            SheetSettingsSection(settings: settings, history: history)
                 .padding(.top, 10)
             #endif
         }
@@ -76,11 +81,13 @@ private struct FoodAnalysisSections: View {
 #if DEBUG
 #Preview("Food analysis", traits: .fixedLayout(width: 393, height: 650)) {
     @Previewable @State var settings = PreviewFixtures.makeSettings()
+    @Previewable @State var history = PreviewFixtures.makeHistory()
 
     BottomSheetView(
         analysis: .example,
         code: .sampleEAN13,
         settings: settings,
+        history: history,
         horizontalPadding: SheetMetrics.current.scrollContentPadding,
         bottomPadding: PreviewFixtures.canvas.safeAreaBottom,
         onScanAgain: {}
@@ -90,9 +97,10 @@ private struct FoodAnalysisSections: View {
 
 #Preview("Food analysis · Narrow · Dark", traits: .fixedLayout(width: 320, height: 650)) {
     @Previewable @State var settings = PreviewFixtures.makeSettings()
+    @Previewable @State var history = PreviewFixtures.makeHistory()
 
     BottomSheetView(
-        analysis: .example, code: .sampleEAN13, settings: settings,
+        analysis: .example, code: .sampleEAN13, settings: settings, history: history,
         horizontalPadding: 18, bottomPadding: 20, onScanAgain: {}
     )
     .background(Color(.systemBackground))
