@@ -10,6 +10,9 @@ import TipKit
 
 @main
 struct XStyle_TabBarApp: App {
+    /// One entrance across windows, reset only when the app process launches.
+    @State private var scannerEntranceSession = ScannerViewportEntranceSession()
+
     init() {
         // Before any tip shows. To see tips afresh, launch with
         // `-com.apple.TipKit.ResetDatastore 1`.
@@ -18,7 +21,7 @@ struct XStyle_TabBarApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(scannerEntranceSession: scannerEntranceSession)
         }
     }
 }

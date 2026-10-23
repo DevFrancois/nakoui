@@ -18,6 +18,9 @@ struct SplitPane<Top: View, Bottom: View>: View {
     let breakpoints: [SplitPaneBreakpoint]
     /// The trailing pane's share of the width side by side; nil stacks them.
     var sideBySideFraction: CGFloat?
+    /// Optional scanner entrance, applied outside the pane's clipping shape.
+    var topViewportEntrance: ScannerViewportEntrance? = nil
+    var isTopViewportActive = true
     @ViewBuilder var top: Top
     @ViewBuilder var bottom: Bottom
 
@@ -50,6 +53,7 @@ struct SplitPane<Top: View, Bottom: View>: View {
             top
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipShape(topShape(isSideBySide: isSideBySide))
+                .modifier(ScannerViewportAppearance(entrance: topViewportEntrance, isActive: isTopViewportActive))
                 .ignoresSafeArea(edges: isSideBySide ? [.vertical, .leading] : [.top, .horizontal])
 
             if !isSideBySide {

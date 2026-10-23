@@ -45,10 +45,11 @@ struct ContentView: View {
     /// Shared by the feed images and article zoom transitions.
     @Namespace private var zoomNamespace
 
-    init() {
+    init(scannerEntranceSession: ScannerViewportEntranceSession = ScannerViewportEntranceSession()) {
         let history = ScanHistory()
         _scanHistory = State(initialValue: history)
-        _scanner = State(initialValue: ScannerModel(history: history))
+        _scanner = State(initialValue: ScannerModel(history: history,
+                                                   viewportEntrance: ScannerViewportEntrance(session: scannerEntranceSession)))
     }
 
     var body: some View {

@@ -12,6 +12,8 @@ struct PaneSheetLayout<Pane: View, PaneFooter: View, Header: View, Content: View
     /// Single source of truth for the sheet's position; the sheet and the pane both read it.
     let sheet: SheetController
     let settings: SheetSettings
+    var viewportEntrance: ScannerViewportEntrance? = nil
+    var isViewportActive = true
     @ViewBuilder var pane: Pane
     /// Drawn under the pane, one gap above the bottom safe area, while the sheet is hidden. The pane leaves room
     /// for it, and the rising sheet covers it.
@@ -32,7 +34,9 @@ struct PaneSheetLayout<Pane: View, PaneFooter: View, Header: View, Content: View
                     sheet: sheet,
                     model: paneModel,
                     showsSquash: settings.paneSquash,
-                    mode: settings.viewportMode
+                    mode: settings.viewportMode,
+                    viewportEntrance: viewportEntrance,
+                    isViewportActive: isViewportActive
                 ) {
                     pane
                 } footer: {

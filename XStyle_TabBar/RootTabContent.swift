@@ -51,7 +51,8 @@ struct RootTabContent<Home: View>: View {
                 selection: $selection, layoutAxis: $layoutAxis,
                 isHidden: hidesTabBar,
                 windowBottom: windowBottom,
-                top: $tabBarTop
+                top: $tabBarTop,
+                onScanOriginChange: { scanner.viewportEntrance.sourcePoint = $0 }
             )
         }
         // The bar leaves with its toolbar while a scan result shows: a toolbar

@@ -15,6 +15,8 @@ struct TopPaneView<Content: View, Footer: View>: View {
     var showsSquash: Bool
     /// Debug setting: how the pane makes way for the sheet.
     var mode = ViewportMode.resizing
+    var viewportEntrance: ScannerViewportEntrance? = nil
+    var isViewportActive = true
     /// What fills the rounded surface, such as the camera.
     @ViewBuilder var content: Content
     /// Under the pane while the sheet is hidden, one gap above the bottom safe area; see `PaneLayout`.
@@ -55,6 +57,8 @@ struct TopPaneView<Content: View, Footer: View>: View {
                     cornerRadius: PaneMetrics.viewportCornerRadius,
                     /// The stretch only shows on a pane that follows the sheet.
                     showsSquash: showsSquash && mode == .resizing,
+                    viewportEntrance: viewportEntrance,
+                    isViewportActive: isViewportActive,
                     content: content
                 )
             }
@@ -80,6 +84,8 @@ private struct PaneContainer<Content: View>: View {
     var stretch: CGFloat
     var cornerRadius: CGFloat
     var showsSquash: Bool
+    var viewportEntrance: ScannerViewportEntrance?
+    var isViewportActive: Bool
     var content: Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
@@ -92,6 +98,7 @@ private struct PaneContainer<Content: View>: View {
                 .environment(\.paneIsCovered, isCovered)
         }
         .frame(width: layout.paneFrame.width, height: layout.paneFrame.height)
+        .modifier(ScannerViewportAppearance(entrance: viewportEntrance, isActive: isViewportActive))
         .scaleEffect(x: squash * coverScale, y: coverScale)
         .accessibilityHidden(progress >= 0.5)
         .offset(y: layout.paneFrame.minY)

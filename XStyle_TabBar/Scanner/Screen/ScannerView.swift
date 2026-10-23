@@ -34,7 +34,9 @@ struct ScannerView: View {
             if isSideBySide {
                 SplitPane(
                     breakpoint: .constant(.half), breakpoints: [.half],
-                    sideBySideFraction: ScannerMetrics.sideBySideResultFraction
+                    sideBySideFraction: ScannerMetrics.sideBySideResultFraction,
+                    topViewportEntrance: model.viewportEntrance,
+                    isTopViewportActive: isActive
                 ) {
                     // The pane's top-leading corner is the screen's: inset
                     // clear of the island.
@@ -43,7 +45,8 @@ struct ScannerView: View {
                     sideResult
                 }
             } else {
-                PaneSheetLayout(sheet: sheet, settings: settings) {
+                PaneSheetLayout(sheet: sheet, settings: settings,
+                                viewportEntrance: model.viewportEntrance, isViewportActive: isActive) {
                     // Concentric with the viewport's rounded corner.
                     cameraPane(historyButtonInset: PaneMetrics.viewportCornerRadius - TopMenuMetrics.minimumTapSize / 2)
                 } paneFooter: {
@@ -79,6 +82,9 @@ struct ScannerView: View {
         }
         // Dragging the sheet below the screen closes the result.
         .onChange(of: sheet.detent) {
+            if sheet.detent != .hidden {
+                model.viewportEntrance.finish()
+            }
             if sheet.detent == .hidden, model.scannedCode != nil {
                 model.scanAgain()
             }
@@ -101,7 +107,8 @@ struct ScannerView: View {
         .onChange(of: displayScale) {
             model.updateDisplayScale(displayScale)
         }
-        .modifier(ScannerCameraLifecycle(model: model, sheet: sheet, isActive: isActive, isSideBySide: isSideBySide))
+        .modifier(ScannerCameraLifecycle(model: model, previewHost: previewHost, sheet: sheet,
+                                         isActive: isActive, isSideBySide: isSideBySide))
     }
 
     /// The camera, with the history button over its top-leading corner once
@@ -258,6 +265,7 @@ struct ScannerView: View {
 /// these changes don't re-run the scanner's layout.
 private struct ScannerCameraLifecycle: ViewModifier {
     let model: ScannerModel
+    let previewHost: CameraPreviewHost
     let sheet: SheetController
     let isActive: Bool
     /// Side by side, there's no sheet over the camera.
@@ -269,7 +277,7 @@ private struct ScannerCameraLifecycle: ViewModifier {
         content
             .task(id: isCameraActive) {
                 guard isCameraActive else { return }
-                await model.run()
+                await model.run(preparePreview: previewHost.prepare)
             }
             .onChange(of: !isSideBySide && sheet.restsAtFull, initial: true) { _, isCovered in
                 model.setCameraSuspended(isCovered)

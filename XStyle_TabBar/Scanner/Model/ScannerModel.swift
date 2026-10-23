@@ -7,6 +7,8 @@ import Observation
 /// what the views read.
 @Observable
 final class ScannerModel {
+    /// This window's entrance, independent of camera restarts and layouts.
+    let viewportEntrance: ScannerViewportEntrance
     private(set) var state: ScannerState
     /// The found-code animation, from the first sighting until it has faded
     /// back to the live camera.
@@ -98,8 +100,9 @@ final class ScannerModel {
 
     init(
         state: ScannerState = .idle, scannedCode: ScannedCode? = nil, zoom: CameraZoom? = nil, hasTorch: Bool = false,
-        history: ScanHistory? = nil
+        history: ScanHistory? = nil, viewportEntrance: ScannerViewportEntrance = ScannerViewportEntrance()
     ) {
+        self.viewportEntrance = viewportEntrance
         self.state = state
         self.scannedCode = scannedCode
         self.zoom = zoom
@@ -125,15 +128,15 @@ final class ScannerModel {
     }
 
     /// Runs the camera until the calling task is cancelled.
-    func run() async {
+    func run(preparePreview: (AVCaptureSession) -> Void = { _ in }) async {
+        #if targetEnvironment(simulator)
         guard BarcodeCaptureService.isCameraAvailable else {
-            #if targetEnvironment(simulator)
             await runSimulatedCamera()
-            #else
-            state = .unavailable
-            #endif
             return
         }
+        #endif
+        // On devices, discovery happens in configure() on the capture actor.
+        // Even querying the default camera can synchronously contact its service.
         guard await isCameraAuthorized() else {
             state = .denied
             return
@@ -143,6 +146,9 @@ final class ScannerModel {
 
         let capture = capture ?? BarcodeCaptureService()
         self.capture = capture
+        // Bind the retained layer before start(), not from a SwiftUI update
+        // after startRunning(), which would synchronously rebuild the live graph.
+        preparePreview(capture.session)
         analyzer = capture.analyzer
         await capture.analyzer.setFreezesCodes(revealStyle == .fullReveal)
         // Under the result sheet at full, the run starts with the camera held stopped.

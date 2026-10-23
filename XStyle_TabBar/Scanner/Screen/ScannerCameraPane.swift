@@ -28,8 +28,8 @@ struct ScannerCameraPane: View {
                     model.updateScreen(size: size, displayScale: displayScale)
                 }
 
-            if let session = model.session, let device = model.cameraDevice {
-                CameraPreview(host: previewHost, session: session, device: device,
+            if model.session != nil, let device = model.cameraDevice {
+                CameraPreview(host: previewHost, device: device,
                               onRotationChange: model.updatePreviewRotation)
             } else {
                 ScannerBackdropPlaceholder(showsLabel: Self.showsSimulatedLabel && !isUnavailable)

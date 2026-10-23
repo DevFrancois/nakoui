@@ -12,6 +12,8 @@ struct GlassTabBarToolbar: ToolbarContent {
     /// The bar's top edge in global space, measured where it rests: its slide
     /// and press are visual only.
     @Binding var top: CGFloat?
+    var onScanOriginChange: ((CGPoint) -> Void)? = nil
+    @Environment(\.layoutDirection) private var layoutDirection
 
     var body: some ToolbarContent {
         ToolbarSpacer(.flexible, placement: .bottomBar)
@@ -40,11 +42,24 @@ struct GlassTabBarToolbar: ToolbarContent {
     /// top is taken from the center, which the zoom leaves in place, less half
     /// the bar's own height.
     private func reportingTop(of bar: some View) -> some View {
-        bar.onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.frame(in: .global).midY - proxy.size.height / 2
-        } action: { top in
+        bar.onGeometryChange(for: CGRect.self) { proxy in
+            let frame = proxy.frame(in: .global)
+            return CGRect(x: frame.midX - proxy.size.width / 2, y: frame.midY - proxy.size.height / 2,
+                          width: proxy.size.width, height: proxy.size.height)
+        } action: { frame in
             if !isHidden {
-                self.top = top
+                self.top = frame.minY
+                // Scan is the second item. A point near its symbol is enough
+                // for the viewport's origin, including the vertical rail.
+                let origin: CGPoint
+                if layoutAxis == .vertical {
+                    origin = CGPoint(x: frame.midX, y: frame.minY + frame.height * 0.375)
+                } else {
+                    let fraction: CGFloat = layoutDirection == .rightToLeft ? 0.625 : 0.375
+                    let height = frame.height - GlassTabBarMetrics.horizontalToolbarBottomPadding
+                    origin = CGPoint(x: frame.minX + frame.width * fraction, y: frame.minY + height / 2 - 6)
+                }
+                onScanOriginChange?(origin)
             }
         }
     }
