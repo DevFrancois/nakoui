@@ -16,27 +16,38 @@ struct ScannerViewportAppearance: ViewModifier {
             CGPoint(x: $0.x - viewportOrigin.x, y: $0.y - viewportOrigin.y)
         }
         let isEntrancePlaying = Self.isEntrancePlaying(isActive: isActive, scenePhase: scenePhase)
-        // One structure throughout: swapping branches when the entrance
-        // settles would rebuild the camera's container, taking its preview
-        // out of the window for a moment. The blur lives inside the pane, as
-        // a material over the camera (`ScannerEntranceBlur`).
-        content
-            .modifier(ScannerViewportWarp(progress: progress, source: source,
-                                          isRightToLeft: layoutDirection == .rightToLeft))
-            .opacity(min(max(progress * 5, 0), 1))
-            .background {
-                // A sibling of the projected content, so measuring the origin
-                // never feeds the animated transform back into itself. Only
-                // while opening, overshoot included: at rest nothing reads it.
-                if progress != 1 {
-                    Color.clear
-                        .onGeometryChange(for: CGPoint.self) { proxy in
-                            proxy.frame(in: .global).origin
-                        } action: { origin in
-                            viewportOrigin = origin
-                        }
-                }
+        Group {
+            // The whole pane blurs while it opens, edges and chrome included,
+            // overshoot too. A blur flattens what it covers, which the
+            // camera's UIKit view can't be: SwiftUI would draw a placeholder
+            // instead. So the camera stays out of the pane while it opens
+            // (`scannerViewportIsOpening`), and nothing blurs at rest.
+            // Swapping branches rebuilds the pane, before the camera is in it.
+            if progress != 1 {
+                content
+                    .environment(\.scannerViewportIsOpening, true)
+                    .modifier(ScannerViewportWarp(progress: progress, source: source,
+                                                  isRightToLeft: layoutDirection == .rightToLeft))
+                    // Match the reference's blur after distortion, clearing as we open.
+                    .blur(radius: 8 * (1 - min(max(progress, 0), 1)))
+                    .opacity(min(max(progress * 5, 0), 1))
+            } else {
+                content
             }
+        }
+        .background {
+            // A sibling of the projected content, so measuring the origin
+            // never feeds the animated transform back into itself. Only
+            // while opening: at rest nothing reads it.
+            if progress != 1 {
+                Color.clear
+                    .onGeometryChange(for: CGPoint.self) { proxy in
+                        proxy.frame(in: .global).origin
+                    } action: { origin in
+                        viewportOrigin = origin
+                    }
+            }
+        }
         .allowsHitTesting(progress >= 0.92)
         .accessibilityHidden(progress < 0.92)
         .onChange(of: isEntrancePlaying, initial: true) {
@@ -63,24 +74,10 @@ struct ScannerViewportAppearance: ViewModifier {
     }
 }
 
-/// The entrance's blur, clearing as the viewport opens. A material samples
-/// what's behind it, so the camera's UIKit view under it is never flattened,
-/// which a `.blur` would do, drawing SwiftUI's placeholder over the camera.
-/// Its own view, so only it redraws on each frame of the entrance.
-struct ScannerEntranceBlur: View {
-    let entrance: ScannerViewportEntrance
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        let progress = min(max(entrance.progress, 0), 1)
-        if !reduceMotion, progress < 1 {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .opacity(1 - progress)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
-    }
+extension EnvironmentValues {
+    /// Whether the scanner's viewport is still opening, under the entrance's
+    /// blur. The camera's UIKit view stays out of it meanwhile.
+    @Entry var scannerViewportIsOpening = false
 }
 
 /// Wave supplies every frame, so no second SwiftUI interpolation is needed.
@@ -136,11 +133,8 @@ private struct ScannerViewportEntrancePreview: View {
     var body: some View {
         VStack(spacing: 24) {
             PaneSurface(cornerRadius: PaneMetrics.viewportCornerRadius) {
-                ZStack {
-                    ScannerBackdropPlaceholder()
-                    ScannerEntranceBlur(entrance: entrance)
-                    ScannerViewfinder()
-                }
+                ScannerBackdropPlaceholder()
+                    .overlay { ScannerViewfinder() }
             }
             .modifier(ScannerViewportAppearance(entrance: entrance, isActive: true))
             .id(ObjectIdentifier(entrance))
