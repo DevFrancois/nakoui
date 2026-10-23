@@ -13,6 +13,24 @@ final class CameraPreviewLayerView: UIView {
     private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
     private var rotationObservation: NSKeyValueObservation?
     private var reportedRotation: CameraImageRotation?
+    private var previewObservation: NSKeyValueObservation?
+    private var isShowingPreview = false
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        alpha = 0
+        previewObservation = previewLayer.observe(\.isPreviewing, options: [.initial, .new]) { [weak self] _, _ in
+            // This KVO callback has no main-queue guarantee. Read the current
+            // readiness after the hop so queued notifications cannot show an
+            // already-stopped session.
+            Task { @MainActor [weak self] in
+                self?.updatePreviewVisibility()
+            }
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
 
     override class var layerClass: AnyClass {
         AVCaptureVideoPreviewLayer.self
@@ -33,6 +51,25 @@ final class CameraPreviewLayerView: UIView {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         updateRotationCoordinator()
+        updatePreviewVisibility()
+    }
+
+    private func updatePreviewVisibility() {
+        guard previewLayer.isPreviewing else {
+            isShowingPreview = false
+            layer.removeAnimation(forKey: "opacity")
+            UIView.performWithoutAnimation { alpha = 0 }
+            return
+        }
+        // Reparenting an already-live preview during layout keeps it visible.
+        // A fresh run waits for both a window and actual preview frames.
+        guard window != nil, !isShowingPreview else { return }
+        isShowingPreview = true
+        // The sensor's first resumed frames can briefly change brightness or
+        // color. Ease in the feed itself while the scanner chrome stays steady.
+        UIView.animate(withDuration: 0.18, delay: 0, options: [.curveEaseIn, .beginFromCurrentState, .allowUserInteraction]) {
+            self.alpha = 1
+        }
     }
 
     private func updateRotationCoordinator() {
