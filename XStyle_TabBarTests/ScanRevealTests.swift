@@ -31,7 +31,7 @@ struct ScanRevealTests {
         let model = ScannerModel()
         model.revealStyle = .liveBrackets
         model.updateScreen(size: CGSize(width: 386, height: 662), displayScale: 3)
-        let run = Task { await model.run() }
+        let run = Task { await model.run(preparePreview: { _ in }) }
         defer { run.cancel() }
         try #require(await eventually(within: 3) { model.isAiming })
 

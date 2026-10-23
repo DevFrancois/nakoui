@@ -12,15 +12,16 @@ struct GlassTabBarToolbar: ToolbarContent {
     /// The bar's top edge in global space, measured where it rests: its slide
     /// and press are visual only.
     @Binding var top: CGFloat?
+    /// Where the Scan symbol rests, in global space.
     var onScanOriginChange: ((CGPoint) -> Void)? = nil
-    @Environment(\.layoutDirection) private var layoutDirection
 
     var body: some ToolbarContent {
         ToolbarSpacer(.flexible, placement: .bottomBar)
         if #available(iOS 27.1, *) {
             ToolbarItem(placement: .bottomBar) {
                 reportingTop(of: AdaptiveGlassTabBar(selection: $selection, layoutAxis: $layoutAxis,
-                                                     isHidden: isHidden, windowBottom: windowBottom, restingTop: top))
+                                                     isHidden: isHidden, windowBottom: windowBottom, restingTop: top,
+                                                     onScanOriginChange: onScanOriginChange))
             }
             .axisBehavior(.verticalPreferred)
             .sharedBackgroundVisibility(.hidden)
@@ -29,7 +30,7 @@ struct GlassTabBarToolbar: ToolbarContent {
         } else {
             ToolbarItem(placement: .bottomBar) {
                 reportingTop(of: GlassTabBar(selection: $selection, isHidden: isHidden, windowBottom: windowBottom,
-                                             restingTop: top))
+                                             restingTop: top, onScanOriginChange: onScanOriginChange))
             }
             .sharedBackgroundVisibility(.hidden)
         }
@@ -42,24 +43,11 @@ struct GlassTabBarToolbar: ToolbarContent {
     /// top is taken from the center, which the zoom leaves in place, less half
     /// the bar's own height.
     private func reportingTop(of bar: some View) -> some View {
-        bar.onGeometryChange(for: CGRect.self) { proxy in
-            let frame = proxy.frame(in: .global)
-            return CGRect(x: frame.midX - proxy.size.width / 2, y: frame.midY - proxy.size.height / 2,
-                          width: proxy.size.width, height: proxy.size.height)
-        } action: { frame in
+        bar.onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.frame(in: .global).midY - proxy.size.height / 2
+        } action: { top in
             if !isHidden {
-                self.top = frame.minY
-                // Scan is the second item. A point near its symbol is enough
-                // for the viewport's origin, including the vertical rail.
-                let origin: CGPoint
-                if layoutAxis == .vertical {
-                    origin = CGPoint(x: frame.midX, y: frame.minY + frame.height * 0.375)
-                } else {
-                    let fraction: CGFloat = layoutDirection == .rightToLeft ? 0.625 : 0.375
-                    let height = frame.height - GlassTabBarMetrics.horizontalToolbarBottomPadding
-                    origin = CGPoint(x: frame.minX + frame.width * fraction, y: frame.minY + height / 2 - 6)
-                }
-                onScanOriginChange?(origin)
+                self.top = top
             }
         }
     }
@@ -72,11 +60,13 @@ private struct AdaptiveGlassTabBar: View {
     let isHidden: Bool
     let windowBottom: CGFloat
     let restingTop: CGFloat?
+    let onScanOriginChange: ((CGPoint) -> Void)?
     @Environment(\.toolbarVerticalEdge) private var verticalEdge
 
     var body: some View {
         GlassTabBar(selection: $selection, layoutAxis: verticalEdge == nil ? .horizontal : .vertical,
-                    isHidden: isHidden, windowBottom: windowBottom, restingTop: restingTop)
+                    isHidden: isHidden, windowBottom: windowBottom, restingTop: restingTop,
+                    onScanOriginChange: onScanOriginChange)
             .onChange(of: verticalEdge == nil, initial: true) {
                 layoutAxis = verticalEdge == nil ? .horizontal : .vertical
             }
@@ -94,8 +84,12 @@ struct GlassTabBar: View {
     /// The bar's top edge in global space where it rests, which it slides
     /// from and back to; see `GlassTabBarToolbar.top`.
     var restingTop: CGFloat?
+    /// Where the Scan symbol rests, in global space, while the bar shows.
+    var onScanOriginChange: ((CGPoint) -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var presentation = GlassTabBarPresentation()
+    /// The controls' frame in global space, without the press zoom.
+    @State private var controlsFrame: CGRect?
 
     // Release builds have no dials, so they ignore any values a debug build
     // left stored.
@@ -115,6 +109,22 @@ struct GlassTabBar: View {
         GlassTabBarRepresentable(selection: $selection, layoutAxis: layoutAxis, motion: motion,
                                  presentation: presentation)
             .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGRect.self) { proxy in
+                // The press zoom scales about the centre, which it leaves in
+                // place: the resting frame is the centre and the laid-out size.
+                let frame = proxy.frame(in: .global)
+                return CGRect(x: frame.midX - proxy.size.width / 2, y: frame.midY - proxy.size.height / 2,
+                              width: proxy.size.width, height: proxy.size.height)
+            } action: { frame in
+                controlsFrame = frame
+                reportScanOrigin()
+            }
+            .onChange(of: presentation.scanSymbol) {
+                reportScanOrigin()
+            }
+            .onChange(of: isHidden) {
+                reportScanOrigin()
+            }
             .background {
                 // Keep native glass behind the controls so its foreground
                 // treatment cannot change their explicitly assigned colors.
@@ -153,6 +163,14 @@ struct GlassTabBar: View {
                        value: isHidden)
             .allowsHitTesting(!isHidden)
             .accessibilityHidden(isHidden)
+    }
+
+    /// Reports the Scan symbol where the controls laid it out. Hidden, the
+    /// toolbar lays the bar out elsewhere, which isn't where it comes back to.
+    private func reportScanOrigin() {
+        guard !isHidden, let controlsFrame, let symbol = presentation.scanSymbol else { return }
+        onScanOriginChange?(CGPoint(x: controlsFrame.minX + symbol.x * controlsFrame.width,
+                                    y: controlsFrame.minY + symbol.y * controlsFrame.height))
     }
 }
 

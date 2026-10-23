@@ -50,6 +50,11 @@ actor BarcodeCaptureService {
         AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
     }
 
+    /// Whether there's a camera to scan with, found once set up.
+    func hasCamera() -> Bool {
+        device != nil || Self.backCamera != nil
+    }
+
     /// Starts the camera, setting it up on first use.
     /// - Returns: The token that stops this run.
     func start() throws -> Int {

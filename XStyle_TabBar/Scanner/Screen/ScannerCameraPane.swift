@@ -28,12 +28,14 @@ struct ScannerCameraPane: View {
                     model.updateScreen(size: size, displayScale: displayScale)
                 }
 
-            if model.session != nil, let device = model.cameraDevice {
+            if let device = model.cameraDevice {
                 CameraPreview(host: previewHost, device: device,
                               onRotationChange: model.updatePreviewRotation)
             } else {
                 ScannerBackdropPlaceholder(showsLabel: Self.showsSimulatedLabel && !isUnavailable)
             }
+
+            ScannerEntranceBlur(entrance: model.viewportEntrance)
 
             if (model.state == .idle || model.state == .scanning) && !model.isPausedForResult {
                 ScannerViewfinder(isRevealing: model.revealedCode != nil)

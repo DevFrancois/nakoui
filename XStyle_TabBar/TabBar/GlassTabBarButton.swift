@@ -106,6 +106,9 @@ final class GlassTabBarButton: UIControl {
         return CGSize(width: size.width, height: max(GlassTabBarMetrics.minimumTapSize, ceil(height)))
     }
 
+    /// The symbol's centre, in this button's bounds.
+    var symbolCenter: CGPoint { symbolView.center }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         if layoutAxis == .vertical {

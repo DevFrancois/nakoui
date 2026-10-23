@@ -192,7 +192,7 @@ final class ScanHistoryTests {
         let history = ScanHistory(defaults: defaults)
         let scanner = ScannerModel(history: history)
         scanner.updateScreen(size: CGSize(width: 386, height: 662), displayScale: 3)
-        let run = Task { await scanner.run() }
+        let run = Task { await scanner.run(preparePreview: { _ in }) }
         defer { run.cancel() }
         try #require(await eventually(within: 3) { scanner.isAiming })
 

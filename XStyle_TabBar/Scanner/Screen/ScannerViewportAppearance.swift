@@ -3,7 +3,7 @@ import SwiftUI
 /// Unfurls the already-clipped viewport with Wave. A projection keeps the
 /// native camera layer live; a distortion shader cannot sample that layer.
 struct ScannerViewportAppearance: ViewModifier {
-    var entrance: ScannerViewportEntrance?
+    var entrance: ScannerViewportEntrance
     var isActive: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -11,41 +11,75 @@ struct ScannerViewportAppearance: ViewModifier {
     @State private var viewportOrigin = CGPoint.zero
 
     func body(content: Content) -> some View {
-        let progress = reduceMotion ? 1 : entrance?.progress ?? 1
-        let source = entrance?.sourcePoint.map {
+        let progress = reduceMotion ? 1 : entrance.progress
+        let source = entrance.sourcePoint.map {
             CGPoint(x: $0.x - viewportOrigin.x, y: $0.y - viewportOrigin.y)
         }
+        let isEntrancePlaying = Self.isEntrancePlaying(isActive: isActive, scenePhase: scenePhase)
+        // One structure throughout: swapping branches when the entrance
+        // settles would rebuild the camera's container, taking its preview
+        // out of the window for a moment. The blur lives inside the pane, as
+        // a material over the camera (`ScannerEntranceBlur`).
         content
             .modifier(ScannerViewportWarp(progress: progress, source: source,
                                           isRightToLeft: layoutDirection == .rightToLeft))
-            // Match the reference's blur after distortion, clearing as we open.
-            .blur(radius: 8 * (1 - min(max(progress, 0), 1)))
             .opacity(min(max(progress * 5, 0), 1))
             .background {
                 // A sibling of the projected content, so measuring the origin
-                // never feeds the animated transform back into itself.
-                Color.clear
-                    .onGeometryChange(for: CGPoint.self) { proxy in
-                        proxy.frame(in: .global).origin
-                    } action: { origin in
-                        viewportOrigin = origin
-                    }
+                // never feeds the animated transform back into itself. Only
+                // while opening, overshoot included: at rest nothing reads it.
+                if progress != 1 {
+                    Color.clear
+                        .onGeometryChange(for: CGPoint.self) { proxy in
+                            proxy.frame(in: .global).origin
+                        } action: { origin in
+                            viewportOrigin = origin
+                        }
+                }
             }
-            .allowsHitTesting(progress >= 0.92)
-            .accessibilityHidden(progress < 0.92)
-            .onChange(of: isActive && scenePhase == .active, initial: true) {
-                updateEntrance()
-            }
-            .onChange(of: reduceMotion) {
-                updateEntrance()
-            }
-            .onDisappear {
-                entrance?.finish()
-            }
+        .allowsHitTesting(progress >= 0.92)
+        .accessibilityHidden(progress < 0.92)
+        .onChange(of: isEntrancePlaying, initial: true) {
+            updateEntrance()
+        }
+        .onChange(of: reduceMotion) {
+            updateEntrance()
+        }
+        .onDisappear {
+            entrance.finish()
+        }
+    }
+
+    /// Whether the entrance may play. An inactive scene still shows it, such
+    /// as behind the camera permission alert on the first visit; only leaving
+    /// the tab or the app settles it.
+    static func isEntrancePlaying(isActive: Bool, scenePhase: ScenePhase) -> Bool {
+        isActive && scenePhase != .background
     }
 
     private func updateEntrance() {
-        entrance?.update(isActive: isActive && scenePhase == .active, reduceMotion: reduceMotion)
+        entrance.update(isActive: Self.isEntrancePlaying(isActive: isActive, scenePhase: scenePhase),
+                        reduceMotion: reduceMotion)
+    }
+}
+
+/// The entrance's blur, clearing as the viewport opens. A material samples
+/// what's behind it, so the camera's UIKit view under it is never flattened,
+/// which a `.blur` would do, drawing SwiftUI's placeholder over the camera.
+/// Its own view, so only it redraws on each frame of the entrance.
+struct ScannerEntranceBlur: View {
+    let entrance: ScannerViewportEntrance
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let progress = min(max(entrance.progress, 0), 1)
+        if !reduceMotion, progress < 1 {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .opacity(1 - progress)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
     }
 }
 
@@ -102,8 +136,11 @@ private struct ScannerViewportEntrancePreview: View {
     var body: some View {
         VStack(spacing: 24) {
             PaneSurface(cornerRadius: PaneMetrics.viewportCornerRadius) {
-                ScannerBackdropPlaceholder()
-                    .overlay { ScannerViewfinder() }
+                ZStack {
+                    ScannerBackdropPlaceholder()
+                    ScannerEntranceBlur(entrance: entrance)
+                    ScannerViewfinder()
+                }
             }
             .modifier(ScannerViewportAppearance(entrance: entrance, isActive: true))
             .id(ObjectIdentifier(entrance))

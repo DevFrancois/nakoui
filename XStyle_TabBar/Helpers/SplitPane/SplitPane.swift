@@ -13,14 +13,13 @@ import SwiftUI
 /// inside the safe area. Each pane
 /// runs into the safe area on the screen edges it touches: the top pane's
 /// content, such as a camera, and the bottom pane's background.
-struct SplitPane<Top: View, Bottom: View>: View {
+struct SplitPane<Top: View, Bottom: View, TopEffect: ViewModifier>: View {
     @Binding var breakpoint: SplitPaneBreakpoint
     let breakpoints: [SplitPaneBreakpoint]
     /// The trailing pane's share of the width side by side; nil stacks them.
     var sideBySideFraction: CGFloat?
-    /// Optional scanner entrance, applied outside the pane's clipping shape.
-    var topViewportEntrance: ScannerViewportEntrance? = nil
-    var isTopViewportActive = true
+    /// Applied to the top pane outside its clipping shape, such as an entrance.
+    var topEffect: TopEffect
     @ViewBuilder var top: Top
     @ViewBuilder var bottom: Bottom
 
@@ -53,7 +52,7 @@ struct SplitPane<Top: View, Bottom: View>: View {
             top
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipShape(topShape(isSideBySide: isSideBySide))
-                .modifier(ScannerViewportAppearance(entrance: topViewportEntrance, isActive: isTopViewportActive))
+                .modifier(topEffect)
                 .ignoresSafeArea(edges: isSideBySide ? [.vertical, .leading] : [.top, .horizontal])
 
             if !isSideBySide {
@@ -224,6 +223,16 @@ struct SplitPane<Top: View, Bottom: View>: View {
     private static var handleColor: Color { Color(uiColor: .label).opacity(0.08) }
     private static var background: Color { Color(uiColor: .systemGroupedBackground) }
     private static var paneBackground: Color { Color(uiColor: .secondarySystemGroupedBackground) }
+}
+
+extension SplitPane where TopEffect == EmptyModifier {
+    init(
+        breakpoint: Binding<SplitPaneBreakpoint>, breakpoints: [SplitPaneBreakpoint], sideBySideFraction: CGFloat? = nil,
+        @ViewBuilder top: () -> Top, @ViewBuilder bottom: () -> Bottom
+    ) {
+        self.init(breakpoint: breakpoint, breakpoints: breakpoints, sideBySideFraction: sideBySideFraction,
+                  topEffect: EmptyModifier(), top: top, bottom: bottom)
+    }
 }
 
 #Preview {

@@ -7,12 +7,19 @@ import UIKit
 @Observable
 final class GlassTabBarPresentation {
     private(set) var scale = CGSize(width: 1, height: 1)
+    /// The Scan symbol's centre within the controls, as UIKit laid it out.
+    private(set) var scanSymbol: UnitPoint?
     /// How the capsule and its highlight move; see `GlassTabBarMotion`.
     @ObservationIgnored var motion = GlassTabBarMotion.calm
     @ObservationIgnored weak var coordinateView: UIView?
     @ObservationIgnored weak var placementView: UIView?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var isUpdatingView = false
+
+    func setScanSymbol(x: CGFloat, y: CGFloat) {
+        let point = UnitPoint(x: x, y: y)
+        if scanSymbol != point { scanSymbol = point }
+    }
 
     func updateView(_ update: () -> Void) {
         isUpdatingView = true

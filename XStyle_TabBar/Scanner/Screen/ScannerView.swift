@@ -35,8 +35,7 @@ struct ScannerView: View {
                 SplitPane(
                     breakpoint: .constant(.half), breakpoints: [.half],
                     sideBySideFraction: ScannerMetrics.sideBySideResultFraction,
-                    topViewportEntrance: model.viewportEntrance,
-                    isTopViewportActive: isActive
+                    topEffect: ScannerViewportAppearance(entrance: model.viewportEntrance, isActive: isActive)
                 ) {
                     // The pane's top-leading corner is the screen's: inset
                     // clear of the island.
@@ -46,7 +45,7 @@ struct ScannerView: View {
                 }
             } else {
                 PaneSheetLayout(sheet: sheet, settings: settings,
-                                viewportEntrance: model.viewportEntrance, isViewportActive: isActive) {
+                                paneEffect: ScannerViewportAppearance(entrance: model.viewportEntrance, isActive: isActive)) {
                     // Concentric with the viewport's rounded corner.
                     cameraPane(historyButtonInset: PaneMetrics.viewportCornerRadius - TopMenuMetrics.minimumTapSize / 2)
                 } paneFooter: {

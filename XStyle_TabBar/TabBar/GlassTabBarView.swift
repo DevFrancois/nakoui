@@ -173,6 +173,13 @@ final class GlassTabBarView: UIView {
                 height: itemHeight
             )
         }
+        if let scan = buttons.first(where: { $0.tab == .scanner }), bounds.width > 0, bounds.height > 0 {
+            // From centres and bounds, which a pressed button's transform leaves alone.
+            scan.layoutIfNeeded()
+            let symbol = scan.symbolCenter
+            let center = CGPoint(x: scan.center.x - scan.bounds.midX + symbol.x, y: scan.center.y - scan.bounds.midY + symbol.y)
+            presentation.setScanSymbol(x: center.x / bounds.width, y: center.y / bounds.height)
+        }
         let geometry = currentGeometry
         if lastGeometry != geometry {
             lastGeometry = geometry

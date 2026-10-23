@@ -8,15 +8,15 @@ import SwiftUI
 /// Rounded pane above the bottom sheet. It resizes with the sheet down to medium, then holds its size as the sheet
 /// rises to full over it, pushed back a little like the content under a stacked sheet. The other `ViewportMode`s keep
 /// its frame, and the sheet slides over it all the way.
-struct TopPaneView<Content: View, Footer: View>: View {
+struct TopPaneView<Content: View, Footer: View, PaneEffect: ViewModifier>: View {
     let sheet: SheetController
     let model: TopPaneModel
     /// Debug setting: whether the stretch narrows the pane.
     var showsSquash: Bool
     /// Debug setting: how the pane makes way for the sheet.
     var mode = ViewportMode.resizing
-    var viewportEntrance: ScannerViewportEntrance? = nil
-    var isViewportActive = true
+    /// Applied to the rounded pane before it scales and moves, such as an entrance.
+    var paneEffect: PaneEffect
     /// What fills the rounded surface, such as the camera.
     @ViewBuilder var content: Content
     /// Under the pane while the sheet is hidden, one gap above the bottom safe area; see `PaneLayout`.
@@ -57,8 +57,7 @@ struct TopPaneView<Content: View, Footer: View>: View {
                     cornerRadius: PaneMetrics.viewportCornerRadius,
                     /// The stretch only shows on a pane that follows the sheet.
                     showsSquash: showsSquash && mode == .resizing,
-                    viewportEntrance: viewportEntrance,
-                    isViewportActive: isViewportActive,
+                    paneEffect: paneEffect,
                     content: content
                 )
             }
@@ -77,15 +76,14 @@ extension EnvironmentValues {
 }
 
 /// Scales the card in its own coordinates, then places it below the top safe area.
-private struct PaneContainer<Content: View>: View {
+private struct PaneContainer<Content: View, PaneEffect: ViewModifier>: View {
     var layout: PaneLayout
     /// The sheet past medium, leaving out its bounce: the cover the content reacts to. The scale follows the bounce.
     var isCovered: Bool
     var stretch: CGFloat
     var cornerRadius: CGFloat
     var showsSquash: Bool
-    var viewportEntrance: ScannerViewportEntrance?
-    var isViewportActive: Bool
+    var paneEffect: PaneEffect
     var content: Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
@@ -98,7 +96,7 @@ private struct PaneContainer<Content: View>: View {
                 .environment(\.paneIsCovered, isCovered)
         }
         .frame(width: layout.paneFrame.width, height: layout.paneFrame.height)
-        .modifier(ScannerViewportAppearance(entrance: viewportEntrance, isActive: isViewportActive))
+        .modifier(paneEffect)
         .scaleEffect(x: squash * coverScale, y: coverScale)
         .accessibilityHidden(progress >= 0.5)
         .offset(y: layout.paneFrame.minY)
@@ -124,7 +122,7 @@ private struct TopPanePreview: View {
     }
 
     var body: some View {
-        TopPaneView(sheet: sheet, model: model, showsSquash: true) {
+        TopPaneView(sheet: sheet, model: model, showsSquash: true, paneEffect: EmptyModifier()) {
             ScannerBackdropPlaceholder()
         } footer: {
             EmptyView()

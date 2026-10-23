@@ -29,9 +29,8 @@ final class ScannerModel {
     var scansWithResultOpen = true {
         didSet { updateScanning() }
     }
-    /// The live session, for the preview layer. Nil until the camera first
-    /// starts, and always in previews and the Simulator.
-    private(set) var session: AVCaptureSession?
+    /// The camera, once it has first started: the preview shows it from
+    /// then on. Nil in previews and the Simulator.
     private(set) var cameraDevice: AVCaptureDevice?
     /// The camera's zoom range, for the zoom control. Nil until the camera
     /// first starts.
@@ -100,7 +99,7 @@ final class ScannerModel {
 
     init(
         state: ScannerState = .idle, scannedCode: ScannedCode? = nil, zoom: CameraZoom? = nil, hasTorch: Bool = false,
-        history: ScanHistory? = nil, viewportEntrance: ScannerViewportEntrance = ScannerViewportEntrance()
+        history: ScanHistory? = nil, viewportEntrance: ScannerViewportEntrance = .settled()
     ) {
         self.viewportEntrance = viewportEntrance
         self.state = state
@@ -128,15 +127,24 @@ final class ScannerModel {
     }
 
     /// Runs the camera until the calling task is cancelled.
-    func run(preparePreview: (AVCaptureSession) -> Void = { _ in }) async {
+    /// - Parameter preparePreview: Binds the session to the preview layer,
+    ///   before it starts; nothing else does.
+    func run(preparePreview: (AVCaptureSession) -> Void) async {
         #if targetEnvironment(simulator)
         guard BarcodeCaptureService.isCameraAvailable else {
             await runSimulatedCamera()
             return
         }
         #endif
-        // On devices, discovery happens in configure() on the capture actor.
-        // Even querying the default camera can synchronously contact its service.
+        let capture = capture ?? BarcodeCaptureService()
+        self.capture = capture
+        // Before asking for access, which a device without a camera mustn't.
+        // On the capture actor: even querying the default camera can
+        // synchronously contact its service.
+        guard await capture.hasCamera() else {
+            state = .unavailable
+            return
+        }
         guard await isCameraAuthorized() else {
             state = .denied
             return
@@ -144,8 +152,6 @@ final class ScannerModel {
         // The tab may have been left while the permission prompt was up.
         guard !Task.isCancelled else { return }
 
-        let capture = capture ?? BarcodeCaptureService()
-        self.capture = capture
         // Bind the retained layer before start(), not from a SwiftUI update
         // after startRunning(), which would synchronously rebuild the live graph.
         preparePreview(capture.session)
@@ -161,7 +167,6 @@ final class ScannerModel {
             state = .unavailable
             return
         }
-        session = capture.session
         cameraDevice = await capture.device
         // The camera keeps its zoom between runs, so only the first sets it.
         // The camera was set to it already, unless that failed.

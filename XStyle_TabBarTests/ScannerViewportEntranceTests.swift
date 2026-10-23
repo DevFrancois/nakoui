@@ -84,19 +84,22 @@ struct ScannerViewportEntranceTests {
         #expect(animator.state == .ended)
     }
 
-    @Test("A new app session gets its own first entrance")
-    func freshSessionsAreIndependent() {
-        let previousSession = ScannerViewportEntrance()
-        previousSession.update(isActive: true, reduceMotion: true)
-        let freshSession = ScannerViewportEntrance()
-        #expect(!freshSession.hasAppeared)
-        #expect(freshSession.progress == 0)
+    @Test("A model made without the app's entrance shows its viewport open")
+    func defaultModelEntranceIsSettled() {
+        let model = ScannerModel()
+        #expect(model.viewportEntrance.hasAppeared)
+        #expect(model.viewportEntrance.progress == 1)
 
-        freshSession.update(isActive: true, reduceMotion: false)
-        defer { freshSession.finish() }
-        #expect(freshSession.hasAppeared)
-        #expect(freshSession.progress == 0)
-        #expect(previousSession.progress == 1)
+        model.viewportEntrance.update(isActive: true, reduceMotion: false)
+        #expect(model.viewportEntrance.progress == 1)
+    }
+
+    @Test("Only leaving the tab or the app settles the entrance, not an inactive scene")
+    func inactiveScenePlaysEntrance() {
+        #expect(ScannerViewportAppearance.isEntrancePlaying(isActive: true, scenePhase: .active))
+        #expect(ScannerViewportAppearance.isEntrancePlaying(isActive: true, scenePhase: .inactive))
+        #expect(!ScannerViewportAppearance.isEntrancePlaying(isActive: true, scenePhase: .background))
+        #expect(!ScannerViewportAppearance.isEntrancePlaying(isActive: false, scenePhase: .active))
     }
 
     @Test("A second window cannot cancel the running entrance or replay it")

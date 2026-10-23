@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import OSLog
 import UIKit
 
 /// Coordinates the actual capture device with this scene's preview layer.
@@ -14,7 +15,10 @@ final class CameraPreviewLayerView: UIView {
     private var rotationObservation: NSKeyValueObservation?
     private var reportedRotation: CameraImageRotation?
     private var previewObservation: NSKeyValueObservation?
-    private var isShowingPreview = false
+    /// Hidden until the feed shows frames, over the pane's black. The view
+    /// fades, not a layer over it: AVFoundation draws the video in sublayers
+    /// of its own, which can sit above any of ours.
+    private var isCovered = true
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -55,22 +59,35 @@ final class CameraPreviewLayerView: UIView {
     }
 
     private func updatePreviewVisibility() {
-        guard previewLayer.isPreviewing else {
-            isShowingPreview = false
-            layer.removeAnimation(forKey: "opacity")
+        let isCovered = PreviewCover.isCovered(
+            isPreviewing: previewLayer.isPreviewing,
+            isInWindow: window != nil,
+            wasCovered: self.isCovered
+        )
+        #if DEBUG
+        Self.logger.debug("Preview: previewing \(self.previewLayer.isPreviewing), window \(self.window != nil), covered \(isCovered)")
+        #endif
+        guard isCovered != self.isCovered else { return }
+        self.isCovered = isCovered
+        layer.removeAnimation(forKey: "opacity")
+        guard !isCovered else {
             UIView.performWithoutAnimation { alpha = 0 }
             return
         }
-        // Reparenting an already-live preview during layout keeps it visible.
-        // A fresh run waits for both a window and actual preview frames.
-        guard window != nil, !isShowingPreview else { return }
-        isShowingPreview = true
         // The sensor's first resumed frames can briefly change brightness or
         // color. Ease in the feed itself while the scanner chrome stays steady.
-        UIView.animate(withDuration: 0.18, delay: 0, options: [.curveEaseIn, .beginFromCurrentState, .allowUserInteraction]) {
+        // Its own timing, even when a move into a window runs inside another
+        // animation, such as a tab transition.
+        UIView.animate(withDuration: 0.18, delay: 0,
+                       options: [.curveEaseIn, .beginFromCurrentState, .allowUserInteraction,
+                                 .overrideInheritedDuration, .overrideInheritedCurve]) {
             self.alpha = 1
         }
     }
+
+    #if DEBUG
+    private static let logger = Logger(subsystem: "dev.kavsoft.XStyle-TabBar", category: "scanner")
+    #endif
 
     private func updateRotationCoordinator() {
         rotationObservation = nil
@@ -103,5 +120,20 @@ final class CameraPreviewLayerView: UIView {
             guard let self, reportedRotation == rotation else { return }
             onRotationChange?(rotation)
         }
+    }
+}
+
+/// When the preview is hidden over the pane's black.
+nonisolated enum PreviewCover {
+    static func isCovered(
+        isPreviewing: Bool, isInWindow: Bool, wasCovered: Bool
+    ) -> Bool {
+        // Whenever frames stop, the feed hides: under the result sheet at
+        // full, on leaving the tab, or when the system interrupts the camera.
+        // It comes back from black, never a frozen frame.
+        guard isPreviewing else { return true }
+        // Reparenting an already-live preview during layout keeps it visible.
+        // A fresh run waits for both a window and actual preview frames.
+        return wasCovered && !isInWindow
     }
 }

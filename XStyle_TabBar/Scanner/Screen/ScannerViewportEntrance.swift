@@ -2,7 +2,6 @@ import CoreGraphics
 import Observation
 
 /// Shares only the once-per-launch decision; each window owns its own presentation.
-@Observable
 final class ScannerViewportEntranceSession {
     fileprivate var isConsumed = false
 }
@@ -37,6 +36,14 @@ final class ScannerViewportEntrance {
             // Keep the spring's small overshoot while bounding unexpected display-link steps.
             progress = min(max(value, -0.1), 1.1)
         }
+    }
+
+    /// Already open, with no entrance to play, such as for previews.
+    static func settled() -> ScannerViewportEntrance {
+        let entrance = ScannerViewportEntrance()
+        entrance.hasAppeared = true
+        entrance.progress = 1
+        return entrance
     }
 
     func update(isActive: Bool, reduceMotion: Bool) {
