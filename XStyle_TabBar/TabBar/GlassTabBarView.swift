@@ -7,7 +7,8 @@ final class GlassTabBarView: UIView {
 
     private let containerView = UIView()
     private let presentation: GlassTabBarPresentation
-    private let selectionView = UIView()
+    private let selectionView = GlassTabBarHighlight()
+    private var shimmerDirection: CGFloat = 1
     private let buttons = RootTab.allCases.map { GlassTabBarButton(tab: $0) }
     private let touchRecognizer = GlassTabBarTouchRecognizer()
     private lazy var releaseFeedback = UIImpactFeedbackGenerator(style: .light, view: self)
@@ -32,9 +33,6 @@ final class GlassTabBarView: UIView {
         accessibilityElements = buttons
 
         addSubview(containerView)
-        selectionView.backgroundColor = .tertiarySystemFill
-        selectionView.cornerConfiguration = .capsule()
-        selectionView.isUserInteractionEnabled = false
         containerView.addSubview(selectionView)
         for button in buttons {
             containerView.addSubview(button)
@@ -53,6 +51,9 @@ final class GlassTabBarView: UIView {
             self.interaction.begin(at: point, geometry: self.currentGeometry)
             if self.interaction.tracking != nil { self.releaseFeedback.prepare() }
             self.showTracking()
+            if let candidate = self.interaction.tracking?.candidate, candidate != self.interaction.selection {
+                self.shimmerHighlight()
+            }
         }
         touchRecognizer.addTarget(self, action: #selector(trackTouch(_:)))
         touchRecognizer.delaysTouchesBegan = true
@@ -235,10 +236,16 @@ final class GlassTabBarView: UIView {
             let acceptedRelease = interaction.tracking?.candidate != nil
             let destination = interaction.release(at: point)
             showSelection(animated: true)
+            if destination != nil {
+                shimmerHighlight()
+            } else {
+                selectionView.stopShimmer()
+            }
             if acceptedRelease { releaseFeedback.impactOccurred() }
             if let destination { onSelect?(destination) }
         case .cancelled, .failed:
             interaction.cancel()
+            selectionView.stopShimmer()
             showSelection(animated: true)
         default:
             break
@@ -266,6 +273,11 @@ final class GlassTabBarView: UIView {
         interaction.cancel()
         resetRecognizerIfNeeded()
         showSelection(animated: true)
+        if changed {
+            shimmerHighlight()
+        } else {
+            selectionView.stopShimmer()
+        }
         releaseFeedback.impactOccurred()
         if changed { onSelect?(button.tab) }
     }
@@ -273,6 +285,7 @@ final class GlassTabBarView: UIView {
     private func cancelTracking(animated: Bool) {
         guard interaction.tracking != nil else { return }
         interaction.cancel()
+        selectionView.stopShimmer()
         resetRecognizerIfNeeded()
         showSelection(animated: animated)
     }
@@ -286,6 +299,9 @@ final class GlassTabBarView: UIView {
 
     private func showTracking() {
         guard let tracking = interaction.tracking else { return }
+        if tracking.candidate == nil || tracking.candidate == interaction.selection {
+            selectionView.stopShimmer()
+        }
         for button in buttons {
             button.updateTrackingCandidate(button.tab == tracking.candidate)
         }
@@ -318,6 +334,14 @@ final class GlassTabBarView: UIView {
             selectionView.backgroundColor = color
             return
         }
+        if !selectionView.frame.isEmpty {
+            // Follow the previous tab, even when its slide has not finished.
+            // A presentation frame can still be at the next destination (or
+            // overshoot it), incorrectly keeping or reversing the old direction.
+            let origin = selectionView.frame
+            let delta = layoutAxis == .vertical ? frame.midY - origin.midY : frame.midX - origin.midX
+            if abs(delta) > 0.5 { shimmerDirection = delta > 0 ? 1 : -1 }
+        }
         let update = {
             self.selectionView.frame = frame
             self.selectionView.backgroundColor = color
@@ -329,6 +353,12 @@ final class GlassTabBarView: UIView {
         }
         UIView.animate(springDuration: spring.duration, bounce: spring.bounce, initialSpringVelocity: 0, delay: 0,
                        options: [.beginFromCurrentState, .allowUserInteraction], animations: update)
+    }
+
+    private func shimmerHighlight() {
+        guard !reduceMotion, window != nil else { return }
+        // The release keeps the press's direction even after the capsule arrives.
+        selectionView.playShimmer(axis: layoutAxis, direction: shimmerDirection)
     }
 
     private var pressedScale: CGSize {
@@ -347,6 +377,7 @@ final class GlassTabBarView: UIView {
     }
 
     private func stopMotion() {
+        selectionView.stopShimmer()
         selectionView.layer.removeAllAnimations()
         presentation.resetAfterLayout()
     }
