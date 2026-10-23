@@ -16,49 +16,40 @@ struct ScannerViewportAppearance: ViewModifier {
             CGPoint(x: $0.x - viewportOrigin.x, y: $0.y - viewportOrigin.y)
         }
         let isEntrancePlaying = Self.isEntrancePlaying(isActive: isActive, scenePhase: scenePhase)
-        Group {
-            // The whole pane blurs while it opens, edges and chrome included,
-            // overshoot too. A blur flattens what it covers, which the
-            // camera's UIKit view can't be: SwiftUI would draw a placeholder
-            // instead. So the camera stays out of the pane while it opens
-            // (`scannerViewportIsOpening`), and nothing blurs at rest.
-            // Swapping branches rebuilds the pane, before the camera is in it.
-            if progress != 1 {
-                content
-                    .environment(\.scannerViewportIsOpening, true)
-                    .modifier(ScannerViewportWarp(progress: progress, source: source,
-                                                  isRightToLeft: layoutDirection == .rightToLeft))
-                    // Match the reference's blur after distortion, clearing as we open.
-                    .blur(radius: 8 * (1 - min(max(progress, 0), 1)))
-                    .opacity(min(max(progress * 5, 0), 1))
-            } else {
-                content
+        // One structure throughout, so the camera can join the pane as soon
+        // as it starts, even mid-entrance: swapping branches would rebuild
+        // the camera's container and blink its preview. The blur stays
+        // applied, at zero once open; on device the camera renders under it.
+        content
+            .modifier(ScannerViewportWarp(progress: progress, source: source,
+                                          isRightToLeft: layoutDirection == .rightToLeft))
+            // Match the reference's blur after distortion, clearing as we open.
+            .blur(radius: 8 * (1 - min(max(progress, 0), 1)))
+            .opacity(min(max(progress * 5, 0), 1))
+            .background {
+                // A sibling of the projected content, so measuring the origin
+                // never feeds the animated transform back into itself. Only
+                // while opening: at rest nothing reads it.
+                if progress != 1 {
+                    Color.clear
+                        .onGeometryChange(for: CGPoint.self) { proxy in
+                            proxy.frame(in: .global).origin
+                        } action: { origin in
+                            viewportOrigin = origin
+                        }
+                }
             }
-        }
-        .background {
-            // A sibling of the projected content, so measuring the origin
-            // never feeds the animated transform back into itself. Only
-            // while opening: at rest nothing reads it.
-            if progress != 1 {
-                Color.clear
-                    .onGeometryChange(for: CGPoint.self) { proxy in
-                        proxy.frame(in: .global).origin
-                    } action: { origin in
-                        viewportOrigin = origin
-                    }
+            .allowsHitTesting(progress >= 0.92)
+            .accessibilityHidden(progress < 0.92)
+            .onChange(of: isEntrancePlaying, initial: true) {
+                updateEntrance()
             }
-        }
-        .allowsHitTesting(progress >= 0.92)
-        .accessibilityHidden(progress < 0.92)
-        .onChange(of: isEntrancePlaying, initial: true) {
-            updateEntrance()
-        }
-        .onChange(of: reduceMotion) {
-            updateEntrance()
-        }
-        .onDisappear {
-            entrance.finish()
-        }
+            .onChange(of: reduceMotion) {
+                updateEntrance()
+            }
+            .onDisappear {
+                entrance.finish()
+            }
     }
 
     /// Whether the entrance may play. An inactive scene still shows it, such
@@ -72,12 +63,6 @@ struct ScannerViewportAppearance: ViewModifier {
         entrance.update(isActive: Self.isEntrancePlaying(isActive: isActive, scenePhase: scenePhase),
                         reduceMotion: reduceMotion)
     }
-}
-
-extension EnvironmentValues {
-    /// Whether the scanner's viewport is still opening, under the entrance's
-    /// blur. The camera's UIKit view stays out of it meanwhile.
-    @Entry var scannerViewportIsOpening = false
 }
 
 /// Wave supplies every frame, so no second SwiftUI interpolation is needed.

@@ -15,9 +15,6 @@ struct ScannerCameraPane: View {
     @Environment(\.displayScale) private var displayScale
     /// Whether the sheet is over the pane, on its way to full.
     @Environment(\.paneIsCovered) private var paneIsCovered
-    /// Whether the viewport is still opening, under a blur the camera's
-    /// UIKit view can't take: the camera joins once it has opened.
-    @Environment(\.scannerViewportIsOpening) private var isViewportOpening
     /// The zoom a pinch started from; nil between pinches, including ones
     /// cut short, such as by a code being found.
     @GestureState private var pinchStartZoom: Double?
@@ -31,7 +28,7 @@ struct ScannerCameraPane: View {
                     model.updateScreen(size: size, displayScale: displayScale)
                 }
 
-            if !isViewportOpening, let device = model.cameraDevice {
+            if let device = model.cameraDevice {
                 CameraPreview(host: previewHost, device: device,
                               onRotationChange: model.updatePreviewRotation)
             } else {
