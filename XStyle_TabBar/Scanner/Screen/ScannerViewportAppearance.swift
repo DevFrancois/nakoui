@@ -18,6 +18,8 @@ struct ScannerViewportAppearance: ViewModifier {
         content
             .modifier(ScannerViewportWarp(progress: progress, source: source,
                                           isRightToLeft: layoutDirection == .rightToLeft))
+            // Match the reference's blur after distortion, clearing as we open.
+            .blur(radius: 8 * (1 - min(max(progress, 0), 1)))
             .opacity(min(max(progress * 5, 0), 1))
             .background {
                 // A sibling of the projected content, so measuring the origin
