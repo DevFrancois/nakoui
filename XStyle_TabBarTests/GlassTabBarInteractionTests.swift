@@ -174,7 +174,7 @@ struct GlassTabBarInteractionTests {
                 : CGRect(x: content.minX + CGFloat(visualIndex) * content.width / 4, y: content.minY, width: content.width / 4, height: content.height)
             return GlassTabBarInteraction.Item(tab: tab, frame: frame)
         }
-        return .init(bounds: bounds, axis: axis, items: items, frameInWindow: CGRect(origin: origin, size: bounds.size))
+        return .init(bounds: bounds, axis: axis, items: items, placement: CGPoint(x: origin.x + bounds.midX, y: origin.y + bounds.midY))
     }
 
     private func center(of tab: RootTab, in geometry: GlassTabBarInteraction.Geometry) -> CGPoint {

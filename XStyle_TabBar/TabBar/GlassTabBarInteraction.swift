@@ -12,7 +12,9 @@ struct GlassTabBarInteraction {
         let bounds: CGRect
         let axis: NSLayoutConstraint.Axis
         let items: [Item]
-        let frameInWindow: CGRect?
+        /// Where the toolbar placed the bar in its window; see
+        /// `GlassTabBarPresentation.placement(for:)`.
+        let placement: CGPoint?
     }
 
     struct Tracking {

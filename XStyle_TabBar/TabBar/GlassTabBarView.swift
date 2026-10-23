@@ -16,7 +16,6 @@ final class GlassTabBarView: UIView {
     private var layoutAxis: NSLayoutConstraint.Axis = .horizontal
     private var lastGeometry: GlassTabBarInteraction.Geometry?
     private var environmentInputs: EnvironmentInputs?
-    private var motionGeneration = 0
     private weak var trackingCoordinateView: UIView?
 
     convenience init(selection: RootTab) {
@@ -53,7 +52,7 @@ final class GlassTabBarView: UIView {
             self.trackingCoordinateView = self.presentation.coordinateSpace(for: self)
             self.interaction.begin(at: point, geometry: self.currentGeometry)
             if self.interaction.tracking != nil { self.releaseFeedback.prepare() }
-            self.showTracking(previousPosition: nil)
+            self.showTracking()
         }
         touchRecognizer.addTarget(self, action: #selector(trackTouch(_:)))
         touchRecognizer.delaysTouchesBegan = true
@@ -101,7 +100,7 @@ final class GlassTabBarView: UIView {
         if reduceMotion && !motionWasReduced {
             stopMotion()
             if interaction.tracking != nil {
-                showTracking(previousPosition: nil)
+                showTracking()
             } else {
                 showSelection(animated: false)
             }
@@ -200,29 +199,34 @@ final class GlassTabBarView: UIView {
     }
 
     private var currentGeometry: GlassTabBarInteraction.Geometry {
-        let coordinateView = presentation.coordinateSpace(for: self)
-        return .init(
+        .init(
             bounds: bounds,
             axis: layoutAxis,
             items: buttons.map { .init(tab: $0.tab, frame: $0.frame) },
-            frameInWindow: coordinateView.flatMap { anchor in
-                window.map { anchor.convert(anchor.bounds, to: $0) }
-            }
+            placement: presentation.placement(for: self)
         )
     }
 
+    /// The finger against the capsule as drawn while pressed. The tabs grow
+    /// with the capsule about its center, so a point left unscaled would pick
+    /// the tab short of the finger near a boundary, further out toward either
+    /// end. The pressed scale is fixed for the whole hold, so a still finger
+    /// never changes tab while the capsule grows.
     private func trackingPoint(_ point: CGPoint) -> CGPoint? {
         guard let coordinateView = presentation.coordinateSpace(for: self) else { return nil }
-        return convert(point, to: coordinateView)
+        let unscaled = convert(point, to: coordinateView)
+        let scale = pressedScale
+        let center = CGPoint(x: coordinateView.bounds.midX, y: coordinateView.bounds.midY)
+        return CGPoint(x: center.x + (unscaled.x - center.x) / scale.width,
+                       y: center.y + (unscaled.y - center.y) / scale.height)
     }
 
     @objc private func trackTouch(_ recognizer: GlassTabBarTouchRecognizer) {
         switch recognizer.state {
         case .changed:
             guard validateTrackingGeometry(), let point = trackingPoint(recognizer.touchLocation) else { return }
-            let previousPosition = interaction.tracking?.position
             interaction.move(to: point)
-            showTracking(previousPosition: previousPosition)
+            showTracking()
         case .ended:
             guard validateTrackingGeometry(), let point = trackingPoint(recognizer.touchLocation) else { return }
             interaction.move(to: point)
@@ -280,79 +284,51 @@ final class GlassTabBarView: UIView {
         touchRecognizer.isEnabled = true
     }
 
-    private func showTracking(previousPosition: CGFloat?) {
-        guard let tracking = interaction.tracking,
-              let item = tracking.geometry.items.first else { return }
-        motionGeneration += 1
-        let generation = motionGeneration
+    private func showTracking() {
+        guard let tracking = interaction.tracking else { return }
         for button in buttons {
             button.updateTrackingCandidate(button.tab == tracking.candidate)
         }
-        var target = item.frame
-        if layoutAxis == .vertical { target.origin.y = tracking.position - target.height / 2 }
-        else { target.origin.x = tracking.position - target.width / 2 }
-        let restingTarget = target
-        if !reduceMotion, let previousPosition {
-            let stretch = min(abs(tracking.position - previousPosition) * 0.15, 5)
-            if layoutAxis == .vertical { target = target.insetBy(dx: 0, dy: -stretch / 2) }
-            else { target = target.insetBy(dx: -stretch / 2, dy: 0) }
-            target = target.intersection(bounds.insetBy(dx: 3, dy: 3))
-        }
+        // The highlight covers a whole tab: the one under the finger, or,
+        // while the finger is off the bar, the one a release there keeps.
+        let tab = tracking.candidate ?? interaction.selection
+        guard let item = tracking.geometry.items.first(where: { $0.tab == tab }) else { return }
         let canAnimate = !reduceMotion && window != nil
         presentation.track(scale: pressedScale, animated: canAnimate)
-        let update = {
-            self.selectionView.frame = target
-            self.selectionView.backgroundColor = tracking.candidate == nil ? .tertiarySystemFill : .secondarySystemFill
-        }
-        guard canAnimate else {
-            UIView.performWithoutAnimation(update)
-            return
-        }
-        UIView.animate(
-            withDuration: GlassTabBarMetrics.trackingDuration,
-            delay: 0,
-            usingSpringWithDamping: 0.82,
-            initialSpringVelocity: 0,
-            options: [.beginFromCurrentState, .allowUserInteraction],
-            animations: update
-        ) { [weak self] _ in
-            guard let self, self.motionGeneration == generation, self.interaction.tracking != nil else { return }
-            UIView.animate(withDuration: 0.16, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
-                self.selectionView.frame = restingTarget
-            }
-        }
+        moveHighlight(to: item.frame, color: tracking.candidate == nil ? .tertiarySystemFill : .secondarySystemFill,
+                      animated: canAnimate)
     }
 
     private func showSelection(animated: Bool) {
-        motionGeneration += 1
         for button in buttons {
             button.isSelected = button.tab == interaction.selection
             button.updateTrackingCandidate(nil)
         }
         guard let selectedButton = buttons.first(where: { $0.tab == interaction.selection }) else { return }
-        let update = {
-            self.selectionView.frame = selectedButton.frame
-            self.selectionView.backgroundColor = .tertiarySystemFill
+        let canAnimate = animated && !reduceMotion && window != nil
+        if !canAnimate { stopMotion() }
+        moveHighlight(to: selectedButton.frame, color: .tertiarySystemFill, animated: canAnimate)
+        if canAnimate { presentation.release(animated: true) }
+    }
+
+    /// Slides the highlight onto a whole tab. Only a new tab starts a spring:
+    /// restarting one on every touch sample would keep it from ever settling.
+    private func moveHighlight(to frame: CGRect, color: UIColor, animated: Bool) {
+        guard frame != selectionView.frame else {
+            selectionView.backgroundColor = color
+            return
         }
-        guard animated, !reduceMotion, window != nil, !selectionView.frame.isEmpty else {
-            stopMotion()
+        let update = {
+            self.selectionView.frame = frame
+            self.selectionView.backgroundColor = color
+        }
+        // The first placement has nothing to slide from.
+        guard animated, let spring = presentation.motion.highlightSpring, !selectionView.frame.isEmpty else {
             UIView.performWithoutAnimation(update)
             return
         }
-        // A slightly underdamped return supplies the reference's soft release
-        // ripple without adding another glass surface or a circular overlay.
-        UIView.animate(
-            withDuration: GlassTabBarMetrics.selectionDuration,
-            delay: 0,
-            usingSpringWithDamping: 0.88,
-            initialSpringVelocity: 0,
-            options: [.beginFromCurrentState, .allowUserInteraction],
-            animations: {
-                self.selectionView.frame = selectedButton.frame
-                self.selectionView.backgroundColor = .tertiarySystemFill
-            }
-        )
-        presentation.release(animated: true)
+        UIView.animate(springDuration: spring.duration, bounce: spring.bounce, initialSpringVelocity: 0, delay: 0,
+                       options: [.beginFromCurrentState, .allowUserInteraction], animations: update)
     }
 
     private var pressedScale: CGSize {
@@ -364,13 +340,13 @@ final class GlassTabBarView: UIView {
         let available = window.safeAreaLayoutGuide.layoutFrame
         let horizontalRoom = max(0, min(frame.minX - available.minX, available.maxX - frame.maxX))
         let verticalRoom = max(0, min(frame.minY - available.minY, available.maxY - frame.maxY))
-        let scaleX = layoutAxis == .vertical ? 1 : min(GlassTabBarMetrics.pressedScale, 1 + 2 * horizontalRoom / bounds.width)
-        let scaleY = min(GlassTabBarMetrics.pressedScale, 1 + 2 * verticalRoom / bounds.height)
+        let grow = presentation.motion.pressedScale
+        let scaleX = layoutAxis == .vertical ? 1 : min(grow, 1 + 2 * horizontalRoom / bounds.width)
+        let scaleY = min(grow, 1 + 2 * verticalRoom / bounds.height)
         return CGSize(width: scaleX, height: scaleY)
     }
 
     private func stopMotion() {
-        motionGeneration += 1
         selectionView.layer.removeAllAnimations()
         presentation.resetAfterLayout()
     }

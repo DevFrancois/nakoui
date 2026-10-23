@@ -82,6 +82,14 @@ struct GlassTabBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var presentation = GlassTabBarPresentation()
 
+    // Release builds have no dials, so they ignore any values a debug build
+    // left stored.
+    #if DEBUG
+    @StoredGlassTabBarMotion private var motion: GlassTabBarMotion
+    #else
+    private let motion = GlassTabBarMotion.calm
+    #endif
+
     /// While the Scan tab's sheet is up, with a result or the history, the bar
     /// makes way for it. The Duo's vertical rail stays.
     static func hidesForScanSheet(selection: RootTab, isSheetShown: Bool, layoutAxis: NSLayoutConstraint.Axis) -> Bool {
@@ -89,7 +97,8 @@ struct GlassTabBar: View {
     }
 
     var body: some View {
-        GlassTabBarRepresentable(selection: $selection, layoutAxis: layoutAxis, presentation: presentation)
+        GlassTabBarRepresentable(selection: $selection, layoutAxis: layoutAxis, motion: motion,
+                                 presentation: presentation)
             .fixedSize(horizontal: false, vertical: true)
             .background {
                 // Keep native glass behind the controls so its foreground
@@ -100,8 +109,8 @@ struct GlassTabBar: View {
             }
             .scaleEffect(x: reduceMotion ? 1 : presentation.scale.width,
                          y: reduceMotion ? 1 : presentation.scale.height)
-            // This anchor is outside the visual transform. Touch locations and
-            // layout validation stay in the toolbar's unscaled coordinate space.
+            // This anchor is outside the visual transform. Touch locations stay
+            // in the toolbar's unscaled coordinate space, sliding with the bar.
             .background {
                 GlassTabBarCoordinateSpace(presentation: presentation)
                     .allowsHitTesting(false)
@@ -116,8 +125,17 @@ struct GlassTabBar: View {
                 let top = restingTop ?? proxy.frame(in: .global).minY
                 return content.offset(y: isHidden && !reduceMotion ? max(0, windowBottom - top) : 0)
             }
+            // Where the toolbar places the bar, outside its slide: a finger
+            // held as the toolbar moves the bar elsewhere must not commit, but
+            // the bar still settling after sliding back hasn't moved anywhere.
+            .background {
+                GlassTabBarPlacement(presentation: presentation)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
             .opacity(isHidden && reduceMotion ? 0 : 1)
-            .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.5, bounce: 0.3), value: isHidden)
+            .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.5, bounce: motion.slideBounce),
+                       value: isHidden)
             .allowsHitTesting(!isHidden)
             .accessibilityHidden(isHidden)
     }
@@ -126,6 +144,7 @@ struct GlassTabBar: View {
 private struct GlassTabBarRepresentable: UIViewRepresentable {
     @Binding var selection: RootTab
     let layoutAxis: NSLayoutConstraint.Axis
+    let motion: GlassTabBarMotion
     let presentation: GlassTabBarPresentation
 
     func makeUIView(context: Context) -> GlassTabBarView {
@@ -135,6 +154,8 @@ private struct GlassTabBarRepresentable: UIViewRepresentable {
     func updateUIView(_ view: GlassTabBarView, context: Context) {
         // Replace the callback too, so it always writes to the current binding.
         view.onSelect = { selection = $0 }
+        // Read at the next press or release, so a held finger keeps its motion.
+        presentation.motion = motion
         presentation.updateView {
             view.updateEnvironment(
                 locale: context.environment.locale,

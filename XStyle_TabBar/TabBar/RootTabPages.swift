@@ -26,7 +26,7 @@ struct RootTabPages<Home: View>: UIViewControllerRepresentable {
         let environment = ForwardedEnvironment(context.environment)
         coordinator.home = UIHostingController(rootView: HostedTabPage(content: home, environment: environment))
         coordinator.scanner = UIHostingController(rootView: HostedTabPage(content: scannerPage, environment: environment))
-        coordinator.profile = UIHostingController(rootView: HostedTabPage(content: RootTabPlaceholder(tab: .profile), environment: environment))
+        coordinator.profile = UIHostingController(rootView: HostedTabPage(content: ProfileTabPage(), environment: environment))
         coordinator.search = UIHostingController(rootView: HostedTabPage(content: RootTabPlaceholder(tab: .search), environment: environment))
         let controllers: [UIViewController] = [coordinator.home, coordinator.scanner, coordinator.profile, coordinator.search].compactMap { $0 }
         for controller in controllers {
@@ -51,7 +51,7 @@ struct RootTabPages<Home: View>: UIViewControllerRepresentable {
         if context.coordinator.scanner?.additionalSafeAreaInsets != scannerInsets {
             context.coordinator.scanner?.additionalSafeAreaInsets = scannerInsets
         }
-        context.coordinator.profile?.rootView = HostedTabPage(content: RootTabPlaceholder(tab: .profile), environment: environment)
+        context.coordinator.profile?.rootView = HostedTabPage(content: ProfileTabPage(), environment: environment)
         context.coordinator.search?.rootView = HostedTabPage(content: RootTabPlaceholder(tab: .search), environment: environment)
         controller.update(
             selection: selection,
@@ -72,7 +72,7 @@ struct RootTabPages<Home: View>: UIViewControllerRepresentable {
     final class Coordinator {
         var home: UIHostingController<HostedTabPage<Home>>?
         var scanner: UIHostingController<HostedTabPage<ScannerView>>?
-        var profile: UIHostingController<HostedTabPage<RootTabPlaceholder>>?
+        var profile: UIHostingController<HostedTabPage<ProfileTabPage>>?
         var search: UIHostingController<HostedTabPage<RootTabPlaceholder>>?
     }
 }
