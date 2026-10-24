@@ -24,7 +24,7 @@ final class GlassTabBarButton: UIControl {
     private var trackingCandidate: Bool?
     private var appliedForeground: UIColor?
     private static let selectedForeground = UIColor { traits in
-        (traits.userInterfaceStyle == .dark ? UIColor.label : UIColor.systemBlue)
+        (traits.userInterfaceStyle == .dark ? UIColor.label : UIColor.black)
             .resolvedColor(with: traits)
     }
     private static let unselectedForeground = UIColor { traits in
