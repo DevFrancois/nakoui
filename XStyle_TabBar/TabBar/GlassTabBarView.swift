@@ -11,6 +11,7 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
     private let dimmingView = UIView()
     private let reflectionLayer = GlassTabBarReflectionLayer()
     private weak var reflectionSourceView: UIView?
+    private var reflectionUpdateLink: UIUpdateLink?
     private var glassConfiguration: GlassConfiguration?
     private let presentation: GlassTabBarPresentation
     private let selectionView = GlassTabBarHighlight()
@@ -31,13 +32,36 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
         updateReflectionSource()
     }
 
-    private func updateReflectionSource() {
+    func updateReflection(_ configuration: GlassTabBarReflectionConfiguration) {
+        reflectionLayer.updateConfiguration(configuration)
+        updateReflectionSource()
+    }
+
+    private func updateReflectionSource(usePresentation: Bool = false) {
         guard let source = reflectionSourceView, let window,
-              source.window === window, !isDescendant(of: source) else {
+              source.window === window, !isDescendant(of: source), !source.isDescendant(of: self) else {
             reflectionLayer.setSourceLayer(nil)
             return
         }
-        reflectionLayer.setSourceLayer(source.layer)
+        let sourceLayer: CALayer
+        let targetLayer: CALayer
+        if usePresentation, let sourcePresentation = source.layer.presentation(),
+           let targetPresentation = glassView.contentView.layer.presentation() {
+            sourceLayer = sourcePresentation
+            targetLayer = targetPresentation
+        } else {
+            sourceLayer = source.layer
+            targetLayer = glassView.contentView.layer
+        }
+        let origin = sourceLayer.bounds.origin
+        let geometry = GlassTabBarReflectionGeometry(
+            sourceBounds: sourceLayer.bounds, viewportBounds: bounds,
+            sourceOrigin: targetLayer.convert(origin, from: sourceLayer),
+            sourceXAxis: targetLayer.convert(CGPoint(x: origin.x + 1, y: origin.y), from: sourceLayer),
+            sourceYAxis: targetLayer.convert(CGPoint(x: origin.x, y: origin.y + 1), from: sourceLayer),
+            axis: layoutAxis
+        )
+        reflectionLayer.setSourceLayer(source.layer, geometry: geometry)
     }
 
     func updateGlass(_ appearance: GlassTabBarAppearance, interactive: Bool) {
@@ -158,6 +182,15 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
         touchRecognizer.cancelsTouchesInView = false
         touchRecognizer.delegate = self
         addGestureRecognizer(touchRecognizer)
+
+        // Fold/toolbar placement and native press transforms may change without
+        // relaying out this view. Observe actual UI updates; don't drive an idle
+        // display loop or alter the native interaction's transforms.
+        let updateLink = UIUpdateLink(view: self)
+        updateLink.addAction(to: .beforeCATransactionCommit) { [weak self] _, _ in
+            self?.updateReflectionSource(usePresentation: true)
+        }
+        reflectionUpdateLink = updateLink
     }
 
     required init?(coder: NSCoder) {
@@ -263,6 +296,7 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
         backingView.frame = bounds
         glassView.bounds = bounds
         glassView.center = CGPoint(x: bounds.midX, y: bounds.midY)
+        glassView.layoutIfNeeded()
         dimmingView.frame = glassView.contentView.bounds
         reflectionLayer.updateLayout(bounds: bounds, axis: layoutAxis, scale: traitCollection.displayScale)
         updateReflectionSource()
@@ -302,6 +336,7 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
+        reflectionUpdateLink?.isEnabled = window != nil
         updateReflectionSource()
         if window == nil {
             cancelTracking(animated: false)

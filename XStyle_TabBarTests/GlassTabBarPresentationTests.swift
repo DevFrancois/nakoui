@@ -18,7 +18,8 @@ struct GlassTabBarPresentationTests {
         let reflection = try #require(glass.contentView.layer.sublayers?.compactMap {
             $0 as? GlassTabBarReflectionLayer
         }.first)
-        let portal = try #require(reflection.sublayers?.first { $0.name == "tabBar.reflection.portal" })
+        let viewport = try #require(reflection.sublayers?.first { $0.name == "tabBar.reflection.viewport" })
+        let portal = try #require(viewport.sublayers?.first { $0.name == "tabBar.reflection.portal" })
         #expect(portal.filters?.count == 3)
         #expect(reflection.isHidden)
 
@@ -30,10 +31,124 @@ struct GlassTabBarPresentationTests {
         // Capturing an ancestor would feed the reflection back into itself.
         fixture.view.setReflectionSource(fixture.visualContainer)
         #expect(reflection.isHidden)
+        fixture.view.setReflectionSource(glass.contentView)
+        #expect(reflection.isHidden, "A descendant containing the reflection would also capture itself")
         fixture.view.setReflectionSource(source)
         #expect(!reflection.isHidden)
         fixture.view.setReflectionSource(nil)
         #expect(reflection.isHidden)
+    }
+
+    @Test("Live reflection tuning preserves a held preview and reconnects its latest source")
+    func reflectionTuningPreservesNativeTracking() async throws {
+        for axis: NSLayoutConstraint.Axis in [.horizontal, .vertical] {
+            let fixture = try PresentationFixture(axis: axis)
+            fixture.view.updateGlass(.dark, interactive: true)
+            let glass = try #require(fixture.view.subviews.compactMap { $0 as? UIVisualEffectView }.first)
+            let reflection = try #require(glass.contentView.layer.sublayers?.compactMap {
+                $0 as? GlassTabBarReflectionLayer
+            }.first)
+            let viewport = try #require(reflection.sublayers?.first { $0.name == "tabBar.reflection.viewport" })
+            let portal = try #require(viewport.sublayers?.first { $0.name == "tabBar.reflection.portal" })
+            let originalFilter = try #require(portal.filters?.first as? NSObject)
+            let sourceA = UIView(frame: fixture.window.bounds)
+            let sourceB = UIView(frame: fixture.window.bounds)
+            fixture.window.addSubview(sourceA)
+            fixture.window.addSubview(sourceB)
+            fixture.view.setReflectionSource(sourceA)
+
+            let recognizer = try #require(fixture.view.gestureRecognizers?.compactMap {
+                $0 as? GlassTabBarTouchRecognizer
+            }.first)
+            let buttons = try #require(fixture.view.accessibilityElements as? [GlassTabBarButton])
+            let search = try #require(buttons.first { $0.tab == .search })
+            var commits: [RootTab] = []
+            fixture.view.onSelect = { commits.append($0) }
+            await drainMainQueue()
+            recognizer.onBegin?(search.center)
+
+            var tuning = GlassTabBarReflectionConfiguration.reference
+            tuning.saturation = 0.7
+            tuning.brightness = 0.4
+            tuning.blurRadius = 8
+            tuning.opacity = 0.5
+            tuning.isMirrored = false
+            tuning.rimRadius = 9
+            tuning.rimOffsetX = 2
+            tuning.edgeCoverage = 0.75
+            fixture.view.updateReflection(tuning)
+            let filters = try #require(portal.filters as? [NSObject])
+            #expect(filters[0] !== originalFilter, "Replace attached filter objects to notify the compositor")
+            #expect(filters[0].value(forKey: "inputAmount") as? NSNumber == NSNumber(value: 0.7))
+            #expect(filters[1].value(forKey: "inputAmount") as? NSNumber == NSNumber(value: 0.4))
+            #expect(filters[2].value(forKey: "inputRadius") as? NSNumber == NSNumber(value: 8))
+            #expect(reflection.opacity == 0.5)
+            #expect(CATransform3DIsIdentity(viewport.transform))
+            let rim = try #require(viewport.mask?.sublayers?.first)
+            #expect(rim.shadowRadius == 9)
+            #expect(rim.shadowOffset.width == 2)
+
+            tuning.isEnabled = false
+            fixture.view.updateReflection(tuning)
+            #expect(reflection.isHidden)
+            #expect(portal.value(forKey: "sourceLayer") == nil)
+            fixture.view.setReflectionSource(sourceB)
+            #expect(reflection.isHidden)
+            tuning.isEnabled = true
+            fixture.view.updateReflection(tuning)
+            #expect(!reflection.isHidden)
+            #expect(portal.value(forKey: "sourceLayer") as? CALayer === sourceB.layer)
+            #expect(fixture.view.subviews.first { $0 is UIVisualEffectView } === glass)
+            #expect((glass.effect as? UIGlassEffect)?.isInteractive == true)
+            #expect(reflection.sublayers?.first === viewport)
+            #expect(viewport.sublayers?.first === portal)
+            #expect(commits.isEmpty)
+
+            fixture.view.trackTouch(state: .ended, at: search.center)
+            fixture.view.trackTouch(state: .ended, at: search.center)
+            #expect(commits == [.search])
+            fixture.view.setReflectionSource(nil)
+            fixture.view.updateReflection(.reference)
+            #expect(reflection.isHidden)
+            #expect(portal.value(forKey: "sourceLayer") == nil)
+            #expect(viewport.transform.m11 == (axis == .vertical ? -1 : 1))
+            #expect(viewport.transform.m22 == (axis == .horizontal ? -1 : 1))
+            #expect(viewport.bounds == fixture.view.bounds)
+        }
+    }
+
+    @Test("The reflection update observer does not retain a removed bar")
+    func reflectionUpdatesDoNotRetainRemovedBar() async throws {
+        weak var removedBar: GlassTabBarView?
+        try autoreleasepool {
+            let fixture = try PresentationFixture()
+            removedBar = fixture.view
+            fixture.view.removeFromSuperview()
+        }
+        await drainMainQueue()
+        #expect(removedBar == nil)
+    }
+
+    @Test("Reflection settings normalize invalid values before reaching private filters")
+    func reflectionSettingsNormalizeUnsafeNumbers() throws {
+        var configuration = GlassTabBarReflectionConfiguration.reference
+        configuration.saturation = .nan
+        configuration.brightness = .infinity
+        configuration.blurRadius = -50
+        configuration.opacity = 8
+        configuration.rimRadius = -.infinity
+        configuration.rimOffsetX = 100
+        configuration.edgeCoverage = 0
+        let normalized = configuration.normalized
+        #expect(normalized.saturation == GlassTabBarReflectionConfiguration.reference.saturation)
+        #expect(normalized.brightness == GlassTabBarReflectionConfiguration.reference.brightness)
+        #expect(normalized.blurRadius == 0)
+        #expect(normalized.opacity == 1)
+        #expect(normalized.rimRadius == GlassTabBarReflectionConfiguration.reference.rimRadius)
+        #expect(normalized.rimOffsetX == 20)
+        #expect(normalized.edgeCoverage == 0.05)
+        #expect(try JSONDecoder().decode(GlassTabBarReflectionConfiguration.self,
+                                        from: JSONEncoder().encode(normalized)) == normalized)
     }
 
     @Test("Native interaction belongs to the whole capsule and respects Reduce Motion")

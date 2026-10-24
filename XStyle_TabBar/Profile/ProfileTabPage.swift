@@ -47,6 +47,7 @@ struct ProfileTabPage: View {
 /// navigates away from the reference. The supplied image coordinates are 3x.
 private struct TabBarReferenceComparison: View {
     @State private var selection = RootTab.home
+    @StoredGlassTabBarReflection private var reflection
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -57,8 +58,22 @@ private struct TabBarReferenceComparison: View {
                 .foregroundStyle(.secondary)
 
             ViewThatFits(in: .horizontal) {
-                TabBarComparisonPair(selection: $selection, scale: 2)
-                TabBarComparisonPair(selection: $selection, scale: 1)
+                HStack(alignment: .top, spacing: 24) {
+                    TabBarComparisonPair(selection: $selection, scale: 1.5)
+                    GlassTabBarReflectionControls(configuration: $reflection)
+                        .frame(width: 300)
+                }
+                .fixedSize(horizontal: true, vertical: false)
+
+                VStack(alignment: .leading, spacing: 20) {
+                    ViewThatFits(in: .horizontal) {
+                        TabBarComparisonPair(selection: $selection, scale: 1.5)
+                        TabBarComparisonPair(selection: $selection, scale: 1)
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    GlassTabBarReflectionControls(configuration: $reflection)
+                }
             }
             .frame(maxWidth: .infinity)
 

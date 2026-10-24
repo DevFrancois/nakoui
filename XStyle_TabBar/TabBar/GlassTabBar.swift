@@ -94,6 +94,7 @@ struct GlassTabBar: View {
     var onScanOriginChange: ((CGPoint) -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    @StoredGlassTabBarReflection private var reflectionConfiguration
     @State private var presentation = GlassTabBarPresentation()
     /// The controls' frame in global space, without the press zoom.
     @State private var controlsFrame: CGRect?
@@ -108,7 +109,8 @@ struct GlassTabBar: View {
 
     var body: some View {
         GlassTabBarRepresentable(selection: $selection, layoutAxis: layoutAxis, motion: motion, appearance: appearance,
-                                 presentation: presentation, reflectionSource: reflectionSource)
+                                 presentation: presentation, reflectionSource: reflectionSource,
+                                 reflectionConfiguration: reflectionConfiguration)
             // The vertical toolbar proposes its compact item width. Keep the
             // full capsule width in both Duo postures; the bottom bar can flex.
             .fixedSize(horizontal: layoutAxis == .vertical, vertical: true)
@@ -177,6 +179,7 @@ private struct GlassTabBarRepresentable: UIViewRepresentable {
     let appearance: GlassTabBarAppearance
     let presentation: GlassTabBarPresentation
     let reflectionSource: GlassTabBarReflectionSource?
+    let reflectionConfiguration: GlassTabBarReflectionConfiguration
 
     func makeUIView(context: Context) -> GlassTabBarView {
         GlassTabBarView(selection: selection, presentation: presentation)
@@ -196,6 +199,7 @@ private struct GlassTabBarRepresentable: UIViewRepresentable {
         )
         view.updateAppearance(appearance, defaults: context.environment.colorScheme == .dark ? .dark : .light)
         view.updateGlass(appearance, interactive: true)
+        view.updateReflection(reflectionConfiguration)
         if let reflectionSource {
             reflectionSource.attach(view)
         } else {
