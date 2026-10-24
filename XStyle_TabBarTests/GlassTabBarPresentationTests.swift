@@ -132,8 +132,8 @@ struct GlassTabBarPresentationTests {
         #expect(fixture.presentation.scale == CGSize(width: 1.02, height: 1.02))
     }
 
-    @Test("The highlight follows the drawn finger continuously across a boundary after the capsule grows")
-    func highlightFollowsTheDrawnFingerAcrossABoundary() async throws {
+    @Test("The highlight covers the whole tab drawn under the finger after the capsule grows")
+    func highlightCoversTheDrawnTabAcrossABoundary() async throws {
         let fixture = try PresentationFixture()
         let recognizer = try #require(fixture.view.gestureRecognizers?.compactMap {
             $0 as? GlassTabBarTouchRecognizer
@@ -154,10 +154,9 @@ struct GlassTabBarPresentationTests {
 
         // Where Home meets Scan once SwiftUI has grown the capsule about its center.
         let drawnBoundary = center + (scanner.frame.minX - center) * scale
-        for x in [drawnBoundary - 1, drawnBoundary + 1] {
+        for (x, tab) in [(drawnBoundary - 1, home), (drawnBoundary + 1, scanner)] {
             fixture.view.trackTouch(state: .changed, at: CGPoint(x: x, y: fixture.view.bounds.midY))
-            expectPoint(highlight.center,
-                        equals: CGPoint(x: center + (x - center) / scale, y: home.center.y))
+            #expect(highlight.frame == tab.frame, "The fill must cover the whole tab drawn under the finger")
         }
     }
 
@@ -198,7 +197,7 @@ struct GlassTabBarPresentationTests {
         }
     }
 
-    @Test("Shimmer follows committed tab order despite reversed drags, release snaps and rapid activations")
+    @Test("Shimmer follows committed tab order despite reversed drags and rapid activations")
     func shimmerDirectionFollowsCommittedTabOrder() async throws {
         for (axis, direction): (NSLayoutConstraint.Axis, UIUserInterfaceLayoutDirection) in [
             (.horizontal, .leftToRight), (.horizontal, .rightToLeft), (.vertical, .leftToRight),
@@ -225,11 +224,11 @@ struct GlassTabBarPresentationTests {
             fixture.view.trackTouch(state: .changed, at: search.center)
             fixture.view.trackTouch(state: .changed, at: beyondProfile)
             fixture.view.trackTouch(state: .ended, at: beyondProfile)
-            // The finger reversed and the release snaps backward, but Home → Profile is forward.
+            // The finger reversed from Search, but Home → Profile is forward.
             try expectShimmerDirection(in: highlight, axis: axis, forward: forward)
 
-            // Commit again before the first spring or shimmer can settle. This
-            // release snaps forward even though Profile → Scan moves backward.
+            // Commit again before the first spring or shimmer can settle.
+            // Profile → Scan must use the new committed origin.
             let beyondScanner = CGPoint(x: scanner.center.x - step.x, y: scanner.center.y - step.y)
             recognizer.onBegin?(profile.center)
             fixture.view.trackTouch(state: .changed, at: beyondScanner)
@@ -243,8 +242,8 @@ struct GlassTabBarPresentationTests {
         }
     }
 
-    @Test("One held finger can move, reverse and pause before committing only its final tab")
-    func continuousHoldCommitsOnlyOnRelease() async throws {
+    @Test("A held highlight stays on each tab through finger jitter and commits only on release")
+    func heldHighlightSnapsByTabAndCommitsOnlyOnRelease() async throws {
         for (axis, direction): (NSLayoutConstraint.Axis, UIUserInterfaceLayoutDirection) in [
             (.horizontal, .leftToRight), (.horizontal, .rightToLeft), (.vertical, .leftToRight),
         ] {
@@ -263,11 +262,20 @@ struct GlassTabBarPresentationTests {
             await drainMainQueue()
 
             recognizer.onBegin?(home.center)
-            let withinHome = CGPoint(x: home.center.x + (scanner.center.x - home.center.x) * 0.25,
-                                     y: home.center.y + (scanner.center.y - home.center.y) * 0.25)
-            for point in [withinHome, profile.center, search.center, scanner.center] {
+            for (fraction, tab): (CGFloat, GlassTabBarButton) in [
+                (0.15, home), (0.49, home), (0.2, home),
+                (0.51, scanner), (0.7, scanner), (0.55, scanner),
+            ] {
+                let point = CGPoint(x: home.center.x + (scanner.center.x - home.center.x) * fraction,
+                                    y: home.center.y + (scanner.center.y - home.center.y) * fraction)
                 fixture.view.trackTouch(state: .changed, at: point)
-                expectPoint(highlight.center, equals: point)
+                #expect(highlight.frame == tab.frame, "The fill must stay on the tab until the finger crosses the midpoint")
+                #expect(buttons.filter(\.isSelected).map(\.tab) == [.home])
+                #expect(committedTabs.isEmpty)
+            }
+            for tab in [profile, search, scanner] {
+                fixture.view.trackTouch(state: .changed, at: tab.center)
+                #expect(highlight.frame == tab.frame)
                 #expect(buttons.filter(\.isSelected).map(\.tab) == [.home])
                 #expect(committedTabs.isEmpty, "Moving the held finger must not navigate")
             }
@@ -287,7 +295,7 @@ struct GlassTabBarPresentationTests {
             let finalPoint = CGPoint(x: profile.center.x + (search.center.x - profile.center.x) * 0.2,
                                      y: profile.center.y + (search.center.y - profile.center.y) * 0.2)
             fixture.view.trackTouch(state: .changed, at: finalPoint)
-            expectPoint(highlight.center, equals: finalPoint)
+            #expect(highlight.frame == profile.frame)
             #expect(committedTabs.isEmpty)
 
             fixture.view.trackTouch(state: .ended, at: finalPoint)

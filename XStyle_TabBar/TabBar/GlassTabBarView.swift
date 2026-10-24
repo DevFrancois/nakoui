@@ -315,24 +315,14 @@ final class GlassTabBarView: UIView {
         for button in buttons {
             button.updateTrackingCandidate(button.tab == tracking.candidate)
         }
-        // The icon previews the nearest tab, while the highlight follows the
-        // finger's position along the bar, even when the finger leaves it.
+        // Hold the highlight on a whole tab until the finger crosses into the
+        // next tab's region, including while the finger is outside the bar.
         let tab = tracking.candidate ?? interaction.selection
         guard let item = tracking.geometry.items.first(where: { $0.tab == tab }) else { return }
-        var frame = item.frame
-        if tracking.candidate != nil {
-            if layoutAxis == .vertical {
-                frame.origin.y = tracking.position - frame.height / 2
-            } else {
-                frame.origin.x = tracking.position - frame.width / 2
-            }
-        }
         let canAnimate = !reduceMotion && window != nil
         presentation.track(scale: pressedScale, animated: canAnimate)
-        // A held finger directly controls the highlight; a spring here would
-        // trail each new touch sample. Settle onto the final tab only on release.
-        moveHighlight(to: frame, color: tracking.candidate == nil ? .tertiarySystemFill : .secondarySystemFill,
-                      animated: false)
+        moveHighlight(to: item.frame, color: tracking.candidate == nil ? .tertiarySystemFill : .secondarySystemFill,
+                      animated: canAnimate)
     }
 
     private func showSelection(animated: Bool) {
@@ -347,12 +337,9 @@ final class GlassTabBarView: UIView {
         if canAnimate { presentation.release(animated: true) }
     }
 
-    /// Held movement is immediate; committed selections can settle on a spring.
+    /// Only crossing into another tab starts a spring. Movement within the same
+    /// tab leaves its highlight in place without restarting the animation.
     private func moveHighlight(to frame: CGRect, color: UIColor, animated: Bool) {
-        if !animated {
-            // A new hold takes over even while the previous release is settling.
-            selectionView.layer.removeAllAnimations()
-        }
         guard frame != selectionView.frame else {
             selectionView.backgroundColor = color
             return
