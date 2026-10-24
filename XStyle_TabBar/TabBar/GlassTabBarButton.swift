@@ -5,6 +5,11 @@ import UIKit
 final class GlassTabBarButton: UIControl {
     let tab: RootTab
     var onSizeChange: (() -> Void)?
+    var reduceMotion = false {
+        didSet {
+            if reduceMotion && !oldValue { layer.removeAllAnimations() }
+        }
+    }
     var layoutAxis: NSLayoutConstraint.Axis = .horizontal {
         didSet {
             guard layoutAxis != oldValue else { return }
@@ -17,6 +22,7 @@ final class GlassTabBarButton: UIControl {
     private var symbolSize = GlassTabBarMetrics.symbolSize
     // Finger tracking stays separate from the committed accessibility selection.
     private var trackingCandidate: Bool?
+    private var appliedForeground: UIColor?
     private static let selectedForeground = UIColor { traits in
         (traits.userInterfaceStyle == .dark ? UIColor.label : UIColor.systemBlue)
             .resolvedColor(with: traits)
@@ -43,6 +49,7 @@ final class GlassTabBarButton: UIControl {
         self.tab = tab
         super.init(frame: .zero)
         isOpaque = false
+        backgroundColor = .clear
         cornerConfiguration = .capsule()
         isAccessibilityElement = true
         accessibilityIdentifier = tab.accessibilityIdentifier
@@ -169,11 +176,24 @@ final class GlassTabBarButton: UIControl {
     private func updateAppearance() {
         let isEmphasized = trackingCandidate ?? (isSelected || isHighlighted)
         let foreground: UIColor = !isEnabled ? .tertiaryLabel : (isEmphasized ? Self.selectedForeground : Self.unselectedForeground)
-        symbolView.tintColor = foreground
-        titleLabel.textColor = foreground
-        backgroundColor = .clear
         accessibilityTraits = [.button]
         if isSelected { accessibilityTraits.insert(.selected) }
         if !isEnabled { accessibilityTraits.insert(.notEnabled) }
+
+        // Committing the preview or moving within one tab must not restart its fade.
+        guard appliedForeground?.isEqual(foreground) != true else { return }
+        let animate = appliedForeground != nil && window != nil && !reduceMotion && UIView.areAnimationsEnabled
+        appliedForeground = foreground
+        let update = {
+            self.symbolView.tintColor = foreground
+            self.titleLabel.textColor = foreground
+        }
+        if animate {
+            UIView.transition(with: self, duration: 0.25,
+                              options: [.transitionCrossDissolve, .beginFromCurrentState, .allowUserInteraction],
+                              animations: update)
+        } else {
+            UIView.performWithoutAnimation(update)
+        }
     }
 }

@@ -90,6 +90,7 @@ final class GlassTabBarView: UIView {
         self.reduceMotion = reduceMotion
         if touchRecognizer.isEnabled != isEnabled { touchRecognizer.isEnabled = isEnabled }
         for button in buttons {
+            button.reduceMotion = reduceMotion
             button.layoutAxis = layoutAxis
             button.updateTitle(locale: locale)
             button.isEnabled = isEnabled
@@ -326,12 +327,19 @@ final class GlassTabBarView: UIView {
     }
 
     private func showSelection(animated: Bool) {
-        for button in buttons {
-            button.isSelected = button.tab == interaction.selection
-            button.updateTrackingCandidate(nil)
+        let canAnimate = animated && !reduceMotion && window != nil
+        let updateButtons = {
+            for button in self.buttons {
+                button.isSelected = button.tab == self.interaction.selection
+                button.updateTrackingCandidate(nil)
+            }
+        }
+        if canAnimate {
+            updateButtons()
+        } else {
+            UIView.performWithoutAnimation(updateButtons)
         }
         guard let selectedButton = buttons.first(where: { $0.tab == interaction.selection }) else { return }
-        let canAnimate = animated && !reduceMotion && window != nil
         if !canAnimate { stopMotion() }
         moveHighlight(to: selectedButton.frame, color: .tertiarySystemFill, animated: canAnimate)
         if canAnimate { presentation.release(animated: true) }
