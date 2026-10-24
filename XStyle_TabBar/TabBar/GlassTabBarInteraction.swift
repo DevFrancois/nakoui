@@ -40,12 +40,12 @@ struct GlassTabBarInteraction {
         let centers = tracking.geometry.items.map { isVertical ? $0.frame.midY : $0.frame.midX }
         guard let lower = centers.min(), let upper = centers.max() else { return }
         tracking.position = (lower...upper).clamp(position)
-        tracking.candidate = tracking.geometry.bounds.contains(point)
-            ? tracking.geometry.items.min {
-                abs((isVertical ? $0.frame.midY : $0.frame.midX) - position)
-                    < abs((isVertical ? $1.frame.midY : $1.frame.midX) - position)
-            }?.tab
-            : nil
+        // Only touch-down must be inside the bar. Once it owns the finger,
+        // keep projecting its position onto the bar's axis anywhere on screen.
+        tracking.candidate = tracking.geometry.items.min {
+            abs((isVertical ? $0.frame.midY : $0.frame.midX) - position)
+                < abs((isVertical ? $1.frame.midY : $1.frame.midX) - position)
+        }?.tab
         self.tracking = tracking
     }
 

@@ -39,23 +39,43 @@ struct GlassTabBarInteractionTests {
         #expect(interaction.tracking?.position == center(of: .search, in: geometry).x)
     }
 
-    @Test("Leaving the menu cancels a release but re-entering resumes the same hold")
-    func handlesOutsideReleaseAndReentry() {
-        let geometry = geometry()
-        let outside = CGPoint(x: 180, y: -20)
-        var interaction = GlassTabBarInteraction(selection: .home)
-        interaction.begin(at: center(of: .scanner, in: geometry), geometry: geometry)
-        interaction.move(to: outside)
-        #expect(interaction.tracking != nil)
-        #expect(interaction.tracking?.candidate == nil)
-        #expect(interaction.selection == .home)
-        interaction.move(to: center(of: .search, in: geometry))
-        #expect(interaction.tracking?.candidate == .search)
-        #expect(interaction.release(at: center(of: .search, in: geometry)) == .search)
+    @Test("A hold started on the menu follows the finger anywhere and commits its nearest tab on release")
+    func followsOffBarFingerAndClampsEndpoints() {
+        for (geometry, lowTab, highTab) in [
+            (geometry(), RootTab.home, RootTab.search),
+            (geometry(rightToLeft: true), RootTab.search, RootTab.home),
+            (geometry(axis: .vertical), RootTab.home, RootTab.search),
+        ] {
+            let isVertical = geometry.axis == .vertical
+            let profile = center(of: .profile, in: geometry)
+            let outsideProfile = isVertical ? CGPoint(x: -500, y: profile.y) : CGPoint(x: profile.x, y: -500)
+            var interaction = GlassTabBarInteraction(selection: .home)
+            interaction.begin(at: outsideProfile, geometry: geometry)
+            #expect(interaction.tracking == nil, "An off-bar initial touch must not begin navigation")
+            #expect(interaction.release(at: outsideProfile) == nil)
 
-        interaction.begin(at: center(of: .profile, in: geometry), geometry: geometry)
-        #expect(interaction.release(at: outside) == nil)
-        #expect(interaction.selection == .search)
+            interaction.begin(at: center(of: .home, in: geometry), geometry: geometry)
+            interaction.move(to: outsideProfile)
+            #expect(interaction.tracking?.candidate == .profile)
+            #expect(interaction.tracking?.position == (isVertical ? profile.y : profile.x))
+            #expect(interaction.selection == .home)
+
+            let low = isVertical ? CGPoint(x: -500, y: -1000) : CGPoint(x: -1000, y: -500)
+            let high = isVertical ? CGPoint(x: -500, y: 1000) : CGPoint(x: 1000, y: -500)
+            for (point, tab) in [(low, lowTab), (high, highTab)] {
+                interaction.move(to: point)
+                let endpoint = center(of: tab, in: geometry)
+                #expect(interaction.tracking?.candidate == tab)
+                #expect(interaction.tracking?.position == (isVertical ? endpoint.y : endpoint.x))
+                #expect(interaction.selection == .home)
+            }
+            interaction.move(to: center(of: .scanner, in: geometry))
+            #expect(interaction.tracking?.candidate == .scanner)
+            #expect(interaction.selection == .home)
+            #expect(interaction.release(at: outsideProfile) == .profile)
+            #expect(interaction.selection == .profile)
+            #expect(interaction.release(at: outsideProfile) == nil)
+        }
     }
 
     @Test("Cancellation and releasing on the committed destination never navigate")
@@ -165,12 +185,12 @@ struct GlassTabBarInteractionTests {
         rightToLeft: Bool = false
     ) -> GlassTabBarInteraction.Geometry {
         let isVertical = axis == .vertical
-        let bounds = isVertical ? CGRect(x: 0, y: 0, width: 56, height: 188) : CGRect(x: 0, y: 0, width: width, height: 64)
-        let content = bounds.insetBy(dx: 6, dy: 6)
+        let bounds = isVertical ? CGRect(x: 0, y: 0, width: 60, height: 244) : CGRect(x: 0, y: 0, width: width, height: 64)
+        let content = bounds.insetBy(dx: isVertical ? 8 : 6, dy: 6)
         let items = RootTab.allCases.enumerated().map { index, tab in
             let visualIndex = !isVertical && rightToLeft ? RootTab.allCases.count - 1 - index : index
             let frame = isVertical
-                ? CGRect(x: content.minX, y: content.minY + CGFloat(visualIndex) * 44, width: 44, height: 44)
+                ? CGRect(x: content.minX, y: content.minY + CGFloat(visualIndex) * 58, width: 44, height: 58)
                 : CGRect(x: content.minX + CGFloat(visualIndex) * content.width / 4, y: content.minY, width: content.width / 4, height: content.height)
             return GlassTabBarInteraction.Item(tab: tab, frame: frame)
         }

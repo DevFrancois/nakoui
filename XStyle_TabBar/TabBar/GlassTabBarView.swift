@@ -51,9 +51,6 @@ final class GlassTabBarView: UIView {
             self.interaction.begin(at: point, geometry: self.currentGeometry)
             if self.interaction.tracking != nil { self.releaseFeedback.prepare() }
             self.showTracking()
-            if let candidate = self.interaction.tracking?.candidate, candidate != self.interaction.selection {
-                self.shimmerHighlight()
-            }
         }
         touchRecognizer.addTarget(self, action: #selector(trackTouch(_:)))
         touchRecognizer.delaysTouchesBegan = true
@@ -232,16 +229,20 @@ final class GlassTabBarView: UIView {
     }
 
     @objc private func trackTouch(_ recognizer: GlassTabBarTouchRecognizer) {
-        switch recognizer.state {
+        trackTouch(state: recognizer.state, at: recognizer.touchLocation)
+    }
+
+    func trackTouch(state: UIGestureRecognizer.State, at location: CGPoint) {
+        switch state {
         case .changed:
-            guard validateTrackingGeometry(), let point = trackingPoint(recognizer.touchLocation) else { return }
+            guard validateTrackingGeometry(), let point = trackingPoint(location) else { return }
             interaction.move(to: point)
             showTracking()
         case .ended:
-            guard validateTrackingGeometry(), let point = trackingPoint(recognizer.touchLocation) else { return }
+            guard validateTrackingGeometry(), let point = trackingPoint(location) else { return }
             interaction.move(to: point)
-            // A valid release rebounds even on the current tab; cancellations
-            // and outside releases must remain silent.
+            // The bar owns the finger until release, even outside its bounds.
+            // A valid release rebounds even on the current tab.
             let acceptedRelease = interaction.tracking?.candidate != nil
             let destination = interaction.release(at: point)
             showSelection(animated: true)
@@ -308,20 +309,29 @@ final class GlassTabBarView: UIView {
 
     private func showTracking() {
         guard let tracking = interaction.tracking else { return }
-        if tracking.candidate == nil || tracking.candidate == interaction.selection {
-            selectionView.stopShimmer()
-        }
+        // A hold only previews. Stop any previous release's ripple as well.
+        selectionView.stopShimmer()
         for button in buttons {
             button.updateTrackingCandidate(button.tab == tracking.candidate)
         }
-        // The highlight covers a whole tab: the one under the finger, or,
-        // while the finger is off the bar, the one a release there keeps.
+        // The icon previews the nearest tab, while the highlight follows the
+        // finger's position along the bar, even when the finger leaves it.
         let tab = tracking.candidate ?? interaction.selection
         guard let item = tracking.geometry.items.first(where: { $0.tab == tab }) else { return }
+        var frame = item.frame
+        if tracking.candidate != nil {
+            if layoutAxis == .vertical {
+                frame.origin.y = tracking.position - frame.height / 2
+            } else {
+                frame.origin.x = tracking.position - frame.width / 2
+            }
+        }
         let canAnimate = !reduceMotion && window != nil
         presentation.track(scale: pressedScale, animated: canAnimate)
-        moveHighlight(to: item.frame, color: tracking.candidate == nil ? .tertiarySystemFill : .secondarySystemFill,
-                      animated: canAnimate)
+        // A held finger directly controls the highlight; a spring here would
+        // trail each new touch sample. Settle onto the final tab only on release.
+        moveHighlight(to: frame, color: tracking.candidate == nil ? .tertiarySystemFill : .secondarySystemFill,
+                      animated: false)
     }
 
     private func showSelection(animated: Bool) {
@@ -336,9 +346,12 @@ final class GlassTabBarView: UIView {
         if canAnimate { presentation.release(animated: true) }
     }
 
-    /// Slides the highlight onto a whole tab. Only a new tab starts a spring:
-    /// restarting one on every touch sample would keep it from ever settling.
+    /// Held movement is immediate; committed selections can settle on a spring.
     private func moveHighlight(to frame: CGRect, color: UIColor, animated: Bool) {
+        if !animated {
+            // A new hold takes over even while the previous release is settling.
+            selectionView.layer.removeAllAnimations()
+        }
         guard frame != selectionView.frame else {
             selectionView.backgroundColor = color
             return

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// How the tab bar moves under a finger and as it slides back. The defaults
 /// keep it calm; `original` is how the bar itself moved before, to compare
-/// against. The highlight always moves tab by tab.
+/// against. The highlight follows a held finger and settles onto the released tab.
 struct GlassTabBarMotion: Equatable {
     /// The whole capsule grows while held, by up to `grow`.
     var grows = true
@@ -13,7 +13,7 @@ struct GlassTabBarMotion: Equatable {
     /// critically damped.
     var wobbles = false
     var wobbleDamping = 0.45
-    /// The highlight slides from tab to tab on a snappy spring; off, it jumps.
+    /// The highlight settles onto the committed tab on a spring; off, it jumps.
     var highlightSlides = true
     var highlightDuration = 0.25
     var highlightBounce = 0.15
@@ -34,7 +34,7 @@ struct GlassTabBarMotion: Equatable {
     /// The most the capsule grows while held, before its room clamps it.
     var pressedScale: CGFloat { grows ? grow : 1 }
     var releaseDamping: Double { wobbles ? wobbleDamping : 1 }
-    /// Nil while the highlight jumps between tabs.
+    /// Nil when committed selections settle immediately.
     var highlightSpring: (duration: TimeInterval, bounce: Double)? {
         highlightSlides ? (highlightDuration, highlightBounce) : nil
     }
