@@ -108,7 +108,9 @@ struct GlassTabBar: View {
     var body: some View {
         GlassTabBarRepresentable(selection: $selection, layoutAxis: layoutAxis, motion: motion,
                                  presentation: presentation)
-            .fixedSize(horizontal: false, vertical: true)
+            // The vertical toolbar proposes its compact item width. Keep the
+            // full capsule width in both Duo postures; the bottom bar can flex.
+            .fixedSize(horizontal: layoutAxis == .vertical, vertical: true)
             .onGeometryChange(for: CGRect.self) { proxy in
                 // The press zoom scales about the centre, which it leaves in
                 // place: the resting frame is the centre and the laid-out size.

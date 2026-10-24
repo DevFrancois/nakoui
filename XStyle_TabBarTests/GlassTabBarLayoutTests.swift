@@ -131,9 +131,9 @@ struct GlassTabBarLayoutTests {
         let identities = try buttons(in: view).map(ObjectIdentifier.init)
         configure(view, category: .accessibilityExtraExtraExtraLarge, axis: .vertical)
 
-        for width: CGFloat in [56, 50, 44, 56] {
+        for width: CGFloat in [60, 56, 50, 44, 60] {
             let size = view.fittingSize(proposedWidth: width)
-            #expect(size == CGSize(width: width, height: 188))
+            #expect(size == CGSize(width: width, height: 244))
             view.frame = CGRect(origin: .zero, size: size)
             view.layoutIfNeeded()
             try expectUsableButtons(in: view)
@@ -151,7 +151,7 @@ struct GlassTabBarLayoutTests {
         let view = GlassTabBarView(selection: .home)
         for (axis, preferredWidth, minimumWidth): (NSLayoutConstraint.Axis, CGFloat, CGFloat) in [
             (.horizontal, 326, 176),
-            (.vertical, 56, 44),
+            (.vertical, 60, 44),
         ] {
             configure(view, axis: axis)
             for proposal: CGFloat? in [nil, .infinity, .nan, 10_000] {

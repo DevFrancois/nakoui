@@ -237,12 +237,13 @@ struct GlassTabBarPresentationTests {
         #expect(committedTabs.isEmpty, "Holding must not commit a destination")
     }
 
-    @Test("Narrow SwiftUI bars keep UIKit content and the glass anchor aligned so presses can begin")
+    @Test("Narrow proposals keep the vertical bar full width and its tracking anchor aligned")
     func hostedNarrowBarsRetainAValidTrackingAnchor() async throws {
         let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         for (axis, width): (NSLayoutConstraint.Axis, CGFloat) in [
-            (.horizontal, 180), (.horizontal, 176), (.vertical, 50), (.vertical, 44),
+            (.horizontal, 180), (.horizontal, 176), (.vertical, 60), (.vertical, 48), (.vertical, 44),
         ] {
+            let expectedWidth: CGFloat = axis == .vertical ? 60 : width
             let window = UIWindow(windowScene: scene)
             let host = UIHostingController(rootView: NarrowGlassTabBarFixture(axis: axis, width: width))
             window.rootViewController = host
@@ -252,8 +253,8 @@ struct GlassTabBarPresentationTests {
             try #require(await eventually {
                 host.view.layoutIfNeeded()
                 guard let view = self.findBar(in: host.view) else { return false }
-                return abs(view.bounds.width - width) < 0.5 && view.bounds.height > 0
-            }, "The UIKit content must honor the same narrow proposal as its SwiftUI capsule")
+                return abs(view.bounds.width - expectedWidth) < 0.5 && view.bounds.height > 0
+            }, "The vertical capsule must retain its full width even under the toolbar's compact proposal")
             let view = try #require(findBar(in: host.view))
             let recognizer = try #require(view.gestureRecognizers?.compactMap {
                 $0 as? GlassTabBarTouchRecognizer

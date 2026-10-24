@@ -8,7 +8,11 @@ enum GlassTabBarMetrics {
     // raises it 14 points without adding space inside the glass or touch anchor.
     static let horizontalToolbarBottomPadding: CGFloat = 28
     static let minimumHorizontalWidth = minimumTapSize * CGFloat(RootTab.allCases.count)
-    static let preferredVerticalWidth = minimumTapSize + contentInset * 2
+    // Duo's vertical menu uses a wider capsule and taller, icon-only rows.
+    // The 44-point touch minimum is a fallback, not the preferred row size.
+    static let preferredVerticalWidth: CGFloat = 60
+    static let verticalItemHeight: CGFloat = 58
+    static let verticalHorizontalInset: CGFloat = 8
     static let minimumHeight: CGFloat = 64
     static let contentInset: CGFloat = 6
     static let minimumTapSize: CGFloat = 44

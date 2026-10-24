@@ -99,7 +99,7 @@ final class GlassTabBarButton: UIControl {
 
     override func sizeThatFits(_ size: CGSize) -> CGSize {
         if layoutAxis == .vertical {
-            return CGSize(width: size.width, height: GlassTabBarMetrics.minimumTapSize)
+            return CGSize(width: size.width, height: GlassTabBarMetrics.verticalItemHeight)
         }
         let labelSize = titleSize(for: size.width)
         let height = symbolSize + GlassTabBarMetrics.labelSpacing + labelSize.height + GlassTabBarMetrics.itemPadding * 2

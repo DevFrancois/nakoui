@@ -144,12 +144,14 @@ final class GlassTabBarView: UIView {
     }
 
     private func horizontalInset(for width: CGFloat) -> CGFloat {
-        min(GlassTabBarMetrics.contentInset, max(0, (width - minimumContentWidth) / 2))
+        let preferredInset = layoutAxis == .vertical
+            ? GlassTabBarMetrics.verticalHorizontalInset : GlassTabBarMetrics.contentInset
+        return min(preferredInset, max(0, (width - minimumContentWidth) / 2))
     }
 
     func fittingHeight(for width: CGFloat) -> CGFloat {
         if layoutAxis == .vertical {
-            return CGFloat(buttons.count) * GlassTabBarMetrics.minimumTapSize + GlassTabBarMetrics.contentInset * 2
+            return CGFloat(buttons.count) * GlassTabBarMetrics.verticalItemHeight + GlassTabBarMetrics.contentInset * 2
         }
         let itemWidth = max(0, width - horizontalInset(for: width) * 2) / CGFloat(buttons.count)
         let itemHeight = buttons.map { $0.sizeThatFits(CGSize(width: itemWidth, height: .greatestFiniteMagnitude)).height }.max() ?? 0
