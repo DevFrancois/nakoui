@@ -10,6 +10,7 @@ final class GlassTabBarHighlight: UIView {
         cornerConfiguration = .capsule()
         clipsToBounds = true
         isUserInteractionEnabled = false
+        shimmer.name = "tabBar.releaseShimmer"
         shimmer.locations = [0, 0.5, 1]
         shimmer.opacity = 0
         layer.addSublayer(shimmer)

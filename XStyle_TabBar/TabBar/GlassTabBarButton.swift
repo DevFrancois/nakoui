@@ -23,6 +23,8 @@ final class GlassTabBarButton: UIControl {
     // Finger tracking stays separate from the committed accessibility selection.
     private var trackingCandidate: Bool?
     private var appliedForeground: UIColor?
+    private var selectedForegroundOverride: UIColor?
+    private var inactiveForegroundOverride: UIColor?
     private static let selectedForeground = UIColor { traits in
         (traits.userInterfaceStyle == .dark ? UIColor.label : UIColor.black)
             .resolvedColor(with: traits)
@@ -92,6 +94,13 @@ final class GlassTabBarButton: UIControl {
     func updateTrackingCandidate(_ isCandidate: Bool?) {
         guard trackingCandidate != isCandidate else { return }
         trackingCandidate = isCandidate
+        updateAppearance()
+    }
+
+    func updateForeground(selected: UIColor?, inactive: UIColor?) {
+        guard selectedForegroundOverride != selected || inactiveForegroundOverride != inactive else { return }
+        selectedForegroundOverride = selected
+        inactiveForegroundOverride = inactive
         updateAppearance()
     }
 
@@ -175,7 +184,9 @@ final class GlassTabBarButton: UIControl {
 
     private func updateAppearance() {
         let isEmphasized = trackingCandidate ?? (isSelected || isHighlighted)
-        let foreground: UIColor = !isEnabled ? .tertiaryLabel : (isEmphasized ? Self.selectedForeground : Self.unselectedForeground)
+        let foreground: UIColor = !isEnabled ? .tertiaryLabel
+            : (isEmphasized ? selectedForegroundOverride ?? Self.selectedForeground
+                           : inactiveForegroundOverride ?? Self.unselectedForeground)
         accessibilityTraits = [.button]
         if isSelected { accessibilityTraits.insert(.selected) }
         if !isEnabled { accessibilityTraits.insert(.notEnabled) }

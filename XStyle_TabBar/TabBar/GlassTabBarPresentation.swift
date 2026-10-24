@@ -1,50 +1,21 @@
 import SwiftUI
 import UIKit
 
-/// SwiftUI owns the single material and its deformation. UIKit keeps the
-/// controls and release-only tracker, measured against an unscaled anchor.
+/// Shares the native glass controls' geometry with SwiftUI. UIKit keeps the
+/// release-only tracker; the system owns the capsule's touch response.
 @MainActor
 @Observable
 final class GlassTabBarPresentation {
-    private(set) var scale = CGSize(width: 1, height: 1)
     /// The Scan symbol's centre within the controls, as UIKit laid it out.
     private(set) var scanSymbol: UnitPoint?
-    /// How the capsule and its highlight move; see `GlassTabBarMotion`.
+    /// How the highlight and toolbar entrance move; see `GlassTabBarMotion`.
     @ObservationIgnored var motion = GlassTabBarMotion.calm
     @ObservationIgnored weak var coordinateView: UIView?
     @ObservationIgnored weak var placementView: UIView?
-    @ObservationIgnored private var generation = 0
-    @ObservationIgnored private var isUpdatingView = false
 
     func setScanSymbol(x: CGFloat, y: CGFloat) {
         let point = UnitPoint(x: x, y: y)
         if scanSymbol != point { scanSymbol = point }
-    }
-
-    func updateView(_ update: () -> Void) {
-        isUpdatingView = true
-        defer { isUpdatingView = false }
-        update()
-    }
-
-    func track(scale: CGSize, animated: Bool) {
-        setScale(scale, duration: animated ? GlassTabBarMetrics.trackingDuration : nil, damping: 0.82)
-    }
-
-    func release(animated: Bool) {
-        setScale(CGSize(width: 1, height: 1),
-                 duration: animated ? motion.settleDuration : nil, damping: motion.releaseDamping)
-    }
-
-    func resetAfterLayout() {
-        generation += 1
-        let expectedGeneration = generation
-        // Geometry/environment updates can arrive inside SwiftUI's update pass.
-        // A newer touch must win over a deferred reset from an older placement.
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.generation == expectedGeneration else { return }
-            self.release(animated: false)
-        }
     }
 
     func coordinateSpace(for view: UIView) -> UIView? {
@@ -66,27 +37,6 @@ final class GlassTabBarPresentation {
         // a zoom's rounding error is never mistaken for a move.
         let step = 1 / (window.traitCollection.displayScale * 2)
         return CGPoint(x: (center.x / step).rounded() * step, y: (center.y / step).rounded() * step)
-    }
-
-    private func setScale(_ scale: CGSize, duration: TimeInterval?, damping: Double) {
-        generation += 1
-        if isUpdatingView {
-            let expectedGeneration = generation
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.generation == expectedGeneration else { return }
-                self.setScale(scale, duration: duration, damping: damping)
-            }
-            return
-        }
-        if let duration {
-            withAnimation(.interpolatingSpring(Spring(settlingDuration: duration, dampingRatio: damping))) {
-                self.scale = scale
-            }
-        } else {
-            var transaction = Transaction(animation: nil)
-            transaction.disablesAnimations = true
-            withTransaction(transaction) { self.scale = scale }
-        }
     }
 }
 

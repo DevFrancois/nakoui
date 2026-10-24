@@ -16,6 +16,7 @@ struct RootTabContent<Home: View>: View {
     @State private var windowBottom: CGFloat = 0
     /// The tab bar's top edge, in global space, where it last rested.
     @State private var tabBarTop: CGFloat?
+    @State private var reflectionSource = GlassTabBarReflectionSource()
 
     var body: some View {
         // The scan sheet takes the bar's band whatever it shows, a result or
@@ -29,7 +30,8 @@ struct RootTabContent<Home: View>: View {
             RootTabPages(selection: selection, scanner: scanner, scannerSheet: scannerSheet,
                          sheetSettings: sheetSettings, scanHistory: scanHistory, layoutAxis: layoutAxis,
                          isVisible: isTabBarVisible, safeAreaInsets: geometry.safeAreaInsets,
-                         scannerTabBarClearance: tabBarClearance(beyond: geometry.safeAreaInsets.bottom), home: home)
+                         scannerTabBarClearance: tabBarClearance(beyond: geometry.safeAreaInsets.bottom),
+                         reflectionSource: reflectionSource, home: home)
                 // Keep the paging viewport full width while explicitly carrying
                 // the outer stack's toolbar/rail insets into UIKit's children.
                 .ignoresSafeArea(.container)
@@ -52,6 +54,7 @@ struct RootTabContent<Home: View>: View {
                 isHidden: hidesTabBar,
                 windowBottom: windowBottom,
                 top: $tabBarTop,
+                reflectionSource: reflectionSource,
                 onScanOriginChange: { scanner.viewportEntrance.sourcePoint = $0 }
             )
         }

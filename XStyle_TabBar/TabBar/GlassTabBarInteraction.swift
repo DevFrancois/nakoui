@@ -78,8 +78,8 @@ struct GlassTabBarInteraction {
 }
 
 /// Recognizes immediately, without a long-press delay or a pan threshold.
-/// Delaying button touches prevents individual controls from previewing or
-/// committing while the shared tracker owns a finger moving between tabs.
+/// Physical touches belong to the native glass content; this simultaneous
+/// tracker previews tabs and commits exactly once when the finger releases.
 final class GlassTabBarTouchRecognizer: UIGestureRecognizer {
     var onBegin: ((CGPoint) -> Void)?
     private var trackedTouch: UITouch?

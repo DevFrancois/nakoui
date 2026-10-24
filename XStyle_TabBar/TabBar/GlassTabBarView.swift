@@ -1,11 +1,17 @@
 import UIKit
 
-/// Persistent controls and touch tracking. The enclosing SwiftUI view supplies
-/// the glass and scales the visual subtree without changing touch coordinates.
-final class GlassTabBarView: UIView {
+/// One native glass capsule owns press feedback for the whole menu. The single
+/// selection fill and its release shimmer travel with the native content.
+final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
     var onSelect: ((RootTab) -> Void)?
 
     private let containerView = UIView()
+    private let glassView = GlassTabBarNativeGlassView()
+    private let backingView = UIView()
+    private let dimmingView = UIView()
+    private let reflectionLayer = GlassTabBarReflectionLayer()
+    private weak var reflectionSourceView: UIView?
+    private var glassConfiguration: GlassConfiguration?
     private let presentation: GlassTabBarPresentation
     private let selectionView = GlassTabBarHighlight()
     private let buttons = RootTab.allCases.map { GlassTabBarButton(tab: $0) }
@@ -17,6 +23,90 @@ final class GlassTabBarView: UIView {
     private var lastGeometry: GlassTabBarInteraction.Geometry?
     private var environmentInputs: EnvironmentInputs?
     private weak var trackingCoordinateView: UIView?
+    private var restingSelectionColor = UIColor.tertiarySystemFill
+    private var trackingSelectionColor = UIColor.secondarySystemFill
+
+    func setReflectionSource(_ view: UIView?) {
+        reflectionSourceView = view
+        updateReflectionSource()
+    }
+
+    private func updateReflectionSource() {
+        guard let source = reflectionSourceView, let window,
+              source.window === window, !isDescendant(of: source) else {
+            reflectionLayer.setSourceLayer(nil)
+            return
+        }
+        reflectionLayer.setSourceLayer(source.layer)
+    }
+
+    func updateGlass(_ appearance: GlassTabBarAppearance, interactive: Bool) {
+        let configuration = GlassConfiguration(material: appearance.material,
+                                               tint: appearance.tintEnabled ? appearance.tintColor : nil,
+                                               tintOpacity: appearance.tintOpacity,
+                                               interactive: interactive && !reduceMotion && (environmentInputs?.isEnabled ?? true))
+        if glassConfiguration != configuration {
+            glassConfiguration = configuration
+            glassView.effect = makeGlassEffect(configuration)
+        }
+        let backing = appearance.backingEnabled
+            ? appearance.backingColor.uiColor(opacity: appearance.backingOpacity) : UIColor.clear
+        backingView.backgroundColor = appearance.backingInsideGlass ? .clear : backing
+        dimmingView.backgroundColor = appearance.backingInsideGlass ? backing : .clear
+        glassView.suppressInteractionGlow()
+    }
+
+    private struct GlassConfiguration: Equatable {
+        let material: GlassTabBarAppearance.Material
+        let tint: GlassTabBarAppearance.RGB?
+        let tintOpacity: Double
+        let interactive: Bool
+    }
+
+    private func makeGlassEffect(_ configuration: GlassConfiguration) -> UIGlassEffect {
+        let effect = UIGlassEffect(style: configuration.material == .clear ? .clear : .regular)
+        effect.tintColor = configuration.tint?.uiColor(opacity: configuration.tintOpacity)
+        effect.isInteractive = configuration.interactive
+        return effect
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        // Let the native surface respond to the same hold; the tab tracker
+        // remains responsible for preview and the one navigation on release.
+        otherGestureRecognizer.view?.isDescendant(of: glassView) == true
+    }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard !isHidden, alpha > 0.01, isUserInteractionEnabled,
+              touchRecognizer.isEnabled, self.point(inside: point, with: event) else { return nil }
+        // One native touch owner survives tab changes and a drag off the rail.
+        // The root recognizer still owns thresholding and the release commit.
+        glassView.suppressInteractionGlow()
+        return glassView.contentView
+    }
+
+    func updateAppearance(_ appearance: GlassTabBarAppearance, defaults: GlassTabBarAppearance) {
+        let selected = appearance.selectedIconColor == defaults.selectedIconColor
+            ? nil : appearance.selectedIconColor.uiColor()
+        let inactive = appearance.inactiveIconColor == defaults.inactiveIconColor
+            && appearance.inactiveIconOpacity == defaults.inactiveIconOpacity
+            ? nil : appearance.inactiveIconColor.uiColor(opacity: appearance.inactiveIconOpacity)
+        for button in buttons { button.updateForeground(selected: selected, inactive: inactive) }
+        let style: UIUserInterfaceStyle = defaults == .dark ? .dark : .light
+        overrideUserInterfaceStyle = style
+        let systemSelection = GlassTabBarAppearance.RGB(.tertiarySystemFill, style: style)
+        let traits = UITraitCollection(userInterfaceStyle: style)
+        restingSelectionColor = appearance.selectionColor == systemSelection
+            && appearance.selectionOpacity == UIColor.tertiarySystemFill.resolvedColor(with: traits).cgColor.alpha
+            ? .tertiarySystemFill : appearance.selectionColor.uiColor(opacity: appearance.selectionOpacity)
+        trackingSelectionColor = appearance.selectionColor == systemSelection
+            && appearance.trackingSelectionOpacity == UIColor.secondarySystemFill.resolvedColor(with: traits).cgColor.alpha
+            ? .secondarySystemFill : appearance.selectionColor.uiColor(opacity: appearance.trackingSelectionOpacity)
+        // Appearance edits never reset geometry, a preview, or a pending release.
+        selectionView.backgroundColor = interaction.tracking?.candidate == nil
+            ? restingSelectionColor : trackingSelectionColor
+    }
 
     convenience init(selection: RootTab) {
         self.init(selection: selection, presentation: GlassTabBarPresentation())
@@ -31,7 +121,19 @@ final class GlassTabBarView: UIView {
         accessibilityTraits = .tabBar
         accessibilityElements = buttons
 
-        addSubview(containerView)
+        backingView.cornerConfiguration = .capsule()
+        backingView.isUserInteractionEnabled = false
+        backingView.accessibilityElementsHidden = true
+        glassView.cornerConfiguration = .capsule()
+        dimmingView.cornerConfiguration = .capsule()
+        dimmingView.layer.name = "tabBar.materialBacking"
+        dimmingView.isUserInteractionEnabled = false
+        dimmingView.accessibilityElementsHidden = true
+        addSubview(backingView)
+        addSubview(glassView)
+        glassView.contentView.addSubview(dimmingView)
+        glassView.contentView.layer.addSublayer(reflectionLayer)
+        glassView.contentView.addSubview(containerView)
         containerView.addSubview(selectionView)
         for button in buttons {
             containerView.addSubview(button)
@@ -52,8 +154,9 @@ final class GlassTabBarView: UIView {
             self.showTracking()
         }
         touchRecognizer.addTarget(self, action: #selector(trackTouch(_:)))
-        touchRecognizer.delaysTouchesBegan = true
-        touchRecognizer.cancelsTouchesInView = true
+        touchRecognizer.delaysTouchesBegan = false
+        touchRecognizer.cancelsTouchesInView = false
+        touchRecognizer.delegate = self
         addGestureRecognizer(touchRecognizer)
     }
 
@@ -157,7 +260,14 @@ final class GlassTabBarView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        containerView.frame = bounds
+        backingView.frame = bounds
+        glassView.bounds = bounds
+        glassView.center = CGPoint(x: bounds.midX, y: bounds.midY)
+        dimmingView.frame = glassView.contentView.bounds
+        reflectionLayer.updateLayout(bounds: bounds, axis: layoutAxis, scale: traitCollection.displayScale)
+        updateReflectionSource()
+        containerView.bounds = bounds
+        containerView.center = CGPoint(x: bounds.midX, y: bounds.midY)
         let content = bounds.insetBy(dx: horizontalInset(for: bounds.width), dy: GlassTabBarMetrics.contentInset)
         let isVertical = layoutAxis == .vertical
         let itemWidth = max(0, content.width) / (isVertical ? 1 : CGFloat(buttons.count))
@@ -192,6 +302,7 @@ final class GlassTabBarView: UIView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
+        updateReflectionSource()
         if window == nil {
             cancelTracking(animated: false)
             stopMotion()
@@ -207,25 +318,17 @@ final class GlassTabBarView: UIView {
 
     private var currentGeometry: GlassTabBarInteraction.Geometry {
         .init(
-            bounds: bounds,
+            bounds: containerView.bounds,
             axis: layoutAxis,
             items: buttons.map { .init(tab: $0.tab, frame: $0.frame) },
             placement: presentation.placement(for: self)
         )
     }
 
-    /// The finger against the capsule as drawn while pressed. The tabs grow
-    /// with the capsule about its center, so a point left unscaled would pick
-    /// the tab short of the finger near a boundary, further out toward either
-    /// end. The pressed scale is fixed for the whole hold, so a still finger
-    /// never changes tab while the capsule grows.
+    /// Native glass can deform its child controls independently of this root.
     private func trackingPoint(_ point: CGPoint) -> CGPoint? {
-        guard let coordinateView = presentation.coordinateSpace(for: self) else { return nil }
-        let unscaled = convert(point, to: coordinateView)
-        let scale = pressedScale
-        let center = CGPoint(x: coordinateView.bounds.midX, y: coordinateView.bounds.midY)
-        return CGPoint(x: center.x + (unscaled.x - center.x) / scale.width,
-                       y: center.y + (unscaled.y - center.y) / scale.height)
+        guard presentation.coordinateSpace(for: self) != nil else { return nil }
+        return containerView.convert(point, from: self)
     }
 
     @objc private func trackTouch(_ recognizer: GlassTabBarTouchRecognizer) {
@@ -305,12 +408,21 @@ final class GlassTabBarView: UIView {
     private func resetRecognizerIfNeeded() {
         guard interaction.tracking == nil,
               touchRecognizer.state == .began || touchRecognizer.state == .changed else { return }
+        // Abandon UIKit's simultaneous press too, so a layout or external
+        // selection change cannot leave the capsule in its held state.
+        glassView.isUserInteractionEnabled = false
+        glassView.effect = nil
+        if let configuration = glassConfiguration {
+            glassView.effect = makeGlassEffect(configuration)
+        }
+        glassView.isUserInteractionEnabled = true
         touchRecognizer.isEnabled = false
         touchRecognizer.isEnabled = true
     }
 
     private func showTracking() {
         guard let tracking = interaction.tracking else { return }
+        glassView.suppressInteractionGlow()
         // A hold only previews. Stop any previous release's ripple as well.
         selectionView.stopShimmer()
         for button in buttons {
@@ -321,8 +433,7 @@ final class GlassTabBarView: UIView {
         let tab = tracking.candidate ?? interaction.selection
         guard let item = tracking.geometry.items.first(where: { $0.tab == tab }) else { return }
         let canAnimate = !reduceMotion && window != nil
-        presentation.track(scale: pressedScale, animated: canAnimate)
-        moveHighlight(to: item.frame, color: tracking.candidate == nil ? .tertiarySystemFill : .secondarySystemFill,
+        moveHighlight(to: item.frame, color: tracking.candidate == nil ? restingSelectionColor : trackingSelectionColor,
                       animated: canAnimate)
     }
 
@@ -341,8 +452,7 @@ final class GlassTabBarView: UIView {
         }
         guard let selectedButton = buttons.first(where: { $0.tab == interaction.selection }) else { return }
         if !canAnimate { stopMotion() }
-        moveHighlight(to: selectedButton.frame, color: .tertiarySystemFill, animated: canAnimate)
-        if canAnimate { presentation.release(animated: true) }
+        moveHighlight(to: selectedButton.frame, color: restingSelectionColor, animated: canAnimate)
     }
 
     /// Only crossing into another tab starts a spring. Movement within the same
@@ -378,24 +488,8 @@ final class GlassTabBarView: UIView {
         selectionView.playShimmer(axis: layoutAxis, direction: distance > 0 ? 1 : -1)
     }
 
-    private var pressedScale: CGSize {
-        guard !reduceMotion, let window, bounds.width > 0, bounds.height > 0,
-              let coordinateView = presentation.coordinateSpace(for: self) else {
-            return CGSize(width: 1, height: 1)
-        }
-        let frame = coordinateView.convert(coordinateView.bounds, to: window)
-        let available = window.safeAreaLayoutGuide.layoutFrame
-        let horizontalRoom = max(0, min(frame.minX - available.minX, available.maxX - frame.maxX))
-        let verticalRoom = max(0, min(frame.minY - available.minY, available.maxY - frame.maxY))
-        let grow = presentation.motion.pressedScale
-        let scaleX = layoutAxis == .vertical ? 1 : min(grow, 1 + 2 * horizontalRoom / bounds.width)
-        let scaleY = min(grow, 1 + 2 * verticalRoom / bounds.height)
-        return CGSize(width: scaleX, height: scaleY)
-    }
-
     private func stopMotion() {
         selectionView.stopShimmer()
         selectionView.layer.removeAllAnimations()
-        presentation.resetAfterLayout()
     }
 }

@@ -12,6 +12,7 @@ struct GlassTabBarToolbar: ToolbarContent {
     /// The bar's top edge in global space, measured where it rests: its slide
     /// and press are visual only.
     @Binding var top: CGFloat?
+    var reflectionSource: GlassTabBarReflectionSource? = nil
     /// Where the Scan symbol rests, in global space.
     var onScanOriginChange: ((CGPoint) -> Void)? = nil
 
@@ -21,6 +22,7 @@ struct GlassTabBarToolbar: ToolbarContent {
             ToolbarItem(placement: .bottomBar) {
                 reportingTop(of: AdaptiveGlassTabBar(selection: $selection, layoutAxis: $layoutAxis,
                                                      isHidden: isHidden, windowBottom: windowBottom, restingTop: top,
+                                                     reflectionSource: reflectionSource,
                                                      onScanOriginChange: onScanOriginChange))
             }
             .axisBehavior(.verticalPreferred)
@@ -30,7 +32,8 @@ struct GlassTabBarToolbar: ToolbarContent {
         } else {
             ToolbarItem(placement: .bottomBar) {
                 reportingTop(of: GlassTabBar(selection: $selection, isHidden: isHidden, windowBottom: windowBottom,
-                                             restingTop: top, onScanOriginChange: onScanOriginChange))
+                                             restingTop: top, reflectionSource: reflectionSource,
+                                             onScanOriginChange: onScanOriginChange))
             }
             .sharedBackgroundVisibility(.hidden)
         }
@@ -60,12 +63,14 @@ private struct AdaptiveGlassTabBar: View {
     let isHidden: Bool
     let windowBottom: CGFloat
     let restingTop: CGFloat?
+    let reflectionSource: GlassTabBarReflectionSource?
     let onScanOriginChange: ((CGPoint) -> Void)?
     @Environment(\.toolbarVerticalEdge) private var verticalEdge
 
     var body: some View {
         GlassTabBar(selection: $selection, layoutAxis: verticalEdge == nil ? .horizontal : .vertical,
                     isHidden: isHidden, windowBottom: windowBottom, restingTop: restingTop,
+                    reflectionSource: reflectionSource,
                     onScanOriginChange: onScanOriginChange)
             .onChange(of: verticalEdge == nil, initial: true) {
                 layoutAxis = verticalEdge == nil ? .horizontal : .vertical
@@ -84,20 +89,16 @@ struct GlassTabBar: View {
     /// The bar's top edge in global space where it rests, which it slides
     /// from and back to; see `GlassTabBarToolbar.top`.
     var restingTop: CGFloat?
+    var reflectionSource: GlassTabBarReflectionSource? = nil
     /// Where the Scan symbol rests, in global space, while the bar shows.
     var onScanOriginChange: ((CGPoint) -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @State private var presentation = GlassTabBarPresentation()
     /// The controls' frame in global space, without the press zoom.
     @State private var controlsFrame: CGRect?
 
-    // Release builds have no dials, so they ignore any values a debug build
-    // left stored.
-    #if DEBUG
-    @StoredGlassTabBarMotion private var motion: GlassTabBarMotion
-    #else
     private let motion = GlassTabBarMotion.calm
-    #endif
 
     /// While the Scan tab's sheet is up, with a result or the history, the bar
     /// makes way for it. The Duo's vertical rail stays.
@@ -106,8 +107,8 @@ struct GlassTabBar: View {
     }
 
     var body: some View {
-        GlassTabBarRepresentable(selection: $selection, layoutAxis: layoutAxis, motion: motion,
-                                 presentation: presentation)
+        GlassTabBarRepresentable(selection: $selection, layoutAxis: layoutAxis, motion: motion, appearance: appearance,
+                                 presentation: presentation, reflectionSource: reflectionSource)
             // The vertical toolbar proposes its compact item width. Keep the
             // full capsule width in both Duo postures; the bottom bar can flex.
             .fixedSize(horizontal: layoutAxis == .vertical, vertical: true)
@@ -127,15 +128,6 @@ struct GlassTabBar: View {
             .onChange(of: isHidden) {
                 reportScanOrigin()
             }
-            .background {
-                // Keep native glass behind the controls so its foreground
-                // treatment cannot change their explicitly assigned colors.
-                GlassTabBarBackground()
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
-            .scaleEffect(x: reduceMotion ? 1 : presentation.scale.width,
-                         y: reduceMotion ? 1 : presentation.scale.height)
             // This anchor is outside the visual transform. Touch locations stay
             // in the toolbar's unscaled coordinate space, sliding with the bar.
             .background {
@@ -167,6 +159,8 @@ struct GlassTabBar: View {
             .accessibilityHidden(isHidden)
     }
 
+    private var appearance: GlassTabBarAppearance { colorScheme == .dark ? .dark : .light }
+
     /// Reports the Scan symbol where the controls laid it out. Hidden, the
     /// toolbar lays the bar out elsewhere, which isn't where it comes back to.
     private func reportScanOrigin() {
@@ -180,7 +174,9 @@ private struct GlassTabBarRepresentable: UIViewRepresentable {
     @Binding var selection: RootTab
     let layoutAxis: NSLayoutConstraint.Axis
     let motion: GlassTabBarMotion
+    let appearance: GlassTabBarAppearance
     let presentation: GlassTabBarPresentation
+    let reflectionSource: GlassTabBarReflectionSource?
 
     func makeUIView(context: Context) -> GlassTabBarView {
         GlassTabBarView(selection: selection, presentation: presentation)
@@ -189,44 +185,28 @@ private struct GlassTabBarRepresentable: UIViewRepresentable {
     func updateUIView(_ view: GlassTabBarView, context: Context) {
         // Replace the callback too, so it always writes to the current binding.
         view.onSelect = { selection = $0 }
-        // Read at the next press or release, so a held finger keeps its motion.
         presentation.motion = motion
-        presentation.updateView {
-            view.updateEnvironment(
-                locale: context.environment.locale,
-                contentSizeCategory: UIContentSizeCategory(context.environment.dynamicTypeSize),
-                layoutDirection: context.environment.layoutDirection == .rightToLeft ? .rightToLeft : .leftToRight,
-                layoutAxis: layoutAxis,
-                reduceMotion: context.environment.accessibilityReduceMotion,
-                isEnabled: context.environment.isEnabled
-            )
-            view.select(selection, animated: !context.transaction.disablesAnimations)
+        view.updateEnvironment(
+            locale: context.environment.locale,
+            contentSizeCategory: UIContentSizeCategory(context.environment.dynamicTypeSize),
+            layoutDirection: context.environment.layoutDirection == .rightToLeft ? .rightToLeft : .leftToRight,
+            layoutAxis: layoutAxis,
+            reduceMotion: context.environment.accessibilityReduceMotion,
+            isEnabled: context.environment.isEnabled
+        )
+        view.updateAppearance(appearance, defaults: context.environment.colorScheme == .dark ? .dark : .light)
+        view.updateGlass(appearance, interactive: true)
+        if let reflectionSource {
+            reflectionSource.attach(view)
+        } else {
+            view.setReflectionSource(nil)
         }
+        view.select(selection, animated: !context.transaction.disablesAnimations)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: GlassTabBarView, context: Context) -> CGSize? {
         // One measurement owns the controls, glass, and unscaled touch anchor.
         // A separate clamping frame could give those layers different widths.
         uiView.fittingSize(proposedWidth: proposal.width)
-    }
-}
-
-/// The chosen material stays behind the controls to preserve their colors.
-private struct GlassTabBarBackground: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    private var glass: Glass {
-        colorScheme == .dark
-            ? .clear.tint(Color(red: 28.0 / 255, green: 28.0 / 255, blue: 30.0 / 255).opacity(0.9))
-            : .regular
-    }
-
-    var body: some View {
-        ZStack {
-            Capsule()
-                .fill(.black.opacity(colorScheme == .dark ? 0.3 : 0))
-            Color.clear
-                .glassEffect(glass.interactive(false), in: .capsule)
-        }
     }
 }

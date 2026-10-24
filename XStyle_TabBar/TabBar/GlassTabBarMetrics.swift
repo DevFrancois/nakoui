@@ -21,5 +21,4 @@ enum GlassTabBarMetrics {
     static let symbolSize: CGFloat = 23
     static let maximumSymbolSize: CGFloat = 34
     static let labelSize: CGFloat = 9
-    static let trackingDuration: TimeInterval = 0.12
 }

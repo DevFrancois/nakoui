@@ -6,6 +6,87 @@ import UIKit
 @MainActor
 @Suite(.serialized)
 struct GlassTabBarPresentationTests {
+    @Test("Available reflection factories build a working portal and accept only an independent source")
+    func reflectionUsesAnIndependentSource() throws {
+        // The experimental renderer intentionally disappears on runtimes that
+        // do not provide these classes. Present factories must not be rejected
+        // just because their optional metadata differs between macOS and iOS.
+        guard NSClassFromString("CAPortalLayer") != nil,
+              NSClassFromString("CAFilter") != nil else { return }
+        let fixture = try PresentationFixture()
+        let glass = try #require(fixture.view.subviews.compactMap { $0 as? UIVisualEffectView }.first)
+        let reflection = try #require(glass.contentView.layer.sublayers?.compactMap {
+            $0 as? GlassTabBarReflectionLayer
+        }.first)
+        let portal = try #require(reflection.sublayers?.first { $0.name == "tabBar.reflection.portal" })
+        #expect(portal.filters?.count == 3)
+        #expect(reflection.isHidden)
+
+        let source = UIView(frame: fixture.window.bounds)
+        fixture.window.addSubview(source)
+        fixture.view.setReflectionSource(source)
+        #expect(!reflection.isHidden)
+
+        // Capturing an ancestor would feed the reflection back into itself.
+        fixture.view.setReflectionSource(fixture.visualContainer)
+        #expect(reflection.isHidden)
+        fixture.view.setReflectionSource(source)
+        #expect(!reflection.isHidden)
+        fixture.view.setReflectionSource(nil)
+        #expect(reflection.isHidden)
+    }
+
+    @Test("Native interaction belongs to the whole capsule and respects Reduce Motion")
+    func nativeInteractionBelongsToTheWholeCapsule() throws {
+        for axis: NSLayoutConstraint.Axis in [.horizontal, .vertical] {
+            for reduceMotion in [false, true] {
+                let fixture = try PresentationFixture(axis: axis, reduceMotion: reduceMotion)
+                fixture.view.updateGlass(.dark, interactive: true)
+                let glass = try #require(fixture.view.subviews.compactMap { $0 as? UIVisualEffectView }.first)
+                let effect = try #require(glass.effect as? UIGlassEffect)
+                let buttons = try #require(fixture.view.accessibilityElements as? [GlassTabBarButton])
+                #expect(effect.isInteractive == !reduceMotion)
+                #expect(glass.bounds == fixture.view.bounds)
+                #expect(buttons.allSatisfy { $0.isDescendant(of: glass.contentView) },
+                        "Native feedback must carry the menu content, not a separate selection-only surface")
+                #expect(fixture.view.hitTest(CGPoint(x: 20, y: 20), with: nil) === glass.contentView)
+            }
+        }
+    }
+
+    @Test("The capsule material stays constant while a held finger previews and commits tabs")
+    func materialColorRemainsStableWhileTracking() async throws {
+        for axis: NSLayoutConstraint.Axis in [.horizontal, .vertical] {
+            let fixture = try PresentationFixture(axis: axis)
+            fixture.view.updateGlass(.dark, interactive: true)
+            let glass = try #require(fixture.view.subviews.compactMap { $0 as? UIVisualEffectView }.first)
+            let backing = try #require(glass.contentView.subviews.first {
+                $0.layer.name == "tabBar.materialBacking"
+            })
+            let color = try #require(backing.backgroundColor)
+            let recognizer = try #require(fixture.view.gestureRecognizers?.compactMap {
+                $0 as? GlassTabBarTouchRecognizer
+            }.first)
+            let buttons = try #require(fixture.view.accessibilityElements as? [GlassTabBarButton])
+            let home = try #require(buttons.first { $0.tab == .home })
+            let search = try #require(buttons.first { $0.tab == .search })
+            await drainMainQueue()
+
+            recognizer.onBegin?(home.center)
+            #expect(backing.backgroundColor == color)
+            for button in buttons {
+                fixture.view.trackTouch(state: .changed, at: button.center)
+                #expect(backing.backgroundColor == color)
+            }
+            // SwiftUI may refresh the appearance without ending the hold.
+            fixture.view.updateGlass(.dark, interactive: true)
+            #expect(backing.backgroundColor == color)
+            fixture.view.trackTouch(state: .ended, at: search.center)
+            #expect(backing.backgroundColor == color)
+            #expect((glass.effect as? UIGlassEffect)?.isInteractive == true)
+        }
+    }
+
     @Test("Tracking requires an attached anchor in the same window with matching dimensions")
     func rejectsUnavailableCoordinateSpaces() throws {
         let fixture = try PresentationFixture()
@@ -49,7 +130,7 @@ struct GlassTabBarPresentationTests {
         let originalFrame = fixture.anchor.convert(fixture.anchor.bounds, to: fixture.window)
         let originalLocalPoint = fixture.view.convert(fingerInWindow, from: fixture.window)
 
-        // SwiftUI scales the entire visual subtree; the sibling anchor stays put.
+        // Native glass can transform the visual subtree; the sibling anchor stays put.
         fixture.visualContainer.transform = CGAffineTransform(scaleX: 1.04, y: 1.03)
         let scaledLocalPoint = fixture.view.convert(fingerInWindow, from: fixture.window)
         #expect(abs(scaledLocalPoint.x - originalLocalPoint.x) > 1)
@@ -69,94 +150,38 @@ struct GlassTabBarPresentationTests {
                     equals: CGPoint(x: originalPoint.x - movement.x, y: originalPoint.y - movement.y))
     }
 
-    @Test("A newer press wins over a queued layout reset; the current reset still settles the glass")
-    func deferredResetsRespectNewerPresses() async {
-        let presentation = GlassTabBarPresentation()
-        presentation.track(scale: CGSize(width: 1.02, height: 1.02), animated: false)
-        presentation.resetAfterLayout()
-        let newPress = CGSize(width: 1.04, height: 1.03)
-        presentation.track(scale: newPress, animated: false)
-
-        await drainMainQueue()
-        #expect(presentation.scale == newPress)
-
-        presentation.resetAfterLayout()
-        await drainMainQueue()
-        #expect(presentation.scale == CGSize(width: 1, height: 1))
-    }
-
-    @Test("View updates defer observed releases and cannot overwrite a newer touch")
-    func viewUpdatesDeferReleasesWithoutClobberingNewPresses() async {
-        let presentation = GlassTabBarPresentation()
-        let heldScale = CGSize(width: 1.04, height: 1.03)
-        presentation.track(scale: heldScale, animated: false)
-
-        presentation.updateView {
-            presentation.release(animated: true)
-            #expect(presentation.scale == heldScale,
-                    "The representable update must not mutate its observed presentation")
-        }
-        #expect(presentation.scale == heldScale)
-        await drainMainQueue()
-        #expect(presentation.scale == CGSize(width: 1, height: 1))
-
-        presentation.track(scale: heldScale, animated: false)
-        presentation.updateView {
-            presentation.release(animated: true)
-            #expect(presentation.scale == heldScale)
-        }
-        let newerPress = CGSize(width: 1.02, height: 1.04)
-        presentation.track(scale: newerPress, animated: false)
-        await drainMainQueue()
-        #expect(presentation.scale == newerPress)
-    }
-
-    @Test("A press grows the capsule by the dial's amount, and not at all with the grow off")
-    func pressesGrowByTheDial() async throws {
-        let fixture = try PresentationFixture()
-        let recognizer = try #require(fixture.view.gestureRecognizers?.compactMap {
-            $0 as? GlassTabBarTouchRecognizer
-        }.first)
-        let buttons = try #require(fixture.view.accessibilityElements as? [GlassTabBarButton])
-        let search = try #require(buttons.first { $0.tab == .search })
-        await drainMainQueue()
-        let searchCenter = search.convert(CGPoint(x: search.bounds.midX, y: search.bounds.midY), to: fixture.view)
-
-        fixture.presentation.motion = GlassTabBarMotion(grows: false)
-        recognizer.onBegin?(searchCenter)
-        #expect(fixture.presentation.scale == CGSize(width: 1, height: 1))
-
-        // The fixture's capsule has room on every side for the calm grow.
-        fixture.presentation.motion = .calm
-        recognizer.onBegin?(searchCenter)
-        #expect(fixture.presentation.scale == CGSize(width: 1.02, height: 1.02))
-    }
-
-    @Test("The highlight covers the whole tab drawn under the finger after the capsule grows")
+    @Test("The highlight covers the tab beneath a physical finger after native visual scaling")
     func highlightCoversTheDrawnTabAcrossABoundary() async throws {
-        let fixture = try PresentationFixture()
-        let recognizer = try #require(fixture.view.gestureRecognizers?.compactMap {
-            $0 as? GlassTabBarTouchRecognizer
-        }.first)
-        let buttons = try #require(fixture.view.accessibilityElements as? [GlassTabBarButton])
-        await drainMainQueue()
-        let highlight = try #require(buttons.first?.superview?.subviews.first {
-            $0.backgroundColor == UIColor.tertiarySystemFill
-        })
-        let home = try #require(buttons.first { $0.tab == .home })
-        let scanner = try #require(buttons.first { $0.tab == .scanner })
-        // The largest grow moves the drawn boundary furthest from the laid-out one.
-        fixture.presentation.motion = .original
-        let center = fixture.view.bounds.midX
-        recognizer.onBegin?(CGPoint(x: center, y: fixture.view.bounds.midY))
-        let scale = fixture.presentation.scale.width
-        try #require(scale > 1)
+        for (axis, direction): (NSLayoutConstraint.Axis, UIUserInterfaceLayoutDirection) in [
+            (.horizontal, .leftToRight), (.horizontal, .rightToLeft), (.vertical, .leftToRight),
+        ] {
+            let fixture = try PresentationFixture(axis: axis, direction: direction)
+            let recognizer = try #require(fixture.view.gestureRecognizers?.compactMap {
+                $0 as? GlassTabBarTouchRecognizer
+            }.first)
+            let buttons = try #require(fixture.view.accessibilityElements as? [GlassTabBarButton])
+            let home = try #require(buttons.first { $0.tab == .home })
+            let scanner = try #require(buttons.first { $0.tab == .scanner })
+            let highlight = try #require(home.superview?.subviews.first { $0 is GlassTabBarHighlight })
+            await drainMainQueue()
 
-        // Where Home meets Scan once SwiftUI has grown the capsule about its center.
-        let drawnBoundary = center + (scanner.frame.minX - center) * scale
-        for (x, tab) in [(drawnBoundary - 1, home), (drawnBoundary + 1, scanner)] {
-            fixture.view.trackTouch(state: .changed, at: CGPoint(x: x, y: fixture.view.bounds.midY))
-            #expect(highlight.frame == tab.frame, "The fill must cover the whole tab drawn under the finger")
+            recognizer.onBegin?(home.center)
+            // Native UIKit glass can deform the controls inside the unchanged root.
+            let content = try #require(home.superview)
+            content.transform = CGAffineTransform(scaleX: 1.08, y: 1.06)
+            let boundary = CGPoint(x: (home.center.x + scanner.center.x) / 2,
+                                   y: (home.center.y + scanner.center.y) / 2)
+            let drawnBoundary = content.convert(boundary, to: fixture.window)
+            let step = axis == .vertical ? CGPoint(x: 0, y: 1)
+                : CGPoint(x: direction == .rightToLeft ? -1 : 1, y: 0)
+            for (offset, tab): (CGFloat, GlassTabBarButton) in [(-1, home), (1, scanner)] {
+                let physicalPoint = CGPoint(x: drawnBoundary.x + step.x * offset,
+                                            y: drawnBoundary.y + step.y * offset)
+                let localPoint = fixture.view.convert(physicalPoint, from: fixture.window)
+                fixture.view.trackTouch(state: .changed, at: localPoint)
+                #expect(highlight.frame == tab.frame, "Use UIKit's transformed local point without applying another scale")
+                #expect(buttons.filter(\.isSelected).map(\.tab) == [.home])
+            }
         }
     }
 
@@ -171,7 +196,7 @@ struct GlassTabBarPresentationTests {
             let scanner = try #require(buttons.first { $0.tab == .scanner })
             let search = try #require(buttons.first { $0.tab == .search })
             let highlight = try #require(scanner.superview?.subviews.first { $0 is GlassTabBarHighlight })
-            let shimmer = try #require(highlight.layer.sublayers?.compactMap { $0 as? CAGradientLayer }.first)
+            let shimmer = try #require(findShimmer(in: highlight.layer))
             await drainMainQueue()
 
             recognizer.onBegin?(scanner.center)
@@ -203,8 +228,6 @@ struct GlassTabBarPresentationTests {
             (.horizontal, .leftToRight), (.horizontal, .rightToLeft), (.vertical, .leftToRight),
         ] {
             let fixture = try PresentationFixture(axis: axis, direction: direction)
-            // Keep the real highlight spring while making finger positions exact.
-            fixture.presentation.motion.grows = false
             let recognizer = try #require(fixture.view.gestureRecognizers?.compactMap {
                 $0 as? GlassTabBarTouchRecognizer
             }.first)
@@ -363,6 +386,69 @@ struct GlassTabBarPresentationTests {
         }
     }
 
+    @Test("Appearance edits preserve a held preview and release, and resetting restores default colors")
+    func appearanceEditsPreserveTrackingAndRestoreDefaults() async throws {
+        let fixture = try PresentationFixture(axis: .vertical, reduceMotion: true)
+        fixture.view.updateAppearance(.light, defaults: .light)
+        let recognizer = try #require(fixture.view.gestureRecognizers?.compactMap {
+            $0 as? GlassTabBarTouchRecognizer
+        }.first)
+        let buttons = try #require(fixture.view.accessibilityElements as? [GlassTabBarButton])
+        let identities = buttons.map(ObjectIdentifier.init)
+        let frames = buttons.map(\.frame)
+        let home = try #require(buttons.first { $0.tab == .home })
+        let scanner = try #require(buttons.first { $0.tab == .scanner })
+        let homeSymbol = try #require(home.subviews.compactMap { $0 as? UIImageView }.first)
+        let scannerSymbol = try #require(scanner.subviews.compactMap { $0 as? UIImageView }.first)
+        let highlight = try #require(home.superview?.subviews.first { $0 is GlassTabBarHighlight })
+        let traits = UITraitCollection(userInterfaceStyle: .light)
+        let originalSelected = homeSymbol.tintColor.resolvedColor(with: traits)
+        let originalInactive = scannerSymbol.tintColor.resolvedColor(with: traits)
+        let originalFill = try #require(highlight.backgroundColor).resolvedColor(with: traits)
+        var committedTabs: [RootTab] = []
+        fixture.view.onSelect = { committedTabs.append($0) }
+        await drainMainQueue()
+
+        recognizer.onBegin?(home.center)
+        fixture.view.trackTouch(state: .changed, at: scanner.center)
+        #expect(highlight.frame == scanner.frame)
+
+        var appearance = GlassTabBarAppearance.light
+        appearance.selectedIconColor = .init(red: 0.9, green: 0.15, blue: 0.2)
+        appearance.inactiveIconColor = .init(red: 0.1, green: 0.5, blue: 0.4)
+        appearance.inactiveIconOpacity = 0.7
+        appearance.selectionColor = .init(red: 0.2, green: 0.3, blue: 0.4)
+        appearance.selectionOpacity = 0.2
+        appearance.trackingSelectionOpacity = 0.4
+        fixture.view.updateAppearance(appearance, defaults: .light)
+        fixture.view.layoutIfNeeded()
+
+        let updatedButtons = try #require(fixture.view.accessibilityElements as? [GlassTabBarButton])
+        #expect(updatedButtons.map(ObjectIdentifier.init) == identities)
+        #expect(updatedButtons.map(\.frame) == frames)
+        #expect(buttons.filter(\.isSelected).map(\.tab) == [.home])
+        #expect(buttons.filter { $0.accessibilityTraits.contains(.selected) }.map(\.tab) == [.home])
+        #expect(highlight.frame == scanner.frame, "Editing appearance must preserve the active preview")
+        #expect(scannerSymbol.tintColor == appearance.selectedIconColor.uiColor())
+        #expect(homeSymbol.tintColor == appearance.inactiveIconColor.uiColor(opacity: appearance.inactiveIconOpacity))
+        #expect(highlight.backgroundColor == appearance.selectionColor.uiColor(opacity: appearance.trackingSelectionOpacity))
+        #expect(committedTabs.isEmpty)
+
+        fixture.view.trackTouch(state: .ended, at: scanner.center)
+        fixture.view.trackTouch(state: .ended, at: scanner.center)
+        #expect(committedTabs == [.scanner], "The original hold must commit its preview exactly once")
+        #expect(buttons.filter(\.isSelected).map(\.tab) == [.scanner])
+        #expect(highlight.backgroundColor == appearance.selectionColor.uiColor(opacity: appearance.selectionOpacity))
+
+        fixture.view.updateAppearance(.light, defaults: .light)
+        #expect(scannerSymbol.tintColor.resolvedColor(with: traits) == originalSelected)
+        #expect(homeSymbol.tintColor.resolvedColor(with: traits) == originalInactive)
+        #expect(highlight.backgroundColor?.resolvedColor(with: traits) == originalFill)
+        #expect(highlight.frame == scanner.frame)
+        #expect(buttons.filter(\.isSelected).map(\.tab) == [.scanner])
+        #expect(committedTabs == [.scanner], "Resetting appearance must not navigate")
+    }
+
     @Test("A hold survives repeated SwiftUI updates and scaling, then cancels when the toolbar moves")
     func holdsSurviveVisualUpdatesButNotPlacementChanges() async throws {
         let fixture = try PresentationFixture()
@@ -370,25 +456,27 @@ struct GlassTabBarPresentationTests {
             $0 as? GlassTabBarTouchRecognizer
         }.first)
         let buttons = try #require(fixture.view.accessibilityElements as? [GlassTabBarButton])
+        let home = try #require(buttons.first { $0.tab == .home })
         let search = try #require(buttons.first { $0.tab == .search })
+        let highlight = try #require(home.superview?.subviews.first { $0 is GlassTabBarHighlight })
         var committedTabs: [RootTab] = []
         fixture.view.onSelect = { committedTabs.append($0) }
         await drainMainQueue()
 
         let searchCenter = search.convert(CGPoint(x: search.bounds.midX, y: search.bounds.midY),
                                           to: fixture.view)
+        let physicalFinger = fixture.view.convert(searchCenter, to: fixture.window)
         recognizer.onBegin?(searchCenter)
-        let heldScale = fixture.presentation.scale
-        try #require(heldScale.width > 1 && heldScale.height > 1)
 
         fixture.configure()
         fixture.view.select(.home, animated: false)
-        fixture.visualContainer.transform = CGAffineTransform(scaleX: heldScale.width, y: heldScale.height)
+        fixture.visualContainer.transform = CGAffineTransform(scaleX: 1.04, y: 1.03)
         fixture.view.setNeedsLayout()
         fixture.view.layoutIfNeeded()
         await drainMainQueue()
 
-        #expect(fixture.presentation.scale == heldScale)
+        fixture.view.trackTouch(state: .changed, at: fixture.view.convert(physicalFinger, from: fixture.window))
+        #expect(highlight.frame == search.frame, "Visual scaling and unchanged parent updates must preserve the hold")
         #expect(buttons.filter(\.isSelected).map(\.tab) == [.home])
         #expect(committedTabs.isEmpty, "Holding must not commit a destination")
 
@@ -397,7 +485,8 @@ struct GlassTabBarPresentationTests {
         fixture.view.layoutIfNeeded()
         await drainMainQueue()
 
-        #expect(fixture.presentation.scale == CGSize(width: 1, height: 1))
+        #expect(highlight.frame == home.frame, "Real toolbar movement must cancel the preview")
+        fixture.view.trackTouch(state: .ended, at: fixture.view.convert(physicalFinger, from: fixture.window))
         #expect(buttons.filter(\.isSelected).map(\.tab) == [.home])
         #expect(committedTabs.isEmpty, "Moving the toolbar must cancel without navigation")
     }
@@ -410,13 +499,13 @@ struct GlassTabBarPresentationTests {
         }.first)
         let buttons = try #require(fixture.view.accessibilityElements as? [GlassTabBarButton])
         let search = try #require(buttons.first { $0.tab == .search })
+        let highlight = try #require(search.superview?.subviews.first { $0 is GlassTabBarHighlight })
         var committedTabs: [RootTab] = []
         fixture.view.onSelect = { committedTabs.append($0) }
         await drainMainQueue()
 
-        recognizer.onBegin?(search.convert(CGPoint(x: search.bounds.midX, y: search.bounds.midY), to: fixture.view))
-        let heldScale = fixture.presentation.scale
-        try #require(heldScale.width > 1 && heldScale.height > 1)
+        let physicalFinger = fixture.view.convert(search.center, to: fixture.window)
+        recognizer.onBegin?(search.center)
 
         // A spring's last fraction of a point, then a bounce's overshoot: the
         // slide carries the touch anchor and the visuals, not the placement.
@@ -426,7 +515,8 @@ struct GlassTabBarPresentationTests {
             fixture.view.setNeedsLayout()
             fixture.view.layoutIfNeeded()
             await drainMainQueue()
-            #expect(fixture.presentation.scale == heldScale, "The bar's own slide must not drop a held finger")
+            fixture.view.trackTouch(state: .changed, at: fixture.view.convert(physicalFinger, from: fixture.window))
+            #expect(highlight.frame == search.frame, "The bar's own slide must not drop a held finger")
         }
 
         // The tail of the toolbar zooming the bar back in about its slot's
@@ -436,8 +526,11 @@ struct GlassTabBarPresentationTests {
         fixture.view.setNeedsLayout()
         fixture.view.layoutIfNeeded()
         await drainMainQueue()
-        #expect(fixture.presentation.scale == heldScale, "The toolbar showing the bar again must not drop a held finger")
+        fixture.view.trackTouch(state: .changed, at: fixture.view.convert(physicalFinger, from: fixture.window))
+        #expect(highlight.frame == search.frame, "The toolbar showing the bar again must not drop a held finger")
         #expect(committedTabs.isEmpty, "Holding must not commit a destination")
+        fixture.view.trackTouch(state: .ended, at: fixture.view.convert(physicalFinger, from: fixture.window))
+        #expect(committedTabs == [.search], "The original hold must still commit when the finger lifts")
     }
 
     @Test("Narrow proposals keep the vertical bar full width and its tracking anchor aligned")
@@ -467,28 +560,20 @@ struct GlassTabBarPresentationTests {
             let search = try #require(controls.first { $0.tab == .search })
             await drainMainQueue()
             let selectionFill = try #require(search.superview?.subviews.first {
-                $0.backgroundColor == UIColor.tertiarySystemFill
+                $0 is GlassTabBarHighlight
             })
-            let restingFrame = view.convert(view.bounds, to: window)
             expectPoint(selectionFill.center, equals: home.center)
+            let restingColor = selectionFill.backgroundColor
 
             // A mismatched anchor rejects this begin callback. The selection fill
-            // must follow the finger even when Reduce Motion suppresses scaling.
-            // The outer end clamps to Search's center even as the capsule grows.
+            // must still preview the finger's tab at every supported width.
             let finger = axis == .vertical
                 ? CGPoint(x: search.frame.midX, y: search.frame.maxY - 2)
                 : CGPoint(x: search.frame.maxX - 2, y: search.frame.midY)
             recognizer.onBegin?(finger)
             #expect(selectionFill.frame == search.frame)
-            #expect(selectionFill.backgroundColor == UIColor.secondarySystemFill,
+            #expect(selectionFill.backgroundColor != restingColor,
                     "A valid anchor must move and brighten the fill behind the finger candidate")
-            if !UIAccessibility.isReduceMotionEnabled {
-                #expect(try await eventually {
-                    let pressedFrame = view.convert(view.bounds, to: window)
-                    return axis == .vertical ? pressedFrame.height > restingFrame.height + 0.5
-                        : pressedFrame.width > restingFrame.width + 0.5
-                }, "A valid press must reach the SwiftUI glass at every supported narrow width")
-            }
             #expect(controls.filter(\.isSelected).map(\.tab) == [.home])
         }
     }
@@ -508,7 +593,7 @@ struct GlassTabBarPresentationTests {
 
     private func expectShimmerDirection(in highlight: UIView, axis: NSLayoutConstraint.Axis,
                                         forward: Bool) throws {
-        let shimmer = try #require(highlight.layer.sublayers?.compactMap { $0 as? CAGradientLayer }.first)
+        let shimmer = try #require(findShimmer(in: highlight.layer))
         let group = try #require(shimmer.animation(forKey: "shimmer") as? CAAnimationGroup)
         let sweep = try #require(group.animations?.compactMap { $0 as? CABasicAnimation }.first)
         #expect(sweep.keyPath == (axis == .vertical ? "position.y" : "position.x"))
@@ -521,6 +606,11 @@ struct GlassTabBarPresentationTests {
     private func expectPoint(_ actual: CGPoint, equals expected: CGPoint) {
         #expect(abs(actual.x - expected.x) < 0.001)
         #expect(abs(actual.y - expected.y) < 0.001)
+    }
+
+    private func findShimmer(in layer: CALayer) -> CAGradientLayer? {
+        if let gradient = layer as? CAGradientLayer, gradient.name == "tabBar.releaseShimmer" { return gradient }
+        return layer.sublayers?.lazy.compactMap { findShimmer(in: $0) }.first
     }
 
     private func drainMainQueue() async {
@@ -553,8 +643,6 @@ private struct NarrowGlassTabBarFixture: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .dynamicTypeSize(.large)
             .environment(\.locale, Locale(identifier: "en"))
-            // An empty store, so motion dials left set in the app don't reach the bar.
-            .defaultAppStorage(UserDefaults(suiteName: "GlassTabBarPresentationTests")!)
     }
 }
 

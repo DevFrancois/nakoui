@@ -15,6 +15,7 @@ struct RootTabPages<Home: View>: UIViewControllerRepresentable {
     /// How far the tab bar's slot rises above `safeAreaInsets.bottom`. The
     /// Scan tab's safe area covers it, so its camera pane stops above the bar.
     let scannerTabBarClearance: CGFloat
+    var reflectionSource: GlassTabBarReflectionSource? = nil
     let home: Home
 
     func makeCoordinator() -> Coordinator {
@@ -32,10 +33,15 @@ struct RootTabPages<Home: View>: UIViewControllerRepresentable {
         for controller in controllers {
             controller.view.backgroundColor = .clear
         }
-        return RootTabController(viewControllers: controllers, selection: selection)
+        let controller = RootTabController(viewControllers: controllers, selection: selection)
+        coordinator.reflectionSource = reflectionSource
+        reflectionSource?.setView(controller.view)
+        return controller
     }
 
     func updateUIViewController(_ controller: RootTabController, context: Context) {
+        context.coordinator.reflectionSource = reflectionSource
+        reflectionSource?.setView(controller.view)
         let isRightToLeft = context.environment.layoutDirection == .rightToLeft
         controller.contentSafeAreaInsets = UIEdgeInsets(
             top: safeAreaInsets.top,
@@ -70,10 +76,15 @@ struct RootTabPages<Home: View>: UIViewControllerRepresentable {
     }
 
     final class Coordinator {
+        var reflectionSource: GlassTabBarReflectionSource?
         var home: UIHostingController<HostedTabPage<Home>>?
         var scanner: UIHostingController<HostedTabPage<ScannerView>>?
         var profile: UIHostingController<HostedTabPage<ProfileTabPage>>?
         var search: UIHostingController<HostedTabPage<RootTabPlaceholder>>?
+    }
+
+    static func dismantleUIViewController(_ controller: RootTabController, coordinator: Coordinator) {
+        coordinator.reflectionSource?.clear(ifMatching: controller.view)
     }
 }
 
