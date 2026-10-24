@@ -10,9 +10,6 @@ final class GlassTabBarHighlight: UIView {
         cornerConfiguration = .capsule()
         clipsToBounds = true
         isUserInteractionEnabled = false
-        shimmer.colors = [UIColor.white.withAlphaComponent(0).cgColor,
-                          UIColor.white.withAlphaComponent(0.55).cgColor,
-                          UIColor.white.withAlphaComponent(0).cgColor]
         shimmer.locations = [0, 0.5, 1]
         shimmer.opacity = 0
         layer.addSublayer(shimmer)
@@ -27,8 +24,15 @@ final class GlassTabBarHighlight: UIView {
         let vertical = axis == .vertical
         let length = vertical ? bounds.height : bounds.width
         let band = length * 0.8
+        // A neutral shadow reads against light glass; dark glass catches a white
+        // reflection. Choose fresh colors for each release because CGColor is static.
+        let isDark = traitCollection.userInterfaceStyle == .dark
+        let color = isDark ? UIColor.white : UIColor.black
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        shimmer.colors = [color.withAlphaComponent(0).cgColor,
+                          color.withAlphaComponent(isDark ? 0.55 : 0.22).cgColor,
+                          color.withAlphaComponent(0).cgColor]
         shimmer.bounds = CGRect(x: 0, y: 0,
                                 width: vertical ? bounds.width : band,
                                 height: vertical ? band : bounds.height)

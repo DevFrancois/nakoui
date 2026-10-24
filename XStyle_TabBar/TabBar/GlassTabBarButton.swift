@@ -17,10 +17,14 @@ final class GlassTabBarButton: UIControl {
     private var symbolSize = GlassTabBarMetrics.symbolSize
     // Finger tracking stays separate from the committed accessibility selection.
     private var trackingCandidate: Bool?
+    private static let selectedForeground = UIColor { traits in
+        (traits.userInterfaceStyle == .dark ? UIColor.label : UIColor.systemBlue)
+            .resolvedColor(with: traits)
+    }
     private static let unselectedForeground = UIColor { traits in
         traits.userInterfaceStyle == .dark
             ? UIColor(red: 121.0 / 255.0, green: 121.0 / 255.0, blue: 121.0 / 255.0, alpha: 1)
-            : UIColor.label.resolvedColor(with: traits)
+            : UIColor.secondaryLabel.resolvedColor(with: traits)
     }
 
     override var isSelected: Bool {
@@ -164,7 +168,7 @@ final class GlassTabBarButton: UIControl {
 
     private func updateAppearance() {
         let isEmphasized = trackingCandidate ?? (isSelected || isHighlighted)
-        let foreground: UIColor = !isEnabled ? .tertiaryLabel : (isEmphasized ? .label : Self.unselectedForeground)
+        let foreground: UIColor = !isEnabled ? .tertiaryLabel : (isEmphasized ? Self.selectedForeground : Self.unselectedForeground)
         symbolView.tintColor = foreground
         titleLabel.textColor = foreground
         backgroundColor = .clear
