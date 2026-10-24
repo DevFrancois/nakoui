@@ -8,7 +8,6 @@ final class GlassTabBarView: UIView {
     private let containerView = UIView()
     private let presentation: GlassTabBarPresentation
     private let selectionView = GlassTabBarHighlight()
-    private var shimmerDirection: CGFloat = 1
     private let buttons = RootTab.allCases.map { GlassTabBarButton(tab: $0) }
     private let touchRecognizer = GlassTabBarTouchRecognizer()
     private lazy var releaseFeedback = UIImpactFeedbackGenerator(style: .light, view: self)
@@ -244,10 +243,11 @@ final class GlassTabBarView: UIView {
             // The bar owns the finger until release, even outside its bounds.
             // A valid release rebounds even on the current tab.
             let acceptedRelease = interaction.tracking?.candidate != nil
+            let previousSelection = interaction.selection
             let destination = interaction.release(at: point)
             showSelection(animated: true)
-            if destination != nil {
-                shimmerHighlight()
+            if let destination {
+                shimmerHighlight(from: previousSelection, to: destination)
             } else {
                 selectionView.stopShimmer()
             }
@@ -278,13 +278,14 @@ final class GlassTabBarView: UIView {
 
     @objc private func selectButton(_ button: GlassTabBarButton) {
         guard button.isEnabled else { return }
+        let previousSelection = interaction.selection
         let changed = interaction.select(button.tab)
         // Direct accessibility/keyboard activation uses the same single commit.
         interaction.cancel()
         resetRecognizerIfNeeded()
         showSelection(animated: true)
         if changed {
-            shimmerHighlight()
+            shimmerHighlight(from: previousSelection, to: button.tab)
         } else {
             selectionView.stopShimmer()
         }
@@ -356,14 +357,6 @@ final class GlassTabBarView: UIView {
             selectionView.backgroundColor = color
             return
         }
-        if !selectionView.frame.isEmpty {
-            // Follow the previous tab, even when its slide has not finished.
-            // A presentation frame can still be at the next destination (or
-            // overshoot it), incorrectly keeping or reversing the old direction.
-            let origin = selectionView.frame
-            let delta = layoutAxis == .vertical ? frame.midY - origin.midY : frame.midX - origin.midX
-            if abs(delta) > 0.5 { shimmerDirection = delta > 0 ? 1 : -1 }
-        }
         let update = {
             self.selectionView.frame = frame
             self.selectionView.backgroundColor = color
@@ -377,10 +370,17 @@ final class GlassTabBarView: UIView {
                        options: [.beginFromCurrentState, .allowUserInteraction], animations: update)
     }
 
-    private func shimmerHighlight() {
-        guard !reduceMotion, window != nil else { return }
-        // The release keeps the press's direction even after the capsule arrives.
-        selectionView.playShimmer(axis: layoutAxis, direction: shimmerDirection)
+    private func shimmerHighlight(from previousSelection: RootTab, to selection: RootTab) {
+        guard !reduceMotion, window != nil,
+              let previousButton = buttons.first(where: { $0.tab == previousSelection }),
+              let selectedButton = buttons.first(where: { $0.tab == selection }) else { return }
+        // Follow the committed tab change, never the finger's last movement or
+        // the highlight's snap back to center. Actual centers also account for RTL.
+        let distance = layoutAxis == .vertical
+            ? selectedButton.center.y - previousButton.center.y
+            : selectedButton.center.x - previousButton.center.x
+        guard distance != 0 else { return }
+        selectionView.playShimmer(axis: layoutAxis, direction: distance > 0 ? 1 : -1)
     }
 
     private var pressedScale: CGSize {

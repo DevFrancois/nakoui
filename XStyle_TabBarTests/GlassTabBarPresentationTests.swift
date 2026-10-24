@@ -198,6 +198,51 @@ struct GlassTabBarPresentationTests {
         }
     }
 
+    @Test("Shimmer follows committed tab order despite reversed drags, release snaps and rapid activations")
+    func shimmerDirectionFollowsCommittedTabOrder() async throws {
+        for (axis, direction): (NSLayoutConstraint.Axis, UIUserInterfaceLayoutDirection) in [
+            (.horizontal, .leftToRight), (.horizontal, .rightToLeft), (.vertical, .leftToRight),
+        ] {
+            let fixture = try PresentationFixture(axis: axis, direction: direction)
+            // Keep the real highlight spring while making finger positions exact.
+            fixture.presentation.motion.grows = false
+            let recognizer = try #require(fixture.view.gestureRecognizers?.compactMap {
+                $0 as? GlassTabBarTouchRecognizer
+            }.first)
+            let buttons = try #require(fixture.view.accessibilityElements as? [GlassTabBarButton])
+            let home = try #require(buttons.first { $0.tab == .home })
+            let scanner = try #require(buttons.first { $0.tab == .scanner })
+            let profile = try #require(buttons.first { $0.tab == .profile })
+            let search = try #require(buttons.first { $0.tab == .search })
+            let highlight = try #require(home.superview?.subviews.first { $0 is GlassTabBarHighlight })
+            await drainMainQueue()
+
+            let step = axis == .vertical ? CGPoint(x: 0, y: 8)
+                : CGPoint(x: direction == .rightToLeft ? -8 : 8, y: 0)
+            let forward = direction != .rightToLeft
+            let beyondProfile = CGPoint(x: profile.center.x + step.x, y: profile.center.y + step.y)
+            recognizer.onBegin?(home.center)
+            fixture.view.trackTouch(state: .changed, at: search.center)
+            fixture.view.trackTouch(state: .changed, at: beyondProfile)
+            fixture.view.trackTouch(state: .ended, at: beyondProfile)
+            // The finger reversed and the release snaps backward, but Home → Profile is forward.
+            try expectShimmerDirection(in: highlight, axis: axis, forward: forward)
+
+            // Commit again before the first spring or shimmer can settle. This
+            // release snaps forward even though Profile → Scan moves backward.
+            let beyondScanner = CGPoint(x: scanner.center.x - step.x, y: scanner.center.y - step.y)
+            recognizer.onBegin?(profile.center)
+            fixture.view.trackTouch(state: .changed, at: beyondScanner)
+            fixture.view.trackTouch(state: .ended, at: beyondScanner)
+            try expectShimmerDirection(in: highlight, axis: axis, forward: !forward)
+
+            #expect(search.accessibilityActivate())
+            try expectShimmerDirection(in: highlight, axis: axis, forward: forward)
+            #expect(home.accessibilityActivate())
+            try expectShimmerDirection(in: highlight, axis: axis, forward: !forward)
+        }
+    }
+
     @Test("One held finger can move, reverse and pause before committing only its final tab")
     func continuousHoldCommitsOnlyOnRelease() async throws {
         for (axis, direction): (NSLayoutConstraint.Axis, UIUserInterfaceLayoutDirection) in [
@@ -451,6 +496,18 @@ struct GlassTabBarPresentationTests {
         }
         #expect(removedAnchor == nil)
         #expect(presentation.coordinateView == nil)
+    }
+
+    private func expectShimmerDirection(in highlight: UIView, axis: NSLayoutConstraint.Axis,
+                                        forward: Bool) throws {
+        let shimmer = try #require(highlight.layer.sublayers?.compactMap { $0 as? CAGradientLayer }.first)
+        let group = try #require(shimmer.animation(forKey: "shimmer") as? CAAnimationGroup)
+        let sweep = try #require(group.animations?.compactMap { $0 as? CABasicAnimation }.first)
+        #expect(sweep.keyPath == (axis == .vertical ? "position.y" : "position.x"))
+        let start = try #require(sweep.fromValue as? NSNumber).doubleValue
+        let end = try #require(sweep.toValue as? NSNumber).doubleValue
+        #expect(forward ? start < 0 && end > 0 : start > 0 && end < 0,
+                "The ripple must travel from the previous committed tab toward the new tab")
     }
 
     private func expectPoint(_ actual: CGPoint, equals expected: CGPoint) {
