@@ -79,6 +79,14 @@ struct ScannerView: View {
                 apply(sheetState.resultClosed())
             }
         }
+        // The tab bar's quick switch asks for the camera or the history.
+        .onChange(of: model.sheetRequest) {
+            switch model.sheetRequest?.route {
+            case .camera: closeSheet()
+            case .history: openHistory()
+            case nil: break
+            }
+        }
         // Dragging the sheet below the screen closes the result.
         .onChange(of: sheet.detent) {
             if sheet.detent != .hidden {

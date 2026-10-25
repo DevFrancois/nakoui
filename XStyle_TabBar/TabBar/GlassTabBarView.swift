@@ -4,6 +4,8 @@ import UIKit
 /// selection fill and its release shimmer travel with the native content.
 final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
     var onSelect: ((RootTab) -> Void)?
+    /// Opens on holding a tab that offers one; nil leaves holds to preview.
+    weak var quickSwitch: TabQuickSwitchMenu?
 
     private let containerView = UIView()
     private let glassView = GlassTabBarNativeGlassView()
@@ -18,6 +20,10 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
     private let buttons = RootTab.allCases.map { GlassTabBarButton(tab: $0) }
     private let touchRecognizer = GlassTabBarTouchRecognizer()
     private lazy var releaseFeedback = UIImpactFeedbackGenerator(style: .light, view: self)
+    private lazy var holdFeedback = UIImpactFeedbackGenerator(style: .medium, view: self)
+    private lazy var menuFeedback = UISelectionFeedbackGenerator(view: self)
+    /// Waits out a hold before opening the held tab's menu.
+    private var holdTask: Task<Void, Never>?
     private var interaction: GlassTabBarInteraction
     private var reduceMotion = false
     private var layoutAxis: NSLayoutConstraint.Axis = .horizontal
@@ -167,6 +173,9 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
                 self?.invalidateIntrinsicContentSize()
                 self?.setNeedsLayout()
             }
+            button.quickSwitchActions = { [weak self, tab = button.tab] in
+                self?.quickSwitchActions(for: tab) ?? []
+            }
         }
         touchRecognizer.onBegin = { [weak self] point in
             guard let self else { return }
@@ -174,7 +183,10 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
             guard let point = self.trackingPoint(point) else { return }
             self.trackingCoordinateView = self.presentation.coordinateSpace(for: self)
             self.interaction.begin(at: point, geometry: self.currentGeometry)
-            if self.interaction.tracking != nil { self.releaseFeedback.prepare() }
+            if self.interaction.tracking != nil {
+                self.releaseFeedback.prepare()
+                self.scheduleQuickSwitch()
+            }
             self.showTracking()
         }
         touchRecognizer.addTarget(self, action: #selector(trackTouch(_:)))
@@ -328,7 +340,10 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
             lastGeometry = geometry
             let wasTracking = interaction.tracking != nil
             interaction.validateGeometry(geometry)
-            if wasTracking { resetRecognizerIfNeeded() }
+            if wasTracking {
+                if interaction.tracking == nil { closeQuickSwitch() }
+                resetRecognizerIfNeeded()
+            }
             stopMotion()
             showSelection(animated: false)
         }
@@ -340,12 +355,14 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
         updateReflectionSource()
         if window == nil {
             cancelTracking(animated: false)
+            closeQuickSwitch()
             stopMotion()
         }
     }
 
     func select(_ tab: RootTab, animated: Bool) {
         guard interaction.select(tab) else { return }
+        closeQuickSwitch()
         resetRecognizerIfNeeded()
         layoutIfNeeded()
         showSelection(animated: animated)
@@ -375,9 +392,29 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
         case .changed:
             guard validateTrackingGeometry(), let point = trackingPoint(location) else { return }
             interaction.move(to: point)
-            showTracking()
+            if interaction.tracking?.menuTab != nil {
+                if quickSwitch?.move(to: convert(location, to: nil)) == true {
+                    menuFeedback.selectionChanged()
+                    menuFeedback.prepare()
+                }
+            } else {
+                showTracking()
+            }
         case .ended:
             guard validateTrackingGeometry(), let point = trackingPoint(location) else { return }
+            holdTask?.cancel()
+            holdTask = nil
+            if interaction.tracking?.menuTab != nil {
+                // The menu picks; lifting off its items changes nothing.
+                let item = quickSwitch?.release(at: convert(location, to: nil))
+                _ = interaction.release(at: point)
+                if let item {
+                    commitQuickSwitch(item)
+                } else {
+                    showSelection(animated: true)
+                }
+                return
+            }
             interaction.move(to: point)
             // The bar owns the finger until release, even outside its bounds.
             // A valid release rebounds even on the current tab.
@@ -394,6 +431,7 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
             if let destination { onSelect?(destination) }
         case .cancelled, .failed:
             interaction.cancel()
+            closeQuickSwitch()
             selectionView.stopShimmer()
             showSelection(animated: true)
         default:
@@ -432,9 +470,78 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
         if changed { onSelect?(button.tab) }
     }
 
+    /// A finger kept on the tab it came down on opens that tab's menu.
+    private func scheduleQuickSwitch() {
+        holdTask?.cancel()
+        holdTask = nil
+        guard quickSwitch != nil else { return }
+        holdFeedback.prepare()
+        let duration = presentation.motion.quickSwitchHoldDuration
+        holdTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(duration))
+            guard !Task.isCancelled else { return }
+            self?.openQuickSwitch()
+        }
+    }
+
+    private func openQuickSwitch() {
+        holdTask = nil
+        let allowableMovement = presentation.motion.quickSwitchAllowableMovement
+        guard let quickSwitch, quickSwitch.canOpen, validateTrackingGeometry(),
+              let tab = interaction.canOpenMenu(allowableMovement: allowableMovement),
+              let items = quickSwitch.items(for: tab),
+              let coordinateView = trackingCoordinateView,
+              let button = buttons.first(where: { $0.tab == tab }) else { return }
+        interaction.openMenu(allowableMovement: allowableMovement)
+        // Where the tab and bar rest: the coordinate view has the bar's
+        // bounds, outside the press zoom, and buttons sit in those bounds.
+        quickSwitch.open(tab: tab, items: items, tabFrame: coordinateView.convert(button.frame, to: nil),
+                         barFrame: coordinateView.convert(coordinateView.bounds, to: nil), axis: layoutAxis)
+        holdFeedback.impactOccurred()
+        menuFeedback.prepare()
+    }
+
+    /// Takes the item's tab to it, then switches to that tab, as a release
+    /// on the tab would.
+    private func commitQuickSwitch(_ item: TabQuickSwitchItem) {
+        let previousSelection = interaction.selection
+        let changed = interaction.select(item.tab)
+        // VoiceOver's actions arrive the same way, finger or not.
+        interaction.cancel()
+        quickSwitch?.apply(item, isTabShown: !changed)
+        resetRecognizerIfNeeded()
+        showSelection(animated: true)
+        if changed {
+            shimmerHighlight(from: previousSelection, to: item.tab)
+        } else {
+            selectionView.stopShimmer()
+        }
+        releaseFeedback.impactOccurred()
+        if changed { onSelect?(item.tab) }
+    }
+
+    private func closeQuickSwitch() {
+        holdTask?.cancel()
+        holdTask = nil
+        quickSwitch?.cancel()
+    }
+
+    /// VoiceOver reaches a tab's menu items as its custom actions.
+    private func quickSwitchActions(for tab: RootTab) -> [UIAccessibilityCustomAction] {
+        guard environmentInputs?.isEnabled ?? true, let items = quickSwitch?.items(for: tab) else { return [] }
+        return items.map { item in
+            UIAccessibilityCustomAction(name: item.title, image: UIImage(systemName: item.symbol)) { [weak self] _ in
+                guard let self else { return false }
+                self.commitQuickSwitch(item)
+                return true
+            }
+        }
+    }
+
     private func cancelTracking(animated: Bool) {
         guard interaction.tracking != nil else { return }
         interaction.cancel()
+        closeQuickSwitch()
         selectionView.stopShimmer()
         resetRecognizerIfNeeded()
         showSelection(animated: animated)

@@ -20,6 +20,8 @@ final class PagerState {
     @ObservationIgnored private(set) var geometry = PagerGeometry()
     @ObservationIgnored private(set) var phase: ScrollPhase = .idle
     @ObservationIgnored private(set) var pendingTab: AppTab?
+    /// Whether the pending tab scrolls into place or lands there at once.
+    @ObservationIgnored private var pendingAnimates = true
     @ObservationIgnored private var pendingTarget: PagerTarget?
     @ObservationIgnored private var resizeDestination: AppTab?
     @ObservationIgnored private var hapticPage = 0
@@ -39,7 +41,13 @@ final class PagerState {
 
     /// Later chip taps replace a choice waiting for an active scroll to finish.
     func select(_ tab: AppTab) {
+        select(tab, animated: true)
+    }
+
+    /// Unanimated, the page lands at once, as for a pager not on screen.
+    func select(_ tab: AppTab, animated: Bool) {
         pendingTab = tab
+        pendingAnimates = animated
         startPendingTransition()
     }
 
@@ -149,13 +157,14 @@ final class PagerState {
         withoutAnimation {
             tapTransition = TabTransition(source: selectedTab, destination: destination)
         }
-        highlight(destination)
-        if reduceMotion {
-            snap(to: destination)
-        } else {
+        if pendingAnimates && !reduceMotion {
+            highlight(destination)
             withAnimation(.smooth(duration: 0.45, extraBounce: 0)) {
                 scrollPosition.scrollTo(id: destination, anchor: .leading)
             }
+        } else {
+            withoutAnimation { highlightedTab = destination }
+            snap(to: destination)
         }
     }
 

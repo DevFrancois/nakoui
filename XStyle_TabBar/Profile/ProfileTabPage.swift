@@ -1,6 +1,8 @@
 import SwiftUI
 
-/// Debug builds include access to the app's diagnostic settings.
+/// The pet the profile shows, which the Profile tab's quick switch menu
+/// changes, and whether that menu opens. Debug builds include access to the
+/// app's diagnostic settings.
 struct ProfileTabPage: View {
     #if DEBUG
     @State private var isShowingDebugSettings = false
@@ -28,6 +30,9 @@ struct ProfileTabPage: View {
                     #endif
                 }
 
+                ProfilePetHeader()
+                QuickSwitchSettingsSection()
+
                 TabBarReferenceComparison()
             }
             .padding()
@@ -40,6 +45,59 @@ struct ProfileTabPage: View {
             ProfileDebugSettings()
         }
         #endif
+    }
+}
+
+/// The shown pet, chosen here or from the Profile tab's quick switch menu.
+private struct ProfilePetHeader: View {
+    @AppStorage(PetProfile.storageKey) private var selectedPetID = PetProfile.defaultID
+
+    var body: some View {
+        let pet = PetProfile.pet(for: selectedPetID)
+        GroupBox {
+            HStack(spacing: 16) {
+                Image(systemName: pet.symbol)
+                    .font(.title.weight(.semibold))
+                    .foregroundStyle(.tint)
+                    .contentTransition(.symbolEffect(.replace))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(pet.name)
+                        .font(.title3.bold())
+                    Text(pet.species)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+                Spacer(minLength: 8)
+                Picker("Pet", selection: $selectedPetID) {
+                    ForEach(PetProfile.samples) { pet in
+                        Text(pet.name).tag(pet.id)
+                    }
+                }
+                .labelsHidden()
+                .accessibilityIdentifier("profile.petPicker")
+            }
+        }
+        .animation(.default, value: selectedPetID)
+    }
+}
+
+/// Turns the quick switch menus on and off, for every tab.
+private struct QuickSwitchSettingsSection: View {
+    @AppStorage(TabQuickSwitchSettings.enabledKey) private var isEnabled = TabQuickSwitchSettings.defaultEnabled
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Hold a tab to switch quickly", isOn: $isEnabled)
+                    .accessibilityIdentifier("profile.quickSwitch")
+                Text("Hold Home, Scan, Profile or Search in the tab bar, then slide onto a page, view or pet and let go. Change how the menu looks in Search.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        } label: {
+            Text("Quick switch")
+        }
     }
 }
 

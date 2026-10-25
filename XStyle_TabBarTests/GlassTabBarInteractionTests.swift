@@ -78,6 +78,50 @@ struct GlassTabBarInteractionTests {
         }
     }
 
+    @Test("A hold can open its tab's menu only while the finger stays on that tab, close to where it came down")
+    func holdOpensMenuOnlyInPlace() {
+        let geometry = geometry()
+        let allowance: CGFloat = 10
+        let profile = center(of: .profile, in: geometry)
+        var interaction = GlassTabBarInteraction(selection: .home)
+        interaction.begin(at: profile, geometry: geometry)
+        interaction.move(to: CGPoint(x: profile.x + allowance, y: profile.y))
+        #expect(interaction.canOpenMenu(allowableMovement: allowance) == .profile)
+
+        interaction.move(to: CGPoint(x: profile.x, y: profile.y - allowance - 1))
+        #expect(interaction.canOpenMenu(allowableMovement: allowance) == nil)
+        // The furthest drift counts, even once the finger is back.
+        interaction.move(to: profile)
+        #expect(interaction.openMenu(allowableMovement: allowance) == nil)
+        #expect(interaction.tracking?.menuTab == nil)
+
+        interaction.begin(at: profile, geometry: geometry)
+        interaction.move(to: center(of: .search, in: geometry))
+        #expect(interaction.openMenu(allowableMovement: .infinity) == nil)
+        #expect(interaction.release(at: center(of: .search, in: geometry)) == .search)
+    }
+
+    @Test("With a menu open the bar keeps the held tab and never commits a release")
+    func openMenuKeepsTabAndCommitsNothing() {
+        for geometry in [geometry(), geometry(rightToLeft: true), geometry(axis: .vertical)] {
+            let profile = center(of: .profile, in: geometry)
+            var interaction = GlassTabBarInteraction(selection: .home)
+            interaction.begin(at: profile, geometry: geometry)
+            let position = interaction.tracking?.position
+            #expect(interaction.openMenu(allowableMovement: 10) == .profile)
+            #expect(interaction.openMenu(allowableMovement: 10) == nil)
+
+            for tab in RootTab.allCases {
+                interaction.move(to: center(of: tab, in: geometry))
+                #expect(interaction.tracking?.candidate == .profile)
+                #expect(interaction.tracking?.position == position)
+            }
+            #expect(interaction.release(at: center(of: .search, in: geometry)) == nil)
+            #expect(interaction.selection == .home)
+            #expect(interaction.tracking == nil)
+        }
+    }
+
     @Test("Cancellation and releasing on the committed destination never navigate")
     func cancellationAndSameTabAreNoOps() {
         let geometry = geometry()

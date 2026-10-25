@@ -5,6 +5,9 @@ import UIKit
 final class GlassTabBarButton: UIControl {
     let tab: RootTab
     var onSizeChange: (() -> Void)?
+    /// The tab's quick switch items, as VoiceOver actions; asked each time,
+    /// as they follow the app's state.
+    var quickSwitchActions: (() -> [UIAccessibilityCustomAction])?
     var reduceMotion = false {
         didSet {
             if reduceMotion && !oldValue { layer.removeAllAnimations() }
@@ -102,6 +105,11 @@ final class GlassTabBarButton: UIControl {
         selectedForegroundOverride = selected
         inactiveForegroundOverride = inactive
         updateAppearance()
+    }
+
+    override var accessibilityCustomActions: [UIAccessibilityCustomAction]? {
+        get { quickSwitchActions?() }
+        set {}
     }
 
     override func accessibilityActivate() -> Bool {

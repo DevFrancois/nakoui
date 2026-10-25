@@ -9,6 +9,8 @@ struct RootTabContent<Home: View>: View {
     let sheetSettings: SheetSettings
     let scanHistory: ScanHistory
     var isTabBarVisible = true
+    /// Opens on holding a tab; drawn over the pages, under the bar.
+    var quickSwitch: TabQuickSwitchMenu? = nil
     @ViewBuilder let home: Home
     @State private var layoutAxis: NSLayoutConstraint.Axis = .horizontal
     /// The window's bottom edge, in global space: how far the tab bar slides
@@ -36,6 +38,11 @@ struct RootTabContent<Home: View>: View {
                 // the outer stack's toolbar/rail insets into UIKit's children.
                 .ignoresSafeArea(.container)
         }
+        .overlay {
+            if let quickSwitch {
+                TabQuickSwitchOverlay(menu: quickSwitch)
+            }
+        }
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.frame(in: .global).maxY + proxy.safeAreaInsets.bottom
         } action: { windowBottom in
@@ -55,7 +62,8 @@ struct RootTabContent<Home: View>: View {
                 windowBottom: windowBottom,
                 top: $tabBarTop,
                 reflectionSource: reflectionSource,
-                onScanOriginChange: { scanner.viewportEntrance.sourcePoint = $0 }
+                onScanOriginChange: { scanner.viewportEntrance.sourcePoint = $0 },
+                quickSwitch: quickSwitch
             )
         }
         // The bar leaves with its toolbar while a scan result shows: a toolbar

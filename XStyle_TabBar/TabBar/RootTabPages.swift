@@ -28,7 +28,7 @@ struct RootTabPages<Home: View>: UIViewControllerRepresentable {
         coordinator.home = UIHostingController(rootView: HostedTabPage(content: home, environment: environment))
         coordinator.scanner = UIHostingController(rootView: HostedTabPage(content: scannerPage, environment: environment))
         coordinator.profile = UIHostingController(rootView: HostedTabPage(content: ProfileTabPage(), environment: environment))
-        coordinator.search = UIHostingController(rootView: HostedTabPage(content: RootTabPlaceholder(tab: .search), environment: environment))
+        coordinator.search = UIHostingController(rootView: HostedTabPage(content: SearchTabPage(), environment: environment))
         let controllers: [UIViewController] = [coordinator.home, coordinator.scanner, coordinator.profile, coordinator.search].compactMap { $0 }
         for controller in controllers {
             controller.view.backgroundColor = .clear
@@ -58,7 +58,7 @@ struct RootTabPages<Home: View>: UIViewControllerRepresentable {
             context.coordinator.scanner?.additionalSafeAreaInsets = scannerInsets
         }
         context.coordinator.profile?.rootView = HostedTabPage(content: ProfileTabPage(), environment: environment)
-        context.coordinator.search?.rootView = HostedTabPage(content: RootTabPlaceholder(tab: .search), environment: environment)
+        context.coordinator.search?.rootView = HostedTabPage(content: SearchTabPage(), environment: environment)
         controller.update(
             selection: selection,
             layoutAxis: layoutAxis,
@@ -80,7 +80,7 @@ struct RootTabPages<Home: View>: UIViewControllerRepresentable {
         var home: UIHostingController<HostedTabPage<Home>>?
         var scanner: UIHostingController<HostedTabPage<ScannerView>>?
         var profile: UIHostingController<HostedTabPage<ProfileTabPage>>?
-        var search: UIHostingController<HostedTabPage<RootTabPlaceholder>>?
+        var search: UIHostingController<HostedTabPage<SearchTabPage>>?
     }
 
     static func dismantleUIViewController(_ controller: RootTabController, coordinator: Coordinator) {

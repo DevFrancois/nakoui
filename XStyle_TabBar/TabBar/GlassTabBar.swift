@@ -15,6 +15,8 @@ struct GlassTabBarToolbar: ToolbarContent {
     var reflectionSource: GlassTabBarReflectionSource? = nil
     /// Where the Scan symbol rests, in global space.
     var onScanOriginChange: ((CGPoint) -> Void)? = nil
+    /// Opens on holding a tab; see `GlassTabBar.quickSwitch`.
+    var quickSwitch: TabQuickSwitchMenu? = nil
 
     var body: some ToolbarContent {
         ToolbarSpacer(.flexible, placement: .bottomBar)
@@ -23,7 +25,7 @@ struct GlassTabBarToolbar: ToolbarContent {
                 reportingTop(of: AdaptiveGlassTabBar(selection: $selection, layoutAxis: $layoutAxis,
                                                      isHidden: isHidden, windowBottom: windowBottom, restingTop: top,
                                                      reflectionSource: reflectionSource,
-                                                     onScanOriginChange: onScanOriginChange))
+                                                     onScanOriginChange: onScanOriginChange, quickSwitch: quickSwitch))
             }
             .axisBehavior(.verticalPreferred)
             .sharedBackgroundVisibility(.hidden)
@@ -33,7 +35,7 @@ struct GlassTabBarToolbar: ToolbarContent {
             ToolbarItem(placement: .bottomBar) {
                 reportingTop(of: GlassTabBar(selection: $selection, isHidden: isHidden, windowBottom: windowBottom,
                                              restingTop: top, reflectionSource: reflectionSource,
-                                             onScanOriginChange: onScanOriginChange))
+                                             onScanOriginChange: onScanOriginChange, quickSwitch: quickSwitch))
             }
             .sharedBackgroundVisibility(.hidden)
         }
@@ -65,13 +67,14 @@ private struct AdaptiveGlassTabBar: View {
     let restingTop: CGFloat?
     let reflectionSource: GlassTabBarReflectionSource?
     let onScanOriginChange: ((CGPoint) -> Void)?
+    let quickSwitch: TabQuickSwitchMenu?
     @Environment(\.toolbarVerticalEdge) private var verticalEdge
 
     var body: some View {
         GlassTabBar(selection: $selection, layoutAxis: verticalEdge == nil ? .horizontal : .vertical,
                     isHidden: isHidden, windowBottom: windowBottom, restingTop: restingTop,
                     reflectionSource: reflectionSource,
-                    onScanOriginChange: onScanOriginChange)
+                    onScanOriginChange: onScanOriginChange, quickSwitch: quickSwitch)
             .onChange(of: verticalEdge == nil, initial: true) {
                 layoutAxis = verticalEdge == nil ? .horizontal : .vertical
             }
@@ -92,6 +95,9 @@ struct GlassTabBar: View {
     var reflectionSource: GlassTabBarReflectionSource? = nil
     /// Where the Scan symbol rests, in global space, while the bar shows.
     var onScanOriginChange: ((CGPoint) -> Void)? = nil
+    /// Opens on holding a tab that offers a menu. Without one, holds only
+    /// preview tabs.
+    var quickSwitch: TabQuickSwitchMenu? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @StoredGlassTabBarReflection private var reflectionConfiguration
@@ -110,7 +116,7 @@ struct GlassTabBar: View {
     var body: some View {
         GlassTabBarRepresentable(selection: $selection, layoutAxis: layoutAxis, motion: motion, appearance: appearance,
                                  presentation: presentation, reflectionSource: reflectionSource,
-                                 reflectionConfiguration: reflectionConfiguration)
+                                 reflectionConfiguration: reflectionConfiguration, quickSwitch: quickSwitch)
             // The vertical toolbar proposes its compact item width. Keep the
             // full capsule width in both Duo postures; the bottom bar can flex.
             .fixedSize(horizontal: layoutAxis == .vertical, vertical: true)
@@ -180,6 +186,7 @@ private struct GlassTabBarRepresentable: UIViewRepresentable {
     let presentation: GlassTabBarPresentation
     let reflectionSource: GlassTabBarReflectionSource?
     let reflectionConfiguration: GlassTabBarReflectionConfiguration
+    let quickSwitch: TabQuickSwitchMenu?
 
     func makeUIView(context: Context) -> GlassTabBarView {
         GlassTabBarView(selection: selection, presentation: presentation)
@@ -188,6 +195,7 @@ private struct GlassTabBarRepresentable: UIViewRepresentable {
     func updateUIView(_ view: GlassTabBarView, context: Context) {
         // Replace the callback too, so it always writes to the current binding.
         view.onSelect = { selection = $0 }
+        view.quickSwitch = quickSwitch
         presentation.motion = motion
         view.updateEnvironment(
             locale: context.environment.locale,

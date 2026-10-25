@@ -10,6 +10,12 @@ struct GlassTabBarMotion: Equatable {
     /// The bar overshoots where it rests as it slides back up.
     var bounces = false
     var bounce = 0.3
+    /// Holding a tab this long, without leaving it, opens its quick switch
+    /// menu; see `TabQuickSwitchMenu`.
+    var quickSwitchHoldDuration: TimeInterval = 0.45
+    /// How far the finger may drift during that hold: UIKit's long-press
+    /// default.
+    var quickSwitchAllowableMovement: CGFloat = 10
 
     static let calm = GlassTabBarMotion()
 

@@ -16,7 +16,7 @@ struct ContentView: View {
 
     /// The Home pager. Only the views drawing it read it, so paging never
     /// redraws this view and its navigation stack.
-    @State private var pager = PagerState()
+    @State private var pager: PagerState
     /// The bottom tab bar's selection.
     @State private var rootTab: RootTab = .home
     /// Owned here, not by the Scan tab, so passes of this body never
@@ -42,14 +42,43 @@ struct ContentView: View {
     /// Bumped to move VoiceOver to the menu button. A value, unlike focus
     /// state, reaches the button inside the Home tab's own host.
     @State private var menuButtonFocusRequest = 0
+    /// Opens on holding a tab, to switch straight to one of its pages,
+    /// pets or views.
+    @State private var quickSwitch: TabQuickSwitchMenu
     /// Shared by the feed images and article zoom transitions.
     @Namespace private var zoomNamespace
 
     init(scannerEntranceSession: ScannerViewportEntranceSession = ScannerViewportEntranceSession()) {
+        let pager = PagerState()
         let history = ScanHistory()
+        let scanner = ScannerModel(history: history,
+                                   viewportEntrance: ScannerViewportEntrance(session: scannerEntranceSession))
+        _pager = State(initialValue: pager)
         _scanHistory = State(initialValue: history)
-        _scanner = State(initialValue: ScannerModel(history: history,
-                                                   viewportEntrance: ScannerViewportEntrance(session: scannerEntranceSession)))
+        _scanner = State(initialValue: scanner)
+        _quickSwitch = State(initialValue: Self.makeQuickSwitch(pager: pager, scanner: scanner, history: history))
+    }
+
+    /// The menus read the pager and history as each opens; pets and the
+    /// search scope are stored, which their pages follow.
+    private static func makeQuickSwitch(pager: PagerState, scanner: ScannerModel,
+                                        history: ScanHistory) -> TabQuickSwitchMenu {
+        TabQuickSwitchMenu { tab in
+            TabQuickSwitchCatalog.items(for: tab, in: TabQuickSwitchCatalog.context(pager: pager, history: history))
+        } apply: { destination, isTabShown in
+            switch destination {
+            case .homePage(let page):
+                pager.select(page, animated: isTabShown)
+            case .pet(let id):
+                UserDefaults.standard.set(id, forKey: PetProfile.storageKey)
+            case .scan:
+                scanner.requestSheet(.camera)
+            case .scanHistory:
+                scanner.requestSheet(.history)
+            case .searchScope(let scope):
+                UserDefaults.standard.set(scope.rawValue, forKey: SearchScope.storageKey)
+            }
+        }
     }
 
     var body: some View {
@@ -98,7 +127,7 @@ struct ContentView: View {
             // cover the tab bar when pushed.
             RootTabContent(selection: $rootTab, scanner: scanner, scannerSheet: scannerSheet,
                            sheetSettings: sheetSettings, scanHistory: scanHistory,
-                           isTabBarVisible: navigation.path.isEmpty) {
+                           isTabBarVisible: navigation.path.isEmpty, quickSwitch: quickSwitch) {
                 HomeRootView(
                     title: mainTitle,
                     pager: pager,

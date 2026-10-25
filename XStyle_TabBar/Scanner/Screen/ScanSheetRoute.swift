@@ -30,6 +30,20 @@ nonisolated enum ScanSheetEffect: Equatable, Sendable {
     case closeResult
 }
 
+/// A view of the Scan tab asked for from outside it; see
+/// `ScannerModel.requestSheet(_:)`.
+nonisolated struct ScanSheetRequest: Equatable, Sendable {
+    enum Route: Equatable, Sendable {
+        /// The camera, the sheet closed.
+        case camera
+        case history
+    }
+
+    let route: Route
+    /// Tells a repeated request from the last.
+    let id: Int
+}
+
 /// The sheet's route and how it changes. The route stays while the sheet
 /// slides away, so its content doesn't vanish mid-slide.
 nonisolated struct ScanSheetState: Equatable, Sendable {

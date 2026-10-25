@@ -24,6 +24,9 @@ final class ScannerModel {
     private(set) var revealedCode: ScannedCode?
     /// The code in the result sheet.
     var scannedCode: ScannedCode?
+    /// What the Scan screen is asked to show from outside it, by the tab
+    /// bar's quick switch; see `requestSheet(_:)`.
+    private(set) var sheetRequest: ScanSheetRequest?
     /// Whether the camera keeps scanning while a result shows, another code
     /// replacing it. Off, it scans again once the result is dismissed.
     var scansWithResultOpen = true {
@@ -288,6 +291,12 @@ final class ScannerModel {
     private func torchDidChange(_ isActive: Bool) {
         guard completedTorchRequest == torchRequest else { return }
         isTorchOn = isActive
+    }
+
+    /// Asks the Scan screen for the camera, closing its sheet, or for the
+    /// history. Each request counts, even one repeating the last.
+    func requestSheet(_ route: ScanSheetRequest.Route) {
+        sheetRequest = ScanSheetRequest(route: route, id: (sheetRequest?.id ?? 0) &+ 1)
     }
 
     /// Closes the result. Scanning goes on, holding its code back for a
