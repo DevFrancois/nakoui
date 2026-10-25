@@ -79,14 +79,6 @@ struct ScannerView: View {
                 apply(sheetState.resultClosed())
             }
         }
-        // The tab bar's quick switch asks for the camera or the history.
-        .onChange(of: model.sheetRequest) {
-            switch model.sheetRequest?.route {
-            case .camera: closeSheet()
-            case .history: openHistory()
-            case nil: break
-            }
-        }
         // Dragging the sheet below the screen closes the result.
         .onChange(of: sheet.detent) {
             if sheet.detent != .hidden {
@@ -115,7 +107,8 @@ struct ScannerView: View {
             model.updateDisplayScale(displayScale)
         }
         .modifier(ScannerCameraLifecycle(model: model, previewHost: previewHost, sheet: sheet,
-                                         isActive: isActive, isSideBySide: isSideBySide))
+                                         isActive: isActive, isSideBySide: isSideBySide, route: sheetState.route))
+        .modifier(ScanSheetRequestReceiver(model: model, isActive: isActive, onRequest: showRequested))
     }
 
     /// The camera, with the history button over its top-leading corner once
@@ -205,6 +198,14 @@ struct ScannerView: View {
         apply(sheetState.showHistory())
     }
 
+    /// The tab bar's quick switch asks for the camera or the history.
+    private func showRequested(_ route: ScanSheetRequest.Route) {
+        switch route {
+        case .camera: closeSheet()
+        case .history: openHistory()
+        }
+    }
+
     private func closeSheet() {
         apply(sheetState.close())
     }
@@ -277,18 +278,45 @@ private struct ScannerCameraLifecycle: ViewModifier {
     let isActive: Bool
     /// Side by side, there's no sheet over the camera.
     let isSideBySide: Bool
+    let route: ScanSheetRoute?
     @Environment(\.scenePhase) private var scenePhase
+    @State private var hasStartedCamera = false
 
     func body(content: Content) -> some View {
-        let isCameraActive = isActive && scenePhase == .active
+        let isCameraActive = ScannerCameraStartup.runsCamera(
+            isActive: isActive, isSceneActive: scenePhase == .active, hasStarted: hasStartedCamera,
+            pendingRequest: model.sheetRequest?.route, route: route, isSheetShown: sheet.detent != .hidden
+        )
         content
             .task(id: isCameraActive) {
                 guard isCameraActive else { return }
+                hasStartedCamera = true
                 await model.run(preparePreview: previewHost.prepare)
             }
             .onChange(of: !isSideBySide && sheet.restsAtFull, initial: true) { _, isCovered in
                 model.setCameraSuspended(isCovered)
             }
+    }
+}
+
+/// Takes what the tab bar's quick switch asks the Scan screen for, once the
+/// Scan tab shows, including a request made before the screen was first
+/// built. Its own modifier, so requests don't re-run the scanner's layout.
+private struct ScanSheetRequestReceiver: ViewModifier {
+    let model: ScannerModel
+    let isActive: Bool
+    let onRequest: (ScanSheetRequest.Route) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: model.sheetRequest?.id, initial: true, takeRequest)
+            .onChange(of: isActive, takeRequest)
+    }
+
+    private func takeRequest() {
+        if let route = model.takeSheetRequest(isActive: isActive) {
+            onRequest(route)
+        }
     }
 }
 

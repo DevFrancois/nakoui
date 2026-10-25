@@ -25,7 +25,8 @@ final class ScannerModel {
     /// The code in the result sheet.
     var scannedCode: ScannedCode?
     /// What the Scan screen is asked to show from outside it, by the tab
-    /// bar's quick switch; see `requestSheet(_:)`.
+    /// bar's quick switch. It waits for the Scan tab to show, then is taken
+    /// once; see `takeSheetRequest(isActive:)`.
     private(set) var sheetRequest: ScanSheetRequest?
     /// Whether the camera keeps scanning while a result shows, another code
     /// replacing it. Off, it scans again once the result is dismissed.
@@ -86,6 +87,8 @@ final class ScannerModel {
     /// The latest pause or resume. Each waits for the one before, so they
     /// reach the analyzer in order.
     @ObservationIgnored private var scanningTask: Task<Void, Never>?
+    /// Counts sheet requests, so a repeated one is still new.
+    @ObservationIgnored private var sheetRequestCount = 0
     /// The latest torch switch. Each waits for the one before, so quick taps
     /// land in order.
     @ObservationIgnored private var torchTask: Task<Void, Never>?
@@ -294,9 +297,19 @@ final class ScannerModel {
     }
 
     /// Asks the Scan screen for the camera, closing its sheet, or for the
-    /// history. Each request counts, even one repeating the last.
+    /// history. Each request counts, even one repeating the last; a later
+    /// one replaces one still waiting.
     func requestSheet(_ route: ScanSheetRequest.Route) {
-        sheetRequest = ScanSheetRequest(route: route, id: (sheetRequest?.id ?? 0) &+ 1)
+        sheetRequestCount &+= 1
+        sheetRequest = ScanSheetRequest(route: route, id: sheetRequestCount)
+    }
+
+    /// The waiting request, once, while the Scan tab shows: one made before
+    /// the Scan screen was first built still reaches it.
+    func takeSheetRequest(isActive: Bool) -> ScanSheetRequest.Route? {
+        guard isActive, let request = sheetRequest else { return nil }
+        sheetRequest = nil
+        return request.route
     }
 
     /// Closes the result. Scanning goes on, holding its code back for a

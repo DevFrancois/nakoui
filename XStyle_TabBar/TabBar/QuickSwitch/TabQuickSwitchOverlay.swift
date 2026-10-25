@@ -67,10 +67,14 @@ private struct TabQuickSwitchPanel: View {
     let layout: TabQuickSwitchLayout
     let contentDirection: LayoutDirection
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .title3) private var bubbleDiameter = TabQuickSwitchMetrics.bubbleDiameter
     /// Whether the items have come out of the held tab.
     @State private var isExpanded = false
-    @State private var itemFrames: [TabQuickSwitchDestination: CGRect] = [:]
+    /// What the spotlight lights past the bar: the list's card, or the
+    /// bubbles laid out so far.
+    @State private var listFrame: CGRect?
+    @State private var bubbleFrames: [TabQuickSwitchDestination: CGRect] = [:]
     /// The bubble the fan's label last named; it fades rather than leaves.
     @State private var labelIndex: Int?
 
@@ -78,9 +82,10 @@ private struct TabQuickSwitchPanel: View {
         ZStack {
             TabQuickSwitchHaloView(halo: halo, bar: presentation.barFrame, focus: focus)
             GlassEffectContainer {
-                switch layout {
-                case .list: list
-                case .bubbles: fan
+                if showsBubbles {
+                    fan
+                } else {
+                    list
                 }
             }
         }
@@ -99,31 +104,33 @@ private struct TabQuickSwitchPanel: View {
         }
     }
 
-    /// What the spotlight lights: the bar and the items laid out so far.
+    /// Bubbles only where they fit: large text, or too little room for the
+    /// fan, shows the list.
+    private var showsBubbles: Bool {
+        layout == .bubbles && !dynamicTypeSize.isAccessibilitySize
+            && TabQuickSwitchPlacement.fan(
+                count: presentation.items.count, diameter: bubbleDiameter, tab: presentation.tabFrame,
+                bar: presentation.barFrame, area: area, axis: presentation.axis,
+                isRightToLeft: contentDirection == .rightToLeft, spacing: TabQuickSwitchMetrics.spacing
+            ) != nil
+    }
+
     private var focus: CGRect {
-        itemFrames.values.reduce(presentation.barFrame) { $0.union($1) }
+        let menuFrames = showsBubbles ? Array(bubbleFrames.values) : listFrame.map { [$0] } ?? []
+        return menuFrames.reduce(presentation.barFrame) { $0.union($1) }
     }
 
     private var list: some View {
         TabQuickSwitchListLayout(tab: presentation.tabFrame, bar: presentation.barFrame, area: area,
                                  axis: presentation.axis) {
-            VStack(spacing: 0) {
-                ForEach(presentation.items) { item in
-                    TabQuickSwitchRow(item: item, isHighlighted: item.id == menu.highlighted)
-                        .onGeometryChange(for: CGRect.self) { proxy in
-                            proxy.frame(in: .named(TabQuickSwitchOverlay.space))
-                        } action: { frame in
-                            report(frame, for: item.id)
-                        }
+            TabQuickSwitchList(menu: menu, items: presentation.items, contentDirection: contentDirection)
+                .onGeometryChange(for: CGRect.self) { proxy in
+                    proxy.frame(in: .named(TabQuickSwitchOverlay.space))
+                } action: { frame in
+                    listFrame = frame
                 }
-            }
-            .padding(TabQuickSwitchMetrics.listInset)
-            // Every row as wide as the widest.
-            .fixedSize()
-            .glassEffect(.regular, in: .rect(cornerRadius: TabQuickSwitchMetrics.listCornerRadius))
-            .environment(\.layoutDirection, contentDirection)
-            .scaleEffect(isExpanded ? 1 : 0.6, anchor: towardsBar)
-            .opacity(isExpanded ? 1 : 0)
+                .scaleEffect(isExpanded ? 1 : 0.6, anchor: towardsBar)
+                .opacity(isExpanded ? 1 : 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -139,7 +146,8 @@ private struct TabQuickSwitchPanel: View {
                     .onGeometryChange(for: CGRect.self) { proxy in
                         proxy.frame(in: .named(TabQuickSwitchOverlay.space))
                     } action: { frame in
-                        report(frame, for: item.id)
+                        bubbleFrames[item.id] = frame
+                        menu.setFrame(frame, for: item.id)
                     }
                     .scaleEffect(isExpanded ? (isHighlighted ? 1.15 : 1) : 0.4)
                     .opacity(isExpanded ? 1 : 0)
@@ -173,38 +181,128 @@ private struct TabQuickSwitchPanel: View {
         case .vertical: presentation.barFrame.midX < area.midX ? .leading : .trailing
         }
     }
+}
 
-    private func report(_ frame: CGRect, for destination: TabQuickSwitchDestination) {
-        itemFrames[destination] = frame
-        menu.setFrame(frame, for: destination)
+/// A held tab's list card: as tall as its rows, or as there's room for,
+/// scrolling the rest while the finger rests near an edge. Rows report their
+/// frames in the list's own space, which scrolling leaves alone; the card
+/// reports where it shows them.
+private struct TabQuickSwitchList: View {
+    let menu: TabQuickSwitchMenu
+    let items: [TabQuickSwitchItem]
+    let contentDirection: LayoutDirection
+    @State private var viewport: CGRect?
+    @State private var contentHeight: CGFloat?
+
+    nonisolated static let space = "tabQuickSwitch.list"
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: TabQuickSwitchMetrics.listCornerRadius)
+        VStack(spacing: 0) {
+            ForEach(items) { item in
+                TabQuickSwitchRow(item: item, isHighlighted: item.id == menu.highlighted)
+                    .onGeometryChange(for: CGRect.self) { proxy in
+                        proxy.frame(in: .named(Self.space))
+                    } action: { frame in
+                        menu.setFrame(frame, for: item.id)
+                    }
+            }
+        }
+        .padding(TabQuickSwitchMetrics.listInset)
+        // As tall as the rows at the card's width, each as wide as the widest.
+        .fixedSize(horizontal: false, vertical: true)
+        .coordinateSpace(.named(Self.space))
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            contentHeight = height
+            reportViewport()
+        }
+        .offset(y: -menu.listOffset)
+        .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
+        .clipShape(shape)
+        .onGeometryChange(for: CGRect.self) { proxy in
+            proxy.frame(in: .named(TabQuickSwitchOverlay.space))
+        } action: { frame in
+            viewport = frame
+            reportViewport()
+        }
+        .overlay(alignment: .top) {
+            if menu.listOffset > 0 {
+                TabQuickSwitchScrollHint(symbol: "chevron.compact.up")
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if menu.listOffset < menu.listOffsetLimit {
+                TabQuickSwitchScrollHint(symbol: "chevron.compact.down")
+            }
+        }
+        .glassEffect(.regular, in: shape)
+        .environment(\.layoutDirection, contentDirection)
+    }
+
+    private func reportViewport() {
+        guard let viewport, let contentHeight else { return }
+        menu.setListViewport(viewport, contentHeight: contentHeight)
+    }
+}
+
+/// Shows more rows past a scrolling list's edge.
+private struct TabQuickSwitchScrollHint: View {
+    let symbol: String
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .background(.ultraThinMaterial, in: .capsule)
+            .padding(.vertical, 2)
+            .transition(.opacity)
     }
 }
 
 private struct TabQuickSwitchRow: View {
     let item: TabQuickSwitchItem
     let isHighlighted: Bool
-    @ScaledMetric(relativeTo: .body) private var symbolWidth = TabQuickSwitchMetrics.rowSymbolWidth
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: item.symbol)
-                .font(.body.weight(.semibold))
-                .frame(width: symbolWidth)
+            // The symbol and check stop growing at accessibility sizes,
+            // leaving the title the room.
+            TabQuickSwitchRowSymbol(symbol: item.symbol)
+                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+            // Wraps rather than truncates where the card is narrower.
             Text(item.title)
-                .lineLimit(1)
-            Spacer(minLength: 16)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
             Image(systemName: "checkmark")
                 .font(.footnote.weight(.bold))
+                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                 .opacity(item.isCurrent ? 1 : 0)
         }
         .font(.body.weight(.medium))
         .padding(.horizontal, 14)
+        .padding(.vertical, 8)
         .frame(minHeight: GlassTabBarMetrics.minimumTapSize)
         .frame(maxWidth: .infinity)
         .background {
             RoundedRectangle(cornerRadius: TabQuickSwitchMetrics.rowCornerRadius)
                 .fill(Color.primary.opacity(isHighlighted ? 0.12 : 0))
         }
+    }
+}
+
+/// A row's symbol, in a column as wide in every row, so titles line up.
+private struct TabQuickSwitchRowSymbol: View {
+    let symbol: String
+    @ScaledMetric(relativeTo: .body) private var width = TabQuickSwitchMetrics.rowSymbolWidth
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.body.weight(.semibold))
+            .frame(width: width)
     }
 }
 

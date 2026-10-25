@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Places a held tab's list card past the bar, at its ideal size; see
-/// `TabQuickSwitchPlacement.listFrame`. Fills the overlay, whose space the
-/// frames are in.
+/// Places a held tab's list card past the bar, as wide as its widest row
+/// where there's room, and as tall as its rows at that width where there's
+/// room; see `TabQuickSwitchPlacement.listFrame`. Fills the overlay, whose
+/// space the frames are in.
 struct TabQuickSwitchListLayout: Layout {
     var tab: CGRect
     var bar: CGRect
@@ -15,9 +16,11 @@ struct TabQuickSwitchListLayout: Layout {
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         for subview in subviews {
+            // Narrower than its rows' one line, the rows wrap and grow.
+            let width = min(subview.sizeThatFits(.unspecified).width, area.width)
             let frame = TabQuickSwitchPlacement.listFrame(
-                size: subview.sizeThatFits(.unspecified), tab: tab, bar: bar, area: area, axis: axis,
-                spacing: TabQuickSwitchMetrics.spacing
+                size: subview.sizeThatFits(ProposedViewSize(width: width, height: nil)), tab: tab, bar: bar,
+                area: area, axis: axis, spacing: TabQuickSwitchMetrics.spacing
             )
             subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
                           anchor: .topLeading, proposal: ProposedViewSize(frame.size))
@@ -50,10 +53,13 @@ struct TabQuickSwitchFanLayout: Layout {
         let bubbles = subviews.filter { !$0[TabQuickSwitchFanLabel.self] }
         let sizes = bubbles.map { $0.sizeThatFits(.unspecified) }
         let diameter = sizes.map { max($0.width, $0.height) }.max() ?? 0
+        // The overlay shows the list where no fan fits; until it swaps, the
+        // bubbles wait at the held tab.
         let fan = TabQuickSwitchPlacement.fan(
             count: bubbles.count, diameter: diameter, tab: tab, bar: bar, area: area, axis: axis,
             isRightToLeft: isRightToLeft, spacing: TabQuickSwitchMetrics.spacing
-        )
+        ) ?? TabQuickSwitchFan(centers: Array(repeating: CGPoint(x: tab.midX, y: tab.midY), count: bubbles.count),
+                               pivot: CGPoint(x: tab.midX, y: tab.midY))
         for (bubble, center) in zip(bubbles, fan.centers) {
             bubble.place(at: CGPoint(x: bounds.minX + center.x, y: bounds.minY + center.y), anchor: .center,
                          proposal: .unspecified)

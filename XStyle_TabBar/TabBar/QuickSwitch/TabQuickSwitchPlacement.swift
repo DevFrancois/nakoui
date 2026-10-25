@@ -9,6 +9,10 @@ enum TabQuickSwitchMetrics {
     static let listCornerRadius: CGFloat = 24
     static let rowCornerRadius: CGFloat = 18
     static let rowSymbolWidth: CGFloat = 28
+    /// How near a too-tall list's edge the finger scrolls it, and how fast
+    /// at the very edge, in points a second.
+    static let listScrollBand: CGFloat = 36
+    static let listScrollSpeed: CGFloat = 240
     static let bubbleDiameter: CGFloat = 56
     /// How far the spotlight's edge fades.
     static let spotlightFeather: CGFloat = 48
@@ -37,27 +41,31 @@ struct TabQuickSwitchFan: Equatable {
 /// part of the screen a menu may use, which the bar is outside of.
 enum TabQuickSwitchPlacement {
     /// A list card of `size`: just past the bar's outer edge, centred on the
-    /// held tab, inside `area`.
+    /// held tab, inside `area`. Too tall for the room, it takes all there is
+    /// and scrolls; see `TabQuickSwitchListScroll`.
     static func listFrame(size: CGSize, tab: CGRect, bar: CGRect, area: CGRect, axis: Axis,
                           spacing: CGFloat) -> CGRect {
-        let origin: CGPoint
+        let width = min(size.width, area.width)
         switch axis {
         case .horizontal:
-            origin = CGPoint(x: clamp(tab.midX - size.width / 2, area.minX, area.maxX - size.width),
-                             y: max(area.minY, bar.minY - spacing - size.height))
+            let height = min(size.height, max(0, bar.minY - spacing - area.minY))
+            return CGRect(x: clamp(tab.midX - width / 2, area.minX, area.maxX - width),
+                          y: bar.minY - spacing - height, width: width, height: height)
         case .vertical:
-            let x = isLeadingRail(bar, in: area) ? bar.maxX + spacing : bar.minX - spacing - size.width
-            origin = CGPoint(x: x, y: clamp(tab.midY - size.height / 2, area.minY, area.maxY - size.height))
+            let height = min(size.height, area.height)
+            let x = isLeadingRail(bar, in: area) ? bar.maxX + spacing : bar.minX - spacing - width
+            return CGRect(x: x, y: clamp(tab.midY - height / 2, area.minY, area.maxY - height),
+                          width: width, height: height)
         }
-        return CGRect(origin: origin, size: size)
     }
 
     /// The centres of `count` bubbles of `diameter`, fanned out from the held
     /// tab past the bar's outer edge, the first item leading (or on top).
     /// The fan tilts, then moves, as little as keeps it inside `area`, which
-    /// for this reaches as far as the bar.
+    /// for this reaches as far as the bar. Nil when no fan fits, for the
+    /// list to show instead.
     static func fan(count: Int, diameter: CGFloat, tab: CGRect, bar: CGRect, area: CGRect, axis: Axis,
-                    isRightToLeft: Bool, spacing: CGFloat) -> TabQuickSwitchFan {
+                    isRightToLeft: Bool, spacing: CGFloat) -> TabQuickSwitchFan? {
         let pivot = CGPoint(x: tab.midX, y: tab.midY)
         // Outward leaves the bar; along runs from the first item to the last.
         let outward: CGVector
@@ -118,10 +126,7 @@ enum TabQuickSwitchPlacement {
                 best = (candidate, move)
             }
         }
-        // Too small an area for any fan: the straight one, lined up with it.
-        guard let chosen = best ?? centers(tilt: 0).map({ (centers: $0, move: shift(bringing: $0, into: inner)) }) else {
-            return TabQuickSwitchFan(centers: [], pivot: pivot)
-        }
+        guard let chosen = best else { return nil }
         // Clamped too, so rounding in the move never leaves a bubble a
         // fraction outside.
         let placed = chosen.centers.map {

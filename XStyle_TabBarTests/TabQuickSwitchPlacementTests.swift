@@ -52,9 +52,18 @@ struct TabQuickSwitchPlacementTests {
         #expect(TabQuickSwitchPlacement.listFrame(size: size, tab: tabs[3], bar: bar, area: area, axis: .horizontal,
                                                   spacing: spacing).maxX == area.maxX)
 
+        // Too tall for the room above the bar, it takes all of it and scrolls.
         let tall = CGSize(width: 200, height: area.height + 100)
-        #expect(TabQuickSwitchPlacement.listFrame(size: tall, tab: tabs[1], bar: bar, area: area, axis: .horizontal,
-                                                  spacing: spacing).minY == area.minY)
+        let tallFrame = TabQuickSwitchPlacement.listFrame(size: tall, tab: tabs[1], bar: bar, area: area,
+                                                          axis: .horizontal, spacing: spacing)
+        #expect(tallFrame.minY == area.minY)
+        #expect(tallFrame.maxY == bar.minY - spacing)
+        // Too wide, it takes the area's width.
+        let wide = CGSize(width: area.width + 50, height: 150)
+        let wideFrame = TabQuickSwitchPlacement.listFrame(size: wide, tab: tabs[1], bar: bar, area: area,
+                                                          axis: .horizontal, spacing: spacing)
+        #expect(wideFrame.minX == area.minX)
+        #expect(wideFrame.width == area.width)
     }
 
     @Test("On a rail, a list opens beside it, towards the screen, level with its tab")
@@ -72,6 +81,11 @@ struct TabQuickSwitchPlacementTests {
                 }
                 #expect(frame.midY == tab.midY)
             }
+            let tall = TabQuickSwitchPlacement.listFrame(
+                size: CGSize(width: size.width, height: railArea.height + 100), tab: tabs(in: rail, axis: .vertical)[0],
+                bar: rail, area: railArea, axis: .vertical, spacing: spacing
+            )
+            #expect(tall.minY == railArea.minY && tall.maxY == railArea.maxY)
         }
     }
 
@@ -83,7 +97,7 @@ struct TabQuickSwitchPlacementTests {
                     let centers = TabQuickSwitchPlacement.fan(
                         count: count, diameter: diameter, tab: tab, bar: bar, area: area, axis: .horizontal,
                         isRightToLeft: isRightToLeft, spacing: spacing
-                    ).centers
+                    )?.centers ?? []
                     #expect(centers.count == count)
                     expectApart(centers)
                     for frame in centers.map(bubbleFrame) {
@@ -106,7 +120,7 @@ struct TabQuickSwitchPlacementTests {
                 let centers = TabQuickSwitchPlacement.fan(
                     count: 5, diameter: diameter, tab: tab, bar: rail, area: railArea, axis: .vertical,
                     isRightToLeft: false, spacing: spacing
-                ).centers
+                )?.centers ?? []
                 #expect(centers.count == 5)
                 expectApart(centers)
                 for frame in centers.map(bubbleFrame) {
@@ -123,14 +137,29 @@ struct TabQuickSwitchPlacementTests {
         }
     }
 
+    @Test("No fan where its bubbles can't all fit, so the list shows instead")
+    func fanGivesWayWhenItCantFit() {
+        let tab = tabs(in: bar, axis: .horizontal)[1]
+        #expect(TabQuickSwitchPlacement.fan(count: 5, diameter: diameter, tab: tab, bar: bar, area: area,
+                                            axis: .horizontal, isRightToLeft: false, spacing: spacing) != nil)
+        // Accessibility-sized bubbles, or a short window.
+        #expect(TabQuickSwitchPlacement.fan(count: 5, diameter: diameter * 3, tab: tab, bar: bar, area: area,
+                                            axis: .horizontal, isRightToLeft: false, spacing: spacing) == nil)
+        let short = CGRect(x: area.minX, y: bar.minY - 120, width: area.width, height: 100)
+        #expect(TabQuickSwitchPlacement.fan(count: 5, diameter: diameter, tab: tab, bar: bar, area: short,
+                                            axis: .horizontal, isRightToLeft: false, spacing: spacing) == nil)
+        #expect(TabQuickSwitchPlacement.fan(count: 0, diameter: diameter, tab: tab, bar: bar, area: area,
+                                            axis: .horizontal, isRightToLeft: false, spacing: spacing) == nil)
+    }
+
     @Test("The label sits past its bubble, clear of it, inside the safe area")
-    func labelSitsPastBubble() {
+    func labelSitsPastBubble() throws {
         let size = CGSize(width: 90, height: 30)
         for tab in tabs(in: bar, axis: .horizontal) {
-            let fan = TabQuickSwitchPlacement.fan(
+            let fan = try #require(TabQuickSwitchPlacement.fan(
                 count: 5, diameter: diameter, tab: tab, bar: bar, area: area, axis: .horizontal,
                 isRightToLeft: false, spacing: spacing
-            )
+            ))
             for bubble in fan.centers {
                 let label = TabQuickSwitchPlacement.fanLabelCenter(size: size, bubble: bubble, diameter: diameter,
                                                                    pivot: fan.pivot, area: area, spacing: spacing)

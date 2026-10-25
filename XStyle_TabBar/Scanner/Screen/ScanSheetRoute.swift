@@ -44,6 +44,26 @@ nonisolated struct ScanSheetRequest: Equatable, Sendable {
     let id: Int
 }
 
+/// Whether the Scan tab runs its camera. Until the camera has first run,
+/// it waits while the history shows or is asked for: opening the history
+/// never asks for camera access. From then on, it runs while the tab shows,
+/// stopping under a sheet at full as before.
+nonisolated enum ScannerCameraStartup {
+    static func runsCamera(isActive: Bool, isSceneActive: Bool, hasStarted: Bool,
+                           pendingRequest: ScanSheetRequest.Route?, route: ScanSheetRoute?,
+                           isSheetShown: Bool) -> Bool {
+        guard isActive, isSceneActive else { return false }
+        guard !hasStarted else { return true }
+        if let pendingRequest { return pendingRequest == .camera }
+        // A route stays as its sheet slides away: only a shown one counts.
+        guard isSheetShown else { return true }
+        switch route {
+        case .history, .entry: return false
+        case .result, nil: return true
+        }
+    }
+}
+
 /// The sheet's route and how it changes. The route stays while the sheet
 /// slides away, so its content doesn't vanish mid-slide.
 nonisolated struct ScanSheetState: Equatable, Sendable {

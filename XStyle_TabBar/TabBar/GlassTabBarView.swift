@@ -22,8 +22,15 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
     private lazy var releaseFeedback = UIImpactFeedbackGenerator(style: .light, view: self)
     private lazy var holdFeedback = UIImpactFeedbackGenerator(style: .medium, view: self)
     private lazy var menuFeedback = UISelectionFeedbackGenerator(view: self)
-    /// Waits out a hold before opening the held tab's menu.
+    /// When the finger's hold may open its tab's menu; see `openQuickSwitch`.
+    private(set) var quickSwitchHold = TabQuickSwitchHold()
+    /// Wakes when the hold has lasted.
     private var holdTask: Task<Void, Never>?
+    /// The window as the finger came down. A hold or menu outlives no resize,
+    /// rotation or safe-area change.
+    private var quickSwitchWindow: QuickSwitchWindow?
+    /// Whether holds may open menus: the bar shows, and the app is active.
+    private var isQuickSwitchAvailable = true
     private var interaction: GlassTabBarInteraction
     private var reduceMotion = false
     private var layoutAxis: NSLayoutConstraint.Axis = .horizontal
@@ -201,6 +208,11 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
         let updateLink = UIUpdateLink(view: self)
         updateLink.addAction(to: .beforeCATransactionCommit) { [weak self] _, _ in
             self?.updateReflectionSource(usePresentation: true)
+            // A rotation may move nothing under a still finger, so its touch
+            // never reports it. Cancel after this commit, not during it.
+            if self?.isQuickSwitchWindowCurrent == false {
+                DispatchQueue.main.async { self?.abandonQuickSwitch() }
+            }
         }
         reflectionUpdateLink = updateLink
     }
@@ -223,6 +235,9 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
                                        layoutDirection: layoutDirection, layoutAxis: layoutAxis,
                                        reduceMotion: reduceMotion, isEnabled: isEnabled)
         guard inputs != environmentInputs else { return }
+        // A menu laid out for other text, language or motion settings would
+        // move under the finger.
+        if environmentInputs != nil { abandonQuickSwitch() }
         environmentInputs = inputs
         let semantic: UISemanticContentAttribute = layoutDirection == .rightToLeft ? .forceRightToLeft : .forceLeftToRight
         if self.layoutAxis != layoutAxis || semanticContentAttribute != semantic || !isEnabled {
@@ -393,17 +408,13 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
             guard validateTrackingGeometry(), let point = trackingPoint(location) else { return }
             interaction.move(to: point)
             if interaction.tracking?.menuTab != nil {
-                if quickSwitch?.move(to: convert(location, to: nil)) == true {
-                    menuFeedback.selectionChanged()
-                    menuFeedback.prepare()
-                }
+                quickSwitch?.move(to: convert(location, to: nil))
             } else {
                 showTracking()
             }
         case .ended:
             guard validateTrackingGeometry(), let point = trackingPoint(location) else { return }
-            holdTask?.cancel()
-            holdTask = nil
+            cancelHold()
             if interaction.tracking?.menuTab != nil {
                 // The menu picks; lifting off its items changes nothing.
                 let item = quickSwitch?.release(at: convert(location, to: nil))
@@ -450,6 +461,10 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
             cancelTracking(animated: false)
             return false
         }
+        guard isQuickSwitchWindowCurrent else {
+            abandonQuickSwitch()
+            return interaction.tracking != nil
+        }
         return true
     }
 
@@ -470,24 +485,48 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
         if changed { onSelect?(button.tab) }
     }
 
+    /// Holds may open menus only while the bar shows and the app is active.
+    /// Losing either ends a hold, and an open menu with its touch.
+    func updateQuickSwitchAvailability(_ isAvailable: Bool) {
+        guard isQuickSwitchAvailable != isAvailable else { return }
+        isQuickSwitchAvailable = isAvailable
+        if !isAvailable { abandonQuickSwitch() }
+    }
+
     /// A finger kept on the tab it came down on opens that tab's menu.
     private func scheduleQuickSwitch() {
-        holdTask?.cancel()
-        holdTask = nil
-        guard quickSwitch != nil else { return }
+        closeQuickSwitch()
+        guard quickSwitch != nil, isQuickSwitchAvailable, let window else { return }
         holdFeedback.prepare()
+        quickSwitchWindow = QuickSwitchWindow(window)
         let duration = presentation.motion.quickSwitchHoldDuration
+        let generation = quickSwitchHold.begin(at: ProcessInfo.processInfo.systemUptime, duration: duration)
+        startHoldTimer(generation: generation, after: duration)
+    }
+
+    private func startHoldTimer(generation: UInt64, after delay: TimeInterval) {
+        holdTask?.cancel()
         holdTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(duration))
+            try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
-            self?.openQuickSwitch()
+            self?.openQuickSwitch(generation: generation, at: ProcessInfo.processInfo.systemUptime)
         }
     }
 
-    private func openQuickSwitch() {
+    /// Opens the held tab's menu once the hold of `generation` has lasted.
+    /// Takes the time, so tests can open it without waiting.
+    func openQuickSwitch(generation: UInt64, at time: TimeInterval) {
+        if let pending = quickSwitchHold.pending, pending.generation == generation, time < pending.deadline {
+            // Woken early: wait out the rest.
+            startHoldTimer(generation: generation, after: pending.deadline - time)
+            return
+        }
+        guard quickSwitchHold.fire(generation: generation, at: time) else { return }
+        holdTask?.cancel()
         holdTask = nil
         let allowableMovement = presentation.motion.quickSwitchAllowableMovement
-        guard let quickSwitch, quickSwitch.canOpen, validateTrackingGeometry(),
+        guard let quickSwitch, isQuickSwitchAvailable, quickSwitch.canOpen,
+              let window, quickSwitchWindow == QuickSwitchWindow(window), validateTrackingGeometry(),
               let tab = interaction.canOpenMenu(allowableMovement: allowableMovement),
               let items = quickSwitch.items(for: tab),
               let coordinateView = trackingCoordinateView,
@@ -497,6 +536,10 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
         // bounds, outside the press zoom, and buttons sit in those bounds.
         quickSwitch.open(tab: tab, items: items, tabFrame: coordinateView.convert(button.frame, to: nil),
                          barFrame: coordinateView.convert(coordinateView.bounds, to: nil), axis: layoutAxis)
+        quickSwitch.onReachItem = { [weak self] in
+            self?.menuFeedback.selectionChanged()
+            self?.menuFeedback.prepare()
+        }
         holdFeedback.impactOccurred()
         menuFeedback.prepare()
     }
@@ -520,15 +563,51 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
         if changed { onSelect?(item.tab) }
     }
 
-    private func closeQuickSwitch() {
+    private func cancelHold() {
         holdTask?.cancel()
         holdTask = nil
+        quickSwitchHold.cancel()
+    }
+
+    private func closeQuickSwitch() {
+        cancelHold()
+        quickSwitchWindow = nil
         quickSwitch?.cancel()
+    }
+
+    /// Ends a hold before its menu opens, leaving the finger to preview tabs
+    /// as usual. An open menu takes its whole touch along, so lifting it does
+    /// nothing.
+    private func abandonQuickSwitch() {
+        if interaction.tracking?.menuTab != nil {
+            cancelTracking(animated: true)
+        } else {
+            closeQuickSwitch()
+        }
+    }
+
+    /// False once the window has changed under a hold or an open menu.
+    private var isQuickSwitchWindowCurrent: Bool {
+        guard let quickSwitchWindow, quickSwitchHold.pending != nil || interaction.tracking?.menuTab != nil else {
+            return true
+        }
+        return window.map { QuickSwitchWindow($0) } == quickSwitchWindow
+    }
+
+    private struct QuickSwitchWindow: Equatable {
+        let bounds: CGRect
+        let safeAreaInsets: UIEdgeInsets
+
+        init(_ window: UIWindow) {
+            bounds = window.bounds
+            safeAreaInsets = window.safeAreaInsets
+        }
     }
 
     /// VoiceOver reaches a tab's menu items as its custom actions.
     private func quickSwitchActions(for tab: RootTab) -> [UIAccessibilityCustomAction] {
-        guard environmentInputs?.isEnabled ?? true, let items = quickSwitch?.items(for: tab) else { return [] }
+        guard isQuickSwitchAvailable, environmentInputs?.isEnabled ?? true,
+              let items = quickSwitch?.items(for: tab) else { return [] }
         return items.map { item in
             UIAccessibilityCustomAction(name: item.title, image: UIImage(systemName: item.symbol)) { [weak self] _ in
                 guard let self else { return false }
