@@ -22,9 +22,6 @@ struct ScannerView: View {
     /// What the sheet shows: a result, the history, or a product from it. It
     /// keeps showing it while it slides away.
     @State private var sheetState = ScanSheetState()
-    /// The camera's one preview layer, kept across layout changes, which
-    /// rebuild the camera pane.
-    @State private var previewHost = CameraPreviewHost()
     @State private var isSideBySide = false
     /// Illustrative until products are looked up.
     private let analysis = PetFoodAnalysis.example
@@ -79,6 +76,12 @@ struct ScannerView: View {
                 apply(sheetState.resultClosed())
             }
         }
+        // Coming back, the tab opens on the camera, not the history left up.
+        .onChange(of: isActive) {
+            if !isActive {
+                apply(sheetState.closeHistory())
+            }
+        }
         // Dragging the sheet below the screen closes the result.
         .onChange(of: sheet.detent) {
             if sheet.detent != .hidden {
@@ -106,7 +109,7 @@ struct ScannerView: View {
         .onChange(of: displayScale) {
             model.updateDisplayScale(displayScale)
         }
-        .modifier(ScannerCameraLifecycle(model: model, previewHost: previewHost, sheet: sheet,
+        .modifier(ScannerCameraLifecycle(model: model, previewHost: model.previewHost, sheet: sheet,
                                          isActive: isActive, isSideBySide: isSideBySide, route: sheetState.route))
         .modifier(ScanSheetRequestReceiver(model: model, isActive: isActive, onRequest: showRequested))
     }
@@ -114,7 +117,7 @@ struct ScannerView: View {
     /// The camera, with the history button over its top-leading corner once
     /// the first result has closed. Its tip waits for the sheet to go.
     private func cameraPane(historyButtonInset: CGFloat) -> some View {
-        ScannerCameraPane(model: model, previewHost: previewHost)
+        ScannerCameraPane(model: model, previewHost: model.previewHost)
             .overlay(alignment: .topLeading) {
                 ZStack {
                     if history.isButtonRevealed {
@@ -203,6 +206,7 @@ struct ScannerView: View {
         switch route {
         case .camera: closeSheet()
         case .history: openHistory()
+        case .closeHistory: apply(sheetState.closeHistory())
         }
     }
 

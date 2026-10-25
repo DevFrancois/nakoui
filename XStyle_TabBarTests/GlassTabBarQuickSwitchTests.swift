@@ -92,6 +92,55 @@ struct GlassTabBarQuickSwitchTests {
         }
     }
 
+    @Test("A menu held on another tab marks nothing; on its own tab, what it shows")
+    func marksOnlyOnShownTab() async throws {
+        let fixture = try QuickSwitchFixture()
+        await drainMainQueue()
+        fixture.press(.home)
+        try fixture.openMenu()
+        #expect(fixture.menu.presentation?.items.filter(\.isCurrent).map(\.destination) == [.homePage(.bookmarks)])
+        fixture.release(at: CGPoint(x: 20, y: 20))
+
+        fixture.press(.profile)
+        try fixture.openMenu()
+        #expect(fixture.menu.presentation?.items.contains(where: \.isCurrent) == false)
+    }
+
+    @Test("A hold lasts as long as the bar's motion says")
+    func holdTimeFollowsMotion() async throws {
+        let fixture = try QuickSwitchFixture()
+        await drainMainQueue()
+        fixture.presentation.motion.quickSwitchHoldDuration = 0.2
+        let before = ProcessInfo.processInfo.systemUptime
+        fixture.press(.profile)
+        let after = ProcessInfo.processInfo.systemUptime
+        let pending = try #require(fixture.view.quickSwitchHold.pending)
+        #expect(pending.deadline >= before + 0.2 && pending.deadline <= after + 0.2)
+    }
+
+    @Test("A release or tap on the tab that shows reselects it; a real change never does")
+    func reselectsShownTab() async throws {
+        let fixture = try QuickSwitchFixture()
+        await drainMainQueue()
+        var reselected: [RootTab] = []
+        fixture.view.onReselect = { reselected.append($0) }
+        let home = fixture.window.convert(fixture.button(.home).center, from: fixture.view)
+        fixture.press(.home)
+        fixture.release(at: home)
+        #expect(reselected == [.home])
+        #expect(fixture.commits.isEmpty)
+
+        let search = fixture.window.convert(fixture.button(.search).center, from: fixture.view)
+        fixture.press(.home)
+        fixture.release(at: search)
+        #expect(fixture.commits == [.search])
+        #expect(reselected == [.home])
+
+        #expect(fixture.button(.search).accessibilityActivate())
+        #expect(reselected == [.home, .search])
+        #expect(fixture.commits == [.search])
+    }
+
     @Test("Unavailable, a hold opens no menu and VoiceOver offers no items")
     func unavailableOpensNothing() async throws {
         let fixture = try QuickSwitchFixture()

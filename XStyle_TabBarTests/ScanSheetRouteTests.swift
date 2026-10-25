@@ -80,6 +80,20 @@ struct ScanSheetRouteTests {
         #expect(state.route == .entry(picked))
     }
 
+    @Test("Back to the camera closes the history and its products, never a live result")
+    func closeHistoryLeavesResults() {
+        var state = ScanSheetState()
+        #expect(state.closeHistory().isEmpty)
+        _ = state.found(found)
+        #expect(state.closeHistory().isEmpty)
+
+        _ = state.showHistory()
+        #expect(state.closeHistory() == [.hide])
+        _ = state.show(picked)
+        #expect(state.closeHistory() == [.hide])
+        #expect(state.route == .entry(picked))
+    }
+
     @Test("A result rests at medium or full; the history and its products only at full")
     func detentsByRoute() {
         #expect(ScanSheetRoute.result(found).detents == [.medium, .full])

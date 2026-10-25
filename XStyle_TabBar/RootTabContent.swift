@@ -63,7 +63,11 @@ struct RootTabContent<Home: View>: View {
                 top: $tabBarTop,
                 reflectionSource: reflectionSource,
                 onScanOriginChange: { scanner.viewportEntrance.sourcePoint = $0 },
-                quickSwitch: quickSwitch
+                quickSwitch: quickSwitch,
+                // Scan opens on its camera: tapping it again closes the history.
+                onReselect: { tab in
+                    if tab == .scanner { scanner.requestSheet(.closeHistory) }
+                }
             )
         }
         // The bar leaves with its toolbar while a scan result shows: a toolbar

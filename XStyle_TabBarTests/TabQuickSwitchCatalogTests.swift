@@ -26,9 +26,13 @@ struct TabQuickSwitchCatalogTests {
             TabQuickSwitchCatalog.items(for: tab, in: context(isHistoryAvailable: isHistoryAvailable))
         })
         #expect(TabQuickSwitchCatalog.items(for: .scanner, in: context()).map(\.destination) == [.scan])
-        #expect(menu.items(for: .scanner) == nil)
+        #expect(menu.items(for: .scanner, selectedTab: .scanner) == nil)
         isHistoryAvailable = true
-        #expect(menu.items(for: .scanner)?.map(\.destination) == [.scan, .scanHistory])
+        let items = menu.items(for: .scanner, selectedTab: .scanner)
+        #expect(items?.map(\.destination) == [.scan, .scanHistory])
+        // The camera is what the tab shows; the history only a sheet over it.
+        #expect(items?.map(\.isCurrent) == [true, false])
+        #expect(menu.items(for: .scanner, selectedTab: .home)?.map(\.isCurrent) == [false, false])
     }
 
     @Test("Profile offers the pets and Search its scopes, each with the stored one current")

@@ -83,9 +83,43 @@ struct TabQuickSwitchTrackingTests {
                                          symbol: "clock.arrow.circlepath")
         var offered = [item]
         let menu = TabQuickSwitchMenu(items: { _ in offered })
-        #expect(menu.items(for: .scanner) == nil)
+        #expect(menu.items(for: .scanner, selectedTab: .scanner) == nil)
         offered.append(history)
-        #expect(menu.items(for: .scanner) == [item, history])
+        #expect(menu.items(for: .scanner, selectedTab: .scanner) == [item, history])
+    }
+
+    @Test("Only the tab that shows marks what it shows")
+    func marksOnlyOnShownTab() {
+        let current = TabQuickSwitchItem(tab: .home, destination: .homePage(.likes), title: "Likes", symbol: "heart",
+                                         isCurrent: true)
+        let other = TabQuickSwitchItem(tab: .home, destination: .homePage(.videos), title: "Videos",
+                                       symbol: "play.square.stack")
+        let menu = TabQuickSwitchMenu(items: { _ in [current, other] })
+        #expect(menu.items(for: .home, selectedTab: .home)?.map(\.isCurrent) == [true, false])
+        for tab in RootTab.allCases where tab != .home {
+            #expect(menu.items(for: .home, selectedTab: tab)?.map(\.isCurrent) == [false, false])
+        }
+    }
+
+    @Test("Focus follows what the finger rests on, and clears as the menu closes, before a release returns")
+    func focusFollowsFinger() throws {
+        let fixture = MenuFixture()
+        let menu = fixture.menu
+        fixture.open()
+        menu.setFrame(scanFrame, for: .scan)
+        menu.setFrame(historyFrame, for: .scanHistory)
+        menu.move(to: CGPoint(x: scanFrame.midX, y: scanFrame.midY))
+        menu.move(to: CGPoint(x: scanFrame.midX + 1, y: scanFrame.midY))
+        menu.move(to: CGPoint(x: scanFrame.maxX + 20, y: scanFrame.midY))
+        menu.move(to: CGPoint(x: historyFrame.midX, y: historyFrame.midY))
+        #expect(fixture.focus == [.scan, nil, .scanHistory])
+        let released = menu.release(at: CGPoint(x: historyFrame.midX, y: historyFrame.midY))
+        #expect(released?.destination == .scanHistory)
+        #expect(fixture.focus == [.scan, nil, .scanHistory, nil])
+
+        fixture.open()
+        menu.cancel()
+        #expect(fixture.focus.count == 4, "Closing with nothing under the finger reports nothing")
     }
 
     @Test("The menu follows the finger in window points and closes on release or cancel, applying nothing itself")
@@ -162,8 +196,11 @@ struct TabQuickSwitchTrackingTests {
             TabQuickSwitchItem(tab: .scanner, destination: .scanHistory, title: "History", symbol: "clock.arrow.circlepath"),
         ]
         private(set) var applied: [TabQuickSwitchDestination] = []
+        private(set) var focus: [TabQuickSwitchDestination?] = []
         private(set) lazy var menu = TabQuickSwitchMenu(items: { [items] _ in items }) { [weak self] destination, _ in
             self?.applied.append(destination)
+        } focus: { [weak self] destination in
+            self?.focus.append(destination)
         }
 
         init() {

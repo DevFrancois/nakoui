@@ -1,5 +1,6 @@
 @preconcurrency import AVFoundation
 import Observation
+import OSLog
 
 /// Drives the Scan tab: camera access, the capture run, and the found-code
 /// animation through to the result sheet, then back to the live camera. The
@@ -59,8 +60,21 @@ final class ScannerModel {
     /// Whether the full reveal blurs the frozen frame; the view keeps it current.
     @ObservationIgnored var revealBlurs = true
 
+    /// The camera's one preview layer, kept for the model's life: across
+    /// layout changes, which rebuild the camera pane, and before the Scan
+    /// screen is first built, for a warm-up to bind; see `warmUpCamera()`.
+    @ObservationIgnored let previewHost = CameraPreviewHost()
     /// Made on the first run, so creating the model costs nothing at launch.
     @ObservationIgnored private var capture: BarcodeCaptureService?
+    /// Whether the Scan tab's own run has the camera, or is about to.
+    @ObservationIgnored private var isRunning = false
+    /// A warm-up's start, while it's underway, and the run it started.
+    @ObservationIgnored private var warmUpTask: Task<Void, Never>?
+    @ObservationIgnored private var warmToken: Int?
+    /// A cool-down waiting a turn, for a hand-over to cancel.
+    @ObservationIgnored private var pendingCoolDown: Task<Void, Never>?
+    /// Stops a handed-over camera the Scan tab never took.
+    @ObservationIgnored private var handOverTimeout: Task<Void, Never>?
     /// Decodes the frames: the camera's, or the simulated camera's.
     @ObservationIgnored private var analyzer: FrameAnalyzer?
     @ObservationIgnored private var screenSize = CGSize.zero
@@ -142,6 +156,8 @@ final class ScannerModel {
             return
         }
         #endif
+        isRunning = true
+        defer { isRunning = false }
         let capture = capture ?? BarcodeCaptureService()
         self.capture = capture
         // Before asking for access, which a device without a camera mustn't.
@@ -173,6 +189,8 @@ final class ScannerModel {
             state = .unavailable
             return
         }
+        // A warm camera is this run's now: its token is stale.
+        finishWarmUp()
         cameraDevice = await capture.device
         // The camera keeps its zoom between runs, so only the first sets it.
         // The camera was set to it already, unless that failed.
@@ -202,6 +220,104 @@ final class ScannerModel {
             isTorchOn = false
         }
     }
+
+    // MARK: - Warm-up
+
+    /// Starts the camera ahead of the Scan tab, while the finger rests on the
+    /// tab bar's Scan item, so the feed is live as the tab shows. Only with
+    /// camera access already granted: it never asks. The Scan tab's run takes
+    /// the camera over; see `handOverWarmCamera()`.
+    func warmUpCamera() {
+        pendingCoolDown?.cancel()
+        pendingCoolDown = nil
+        guard warmUpTask == nil, warmToken == nil,
+              ScannerCameraWarmUp.shouldStart(authorization: AVCaptureDevice.authorizationStatus(for: .video),
+                                              isRunning: isRunning) else { return }
+        #if targetEnvironment(simulator)
+        // The simulated camera only runs with the tab.
+        guard BarcodeCaptureService.isCameraAvailable else { return }
+        #endif
+        let capture = capture ?? BarcodeCaptureService()
+        self.capture = capture
+        logWarmUp("started")
+        warmUpTask = Task {
+            defer { warmUpTask = nil }
+            // On the capture actor, as in `run()`.
+            guard await capture.hasCamera(), !Task.isCancelled, !isRunning else { return }
+            // Bound before starting, as in `run()`.
+            previewHost.prepare(session: capture.session)
+            await capture.setSuspended(isCameraSuspended)
+            // A run starting now takes the camera, its start after this one.
+            guard !Task.isCancelled, !isRunning, let token = try? await capture.start() else { return }
+            cameraDevice = await capture.device
+            // Cooled down while it started: stop at once.
+            guard !Task.isCancelled else {
+                _ = await capture.stop(token)
+                return
+            }
+            warmToken = token
+        }
+    }
+
+    /// Stops a warm camera the Scan tab hasn't taken. A turn later, so a
+    /// release on the Scan item, which closes the menu before switching to
+    /// the tab, can hand the camera over first.
+    func coolDownCamera() {
+        guard warmUpTask != nil || warmToken != nil, pendingCoolDown == nil, handOverTimeout == nil else { return }
+        pendingCoolDown = Task {
+            guard !Task.isCancelled else { return }
+            pendingCoolDown = nil
+            stopWarmCamera()
+        }
+    }
+
+    /// Keeps a warm camera for the Scan tab, which is about to show and take
+    /// it over. If the tab's run hasn't started in a few seconds, it stops.
+    func handOverWarmCamera() {
+        pendingCoolDown?.cancel()
+        pendingCoolDown = nil
+        guard warmUpTask != nil || warmToken != nil else { return }
+        logWarmUp("handed over")
+        handOverTimeout?.cancel()
+        handOverTimeout = Task {
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            stopWarmCamera()
+        }
+    }
+
+    private func stopWarmCamera() {
+        handOverTimeout?.cancel()
+        handOverTimeout = nil
+        pendingCoolDown?.cancel()
+        pendingCoolDown = nil
+        // A start still underway stops itself as it returns.
+        warmUpTask?.cancel()
+        guard let token = warmToken, let capture else { return }
+        warmToken = nil
+        logWarmUp("stopped")
+        // Ignored once a run of the Scan tab's own has started since.
+        Task { _ = await capture.stop(token) }
+    }
+
+    /// The Scan tab's run has the camera.
+    private func finishWarmUp() {
+        handOverTimeout?.cancel()
+        handOverTimeout = nil
+        pendingCoolDown?.cancel()
+        pendingCoolDown = nil
+        warmToken = nil
+    }
+
+    private func logWarmUp(_ step: String) {
+        #if DEBUG
+        Self.logger.debug("Camera warm-up: \(step, privacy: .public)")
+        #endif
+    }
+
+    #if DEBUG
+    private static let logger = Logger(subsystem: "dev.kavsoft.XStyle-TabBar", category: "scanner")
+    #endif
 
     /// The full-screen size the camera is shown at, which places the
     /// viewfinder and maps codes onto the screen.
@@ -499,5 +615,14 @@ final class ScannerModel {
         default:
             return false
         }
+    }
+}
+
+/// Whether the camera may start ahead of the Scan tab: only with access
+/// already granted, as warming up never asks, and with no run of the tab's
+/// own to start it instead.
+nonisolated enum ScannerCameraWarmUp {
+    static func shouldStart(authorization: AVAuthorizationStatus, isRunning: Bool) -> Bool {
+        authorization == .authorized && !isRunning
     }
 }

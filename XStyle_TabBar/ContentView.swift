@@ -60,7 +60,8 @@ struct ContentView: View {
     }
 
     /// The menus read the pager and history as each opens; pets and the
-    /// search scope are stored, which their pages follow.
+    /// search scope are stored, which their pages follow. Resting on Scan
+    /// starts the camera, which a release there hands over to the tab.
     private static func makeQuickSwitch(pager: PagerState, scanner: ScannerModel,
                                         history: ScanHistory) -> TabQuickSwitchMenu {
         TabQuickSwitchMenu { tab in
@@ -73,10 +74,17 @@ struct ContentView: View {
                 UserDefaults.standard.set(id, forKey: PetProfile.storageKey)
             case .scan:
                 scanner.requestSheet(.camera)
+                scanner.handOverWarmCamera()
             case .scanHistory:
                 scanner.requestSheet(.history)
             case .searchScope(let scope):
                 UserDefaults.standard.set(scope.rawValue, forKey: SearchScope.storageKey)
+            }
+        } focus: { destination in
+            if destination == .scan {
+                scanner.warmUpCamera()
+            } else {
+                scanner.coolDownCamera()
             }
         }
     }

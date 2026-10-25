@@ -38,6 +38,19 @@ struct TabQuickSwitchHoldTests {
 }
 
 @MainActor
+struct TabQuickSwitchHoldSettingTests {
+    @Test("The stored hold time stays within the range the setting offers")
+    func storedHoldTimeIsClamped() {
+        let range = TabQuickSwitchSettings.holdDurationRange
+        #expect(range.contains(TabQuickSwitchSettings.defaultHoldDuration))
+        #expect(TabQuickSwitchSettings.clampedHoldDuration(0.3) == 0.3)
+        #expect(TabQuickSwitchSettings.clampedHoldDuration(0) == range.lowerBound)
+        #expect(TabQuickSwitchSettings.clampedHoldDuration(5) == range.upperBound)
+        #expect(TabQuickSwitchSettings.clampedHoldDuration(.nan) == TabQuickSwitchSettings.defaultHoldDuration)
+    }
+}
+
+@MainActor
 struct TabQuickSwitchListScrollTests {
     private let viewport = CGRect(x: 40, y: 100, width: 200, height: 300)
 

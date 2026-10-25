@@ -1,3 +1,4 @@
+import AVFoundation
 import Testing
 @testable import XStyle_TabBar
 
@@ -28,6 +29,10 @@ struct ScanSheetRequestTests {
         model.requestSheet(.history)
         #expect(model.takeSheetRequest(isActive: true) == .history)
         #expect(model.takeSheetRequest(isActive: true) == nil)
+
+        model.requestSheet(.closeHistory)
+        #expect(model.takeSheetRequest(isActive: false) == nil)
+        #expect(model.takeSheetRequest(isActive: true) == .closeHistory)
     }
 
     @Test("Until the camera has run, the history, shown or asked for, keeps it off")
@@ -42,6 +47,7 @@ struct ScanSheetRequestTests {
         #expect(!runs(isSceneActive: false))
         #expect(!runs(pending: .history))
         #expect(runs(pending: .camera))
+        #expect(runs(pending: .closeHistory))
         #expect(!runs(route: .history, isSheetShown: true))
         #expect(!runs(route: .entry(.sampleEAN13), isSheetShown: true))
         #expect(runs(route: .result(.sampleEAN13), isSheetShown: true))
@@ -50,5 +56,14 @@ struct ScanSheetRequestTests {
         // Once it has run, the history no longer holds it back.
         #expect(runs(hasStarted: true, pending: .history, route: .history, isSheetShown: true))
         #expect(!runs(hasStarted: true, isActive: false))
+    }
+
+    @Test("A warm-up starts the camera only with access already granted, and never over the tab's own run")
+    func warmUpNeedsAccessAndNoRun() {
+        #expect(ScannerCameraWarmUp.shouldStart(authorization: .authorized, isRunning: false))
+        #expect(!ScannerCameraWarmUp.shouldStart(authorization: .authorized, isRunning: true))
+        for status in [AVAuthorizationStatus.notDetermined, .denied, .restricted] {
+            #expect(!ScannerCameraWarmUp.shouldStart(authorization: status, isRunning: false))
+        }
     }
 }

@@ -49,6 +49,8 @@ private struct QuickSwitchAppearanceSection: View {
     @AppStorage(TabQuickSwitchSettings.enabledKey) private var isEnabled = TabQuickSwitchSettings.defaultEnabled
     @AppStorage(TabQuickSwitchSettings.haloKey) private var halo = TabQuickSwitchHalo.defaultHalo
     @AppStorage(TabQuickSwitchSettings.layoutKey) private var layout = TabQuickSwitchLayout.defaultLayout
+    @AppStorage(TabQuickSwitchSettings.holdDurationKey)
+    private var holdDuration = TabQuickSwitchSettings.defaultHoldDuration
 
     var body: some View {
         GroupBox {
@@ -82,6 +84,29 @@ private struct QuickSwitchAppearanceSection: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    LabeledContent {
+                        Text(holdDurationText)
+                            .monospacedDigit()
+                    } label: {
+                        Text("Hold time")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    Slider(value: $holdDuration, in: TabQuickSwitchSettings.holdDurationRange,
+                           step: TabQuickSwitchSettings.holdDurationStep) {
+                        Text("Hold time")
+                    } minimumValueLabel: {
+                        Text(seconds(TabQuickSwitchSettings.holdDurationRange.lowerBound))
+                    } maximumValueLabel: {
+                        Text(seconds(TabQuickSwitchSettings.holdDurationRange.upperBound))
+                    }
+                    .accessibilityValue(holdDurationText)
+                    .accessibilityIdentifier("search.quickSwitch.holdDuration")
+                    Text("How long to hold a tab before its menu opens.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
             .disabled(!isEnabled)
 
@@ -95,6 +120,15 @@ private struct QuickSwitchAppearanceSection: View {
         } label: {
             Text("Quick switch")
         }
+    }
+
+    private var holdDurationText: String {
+        seconds(TabQuickSwitchSettings.clampedHoldDuration(holdDuration))
+    }
+
+    private func seconds(_ value: Double) -> String {
+        Duration.seconds(value).formatted(.units(allowed: [.seconds], width: .abbreviated,
+                                                 fractionalPart: .show(length: 2)))
     }
 }
 

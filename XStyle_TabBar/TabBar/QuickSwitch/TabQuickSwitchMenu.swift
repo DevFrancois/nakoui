@@ -33,23 +33,34 @@ final class TabQuickSwitchMenu {
     @ObservationIgnored private var lastScrollTime: CFTimeInterval?
     @ObservationIgnored private let catalog: (RootTab) -> [TabQuickSwitchItem]
     @ObservationIgnored private let destinationHandler: (TabQuickSwitchDestination, Bool) -> Void
+    @ObservationIgnored private let focusHandler: (TabQuickSwitchDestination?) -> Void
 
     /// - Parameters:
     ///   - items: What holding a tab offers, read as each hold opens.
     ///   - apply: Takes a tab to a destination; see `apply(_:isTabShown:)`.
+    ///   - focus: What the finger rests on, as it changes; nil once it rests
+    ///     on nothing, and as the menu closes, before a release applies its
+    ///     item.
     init(
         items: @escaping (RootTab) -> [TabQuickSwitchItem] = { _ in [] },
-        apply: @escaping (_ destination: TabQuickSwitchDestination, _ isTabShown: Bool) -> Void = { _, _ in }
+        apply: @escaping (_ destination: TabQuickSwitchDestination, _ isTabShown: Bool) -> Void = { _, _ in },
+        focus: @escaping (TabQuickSwitchDestination?) -> Void = { _ in }
     ) {
         catalog = items
         destinationHandler = apply
+        focusHandler = focus
     }
 
-    /// What holding `tab` would offer: nil for fewer than two items, which
-    /// leaves the hold to preview tabs as usual.
-    func items(for tab: RootTab) -> [TabQuickSwitchItem]? {
-        let items = catalog(tab)
-        return items.count > 1 ? items : nil
+    /// What holding `tab` would offer, while `selectedTab` shows: nil for
+    /// fewer than two items, which leaves the hold to preview tabs as usual.
+    /// Only the tab that shows marks what it shows.
+    func items(for tab: RootTab, selectedTab: RootTab) -> [TabQuickSwitchItem]? {
+        var items = catalog(tab)
+        guard items.count > 1 else { return nil }
+        if tab != selectedTab {
+            for index in items.indices { items[index].isCurrent = false }
+        }
+        return items
     }
 
     /// Takes the item's tab to it. The bar calls this before changing tabs,
@@ -124,14 +135,19 @@ final class TabQuickSwitchMenu {
         listScroll = nil
         listOffset = 0
         listOffsetLimit = 0
-        highlighted = nil
+        if highlighted != nil {
+            highlighted = nil
+            focusHandler(nil)
+        }
         presentation = nil
     }
 
     private func updateHighlight() {
         let previous = highlighted
         highlighted = tracking.highlighted
-        if highlighted != nil, highlighted != previous { onReachItem?() }
+        guard highlighted != previous else { return }
+        if highlighted != nil { onReachItem?() }
+        focusHandler(highlighted)
     }
 
     /// Moves the list's rows, and what the finger can reach, to its offset.

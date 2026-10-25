@@ -17,6 +17,8 @@ struct GlassTabBarToolbar: ToolbarContent {
     var onScanOriginChange: ((CGPoint) -> Void)? = nil
     /// Opens on holding a tab; see `GlassTabBar.quickSwitch`.
     var quickSwitch: TabQuickSwitchMenu? = nil
+    /// A release or tap on the tab that already shows.
+    var onReselect: ((RootTab) -> Void)? = nil
 
     var body: some ToolbarContent {
         ToolbarSpacer(.flexible, placement: .bottomBar)
@@ -25,7 +27,8 @@ struct GlassTabBarToolbar: ToolbarContent {
                 reportingTop(of: AdaptiveGlassTabBar(selection: $selection, layoutAxis: $layoutAxis,
                                                      isHidden: isHidden, windowBottom: windowBottom, restingTop: top,
                                                      reflectionSource: reflectionSource,
-                                                     onScanOriginChange: onScanOriginChange, quickSwitch: quickSwitch))
+                                                     onScanOriginChange: onScanOriginChange, quickSwitch: quickSwitch,
+                                                     onReselect: onReselect))
             }
             .axisBehavior(.verticalPreferred)
             .sharedBackgroundVisibility(.hidden)
@@ -35,7 +38,8 @@ struct GlassTabBarToolbar: ToolbarContent {
             ToolbarItem(placement: .bottomBar) {
                 reportingTop(of: GlassTabBar(selection: $selection, isHidden: isHidden, windowBottom: windowBottom,
                                              restingTop: top, reflectionSource: reflectionSource,
-                                             onScanOriginChange: onScanOriginChange, quickSwitch: quickSwitch))
+                                             onScanOriginChange: onScanOriginChange, quickSwitch: quickSwitch,
+                                             onReselect: onReselect))
             }
             .sharedBackgroundVisibility(.hidden)
         }
@@ -68,13 +72,14 @@ private struct AdaptiveGlassTabBar: View {
     let reflectionSource: GlassTabBarReflectionSource?
     let onScanOriginChange: ((CGPoint) -> Void)?
     let quickSwitch: TabQuickSwitchMenu?
+    let onReselect: ((RootTab) -> Void)?
     @Environment(\.toolbarVerticalEdge) private var verticalEdge
 
     var body: some View {
         GlassTabBar(selection: $selection, layoutAxis: verticalEdge == nil ? .horizontal : .vertical,
                     isHidden: isHidden, windowBottom: windowBottom, restingTop: restingTop,
                     reflectionSource: reflectionSource,
-                    onScanOriginChange: onScanOriginChange, quickSwitch: quickSwitch)
+                    onScanOriginChange: onScanOriginChange, quickSwitch: quickSwitch, onReselect: onReselect)
             .onChange(of: verticalEdge == nil, initial: true) {
                 layoutAxis = verticalEdge == nil ? .horizontal : .vertical
             }
@@ -98,15 +103,24 @@ struct GlassTabBar: View {
     /// Opens on holding a tab that offers a menu. Without one, holds only
     /// preview tabs.
     var quickSwitch: TabQuickSwitchMenu? = nil
+    /// A release or tap on the tab that already shows.
+    var onReselect: ((RootTab) -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
     @StoredGlassTabBarReflection private var reflectionConfiguration
+    /// Set on the Search page; see `TabQuickSwitchSettings`.
+    @AppStorage(TabQuickSwitchSettings.holdDurationKey)
+    private var quickSwitchHoldDuration = TabQuickSwitchSettings.defaultHoldDuration
     @State private var presentation = GlassTabBarPresentation()
     /// The controls' frame in global space, without the press zoom.
     @State private var controlsFrame: CGRect?
 
-    private let motion = GlassTabBarMotion.calm
+    private var motion: GlassTabBarMotion {
+        var motion = GlassTabBarMotion.calm
+        motion.quickSwitchHoldDuration = TabQuickSwitchSettings.clampedHoldDuration(quickSwitchHoldDuration)
+        return motion
+    }
 
     /// While the Scan tab's sheet is up, with a result or the history, the bar
     /// makes way for it. The Duo's vertical rail stays.
@@ -118,7 +132,8 @@ struct GlassTabBar: View {
         GlassTabBarRepresentable(selection: $selection, layoutAxis: layoutAxis, motion: motion, appearance: appearance,
                                  presentation: presentation, reflectionSource: reflectionSource,
                                  reflectionConfiguration: reflectionConfiguration, quickSwitch: quickSwitch,
-                                 isQuickSwitchAvailable: !isHidden && scenePhase == .active)
+                                 isQuickSwitchAvailable: !isHidden && scenePhase == .active,
+                                 onReselect: onReselect)
             // The vertical toolbar proposes its compact item width. Keep the
             // full capsule width in both Duo postures; the bottom bar can flex.
             .fixedSize(horizontal: layoutAxis == .vertical, vertical: true)
@@ -192,6 +207,7 @@ private struct GlassTabBarRepresentable: UIViewRepresentable {
     /// Off while the bar hides or the app is inactive, which ends a hold
     /// and closes its menu.
     let isQuickSwitchAvailable: Bool
+    let onReselect: ((RootTab) -> Void)?
 
     func makeUIView(context: Context) -> GlassTabBarView {
         GlassTabBarView(selection: selection, presentation: presentation)
@@ -200,6 +216,7 @@ private struct GlassTabBarRepresentable: UIViewRepresentable {
     func updateUIView(_ view: GlassTabBarView, context: Context) {
         // Replace the callback too, so it always writes to the current binding.
         view.onSelect = { selection = $0 }
+        view.onReselect = onReselect
         view.quickSwitch = quickSwitch
         view.updateQuickSwitchAvailability(isQuickSwitchAvailable)
         presentation.motion = motion

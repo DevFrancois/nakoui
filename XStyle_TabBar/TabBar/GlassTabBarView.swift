@@ -4,6 +4,9 @@ import UIKit
 /// selection fill and its release shimmer travel with the native content.
 final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
     var onSelect: ((RootTab) -> Void)?
+    /// A release or tap on the tab that already shows, such as to take it
+    /// back to its main view.
+    var onReselect: ((RootTab) -> Void)?
     /// Opens on holding a tab that offers one; nil leaves holds to preview.
     weak var quickSwitch: TabQuickSwitchMenu?
 
@@ -439,7 +442,11 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
                 selectionView.stopShimmer()
             }
             if acceptedRelease { releaseFeedback.impactOccurred() }
-            if let destination { onSelect?(destination) }
+            if let destination {
+                onSelect?(destination)
+            } else if acceptedRelease {
+                onReselect?(previousSelection)
+            }
         case .cancelled, .failed:
             interaction.cancel()
             closeQuickSwitch()
@@ -482,7 +489,11 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
             selectionView.stopShimmer()
         }
         releaseFeedback.impactOccurred()
-        if changed { onSelect?(button.tab) }
+        if changed {
+            onSelect?(button.tab)
+        } else {
+            onReselect?(button.tab)
+        }
     }
 
     /// Holds may open menus only while the bar shows and the app is active.
@@ -528,7 +539,7 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
         guard let quickSwitch, isQuickSwitchAvailable, quickSwitch.canOpen,
               let window, quickSwitchWindow == QuickSwitchWindow(window), validateTrackingGeometry(),
               let tab = interaction.canOpenMenu(allowableMovement: allowableMovement),
-              let items = quickSwitch.items(for: tab),
+              let items = quickSwitch.items(for: tab, selectedTab: interaction.selection),
               let coordinateView = trackingCoordinateView,
               let button = buttons.first(where: { $0.tab == tab }) else { return }
         interaction.openMenu(allowableMovement: allowableMovement)
@@ -607,7 +618,7 @@ final class GlassTabBarView: UIView, UIGestureRecognizerDelegate {
     /// VoiceOver reaches a tab's menu items as its custom actions.
     private func quickSwitchActions(for tab: RootTab) -> [UIAccessibilityCustomAction] {
         guard isQuickSwitchAvailable, environmentInputs?.isEnabled ?? true,
-              let items = quickSwitch?.items(for: tab) else { return [] }
+              let items = quickSwitch?.items(for: tab, selectedTab: interaction.selection) else { return [] }
         return items.map { item in
             UIAccessibilityCustomAction(name: item.title, image: UIImage(systemName: item.symbol)) { [weak self] _ in
                 guard let self else { return false }

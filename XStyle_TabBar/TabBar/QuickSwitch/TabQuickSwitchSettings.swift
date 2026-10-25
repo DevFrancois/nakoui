@@ -6,10 +6,21 @@ enum TabQuickSwitchSettings {
     static let enabledKey = "tabBar.quickSwitch.enabled"
     static let haloKey = "tabBar.quickSwitch.halo"
     static let layoutKey = "tabBar.quickSwitch.layout"
+    /// How long, in seconds, a tab is held before its menu opens.
+    static let holdDurationKey = "tabBar.quickSwitch.holdDuration"
     static let defaultEnabled = true
+    static let defaultHoldDuration = GlassTabBarMotion.calm.quickSwitchHoldDuration
+    static let holdDurationRange: ClosedRange<Double> = 0.2...1.0
+    static let holdDurationStep = 0.05
 
     static func isEnabled(in defaults: UserDefaults = .standard) -> Bool {
         defaults.optionalBool(forKey: enabledKey) ?? defaultEnabled
+    }
+
+    /// A stored hold time within the range the setting offers.
+    static func clampedHoldDuration(_ duration: Double) -> Double {
+        guard duration.isFinite else { return defaultHoldDuration }
+        return min(max(duration, holdDurationRange.lowerBound), holdDurationRange.upperBound)
     }
 }
 

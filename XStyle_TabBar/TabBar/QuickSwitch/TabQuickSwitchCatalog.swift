@@ -24,7 +24,8 @@ enum TabQuickSwitchCatalog {
     }
 
     /// None while the menu is turned off. A tab with fewer than two items
-    /// shows no menu; see `TabQuickSwitchMenu.items(for:)`.
+    /// shows no menu, and only the tab that shows keeps its mark; see
+    /// `TabQuickSwitchMenu.items(for:selectedTab:)`.
     static func items(for tab: RootTab, in context: Context) -> [TabQuickSwitchItem] {
         guard context.isEnabled else { return [] }
         switch tab {
@@ -34,9 +35,10 @@ enum TabQuickSwitchCatalog {
                                    isCurrent: page == context.homePage)
             }
         case .scanner:
-            // History joins once the Scan tab shows its button.
+            // History joins once the Scan tab shows its button. The camera is
+            // what the tab shows; the history is only ever a sheet over it.
             let scan = TabQuickSwitchItem(tab: tab, destination: .scan, title: String(localized: "Scan"),
-                                          symbol: RootTab.scanner.symbol)
+                                          symbol: RootTab.scanner.symbol, isCurrent: true)
             let history = TabQuickSwitchItem(tab: tab, destination: .scanHistory, title: String(localized: "History"),
                                              symbol: "clock.arrow.circlepath")
             return context.isHistoryAvailable ? [scan, history] : [scan]

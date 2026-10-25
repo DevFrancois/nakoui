@@ -9,8 +9,8 @@ import SwiftUI
 /// (`ScannerView`).
 struct ScannerCameraPane: View {
     let model: ScannerModel
-    /// Owned above this pane, which a layout change rebuilds, so the feed
-    /// keeps its one preview layer.
+    /// The model's, as a layout change rebuilds this pane: the feed keeps
+    /// its one preview layer.
     let previewHost: CameraPreviewHost
     @Environment(\.displayScale) private var displayScale
     /// Whether the sheet is over the pane, on its way to full.

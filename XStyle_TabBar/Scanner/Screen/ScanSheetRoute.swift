@@ -37,6 +37,8 @@ nonisolated struct ScanSheetRequest: Equatable, Sendable {
         /// The camera, the sheet closed.
         case camera
         case history
+        /// The camera, closing only the history: a live result stays.
+        case closeHistory
     }
 
     let route: Route
@@ -54,7 +56,7 @@ nonisolated enum ScannerCameraStartup {
                            isSheetShown: Bool) -> Bool {
         guard isActive, isSceneActive else { return false }
         guard !hasStarted else { return true }
-        if let pendingRequest { return pendingRequest == .camera }
+        if let pendingRequest { return pendingRequest != .history }
         // A route stays as its sheet slides away: only a shown one counts.
         guard isSheetShown else { return true }
         switch route {
@@ -111,5 +113,15 @@ nonisolated struct ScanSheetState: Equatable, Sendable {
             return [.closeResult]
         }
         return [.hide]
+    }
+
+    /// Back to the camera from the history, on leaving the Scan tab or
+    /// tapping it again: the history is a sheet over the camera, never what
+    /// the tab opens on. A live result stays.
+    func closeHistory() -> [ScanSheetEffect] {
+        switch route {
+        case .history, .entry: [.hide]
+        case .result, nil: []
+        }
     }
 }
