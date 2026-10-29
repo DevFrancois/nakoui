@@ -112,6 +112,15 @@ struct GlassTabBar: View {
     /// Set on the Search page; see `TabQuickSwitchSettings`.
     @AppStorage(TabQuickSwitchSettings.holdDurationKey)
     private var quickSwitchHoldDuration = TabQuickSwitchSettings.defaultHoldDuration
+    @AppStorage(TabQuickSwitchSettings.layoutKey)
+    private var quickSwitchLayout = TabQuickSwitchLayout.defaultLayout
+    #if DEBUG
+    @AppStorage(TabQuickSwitchSettings.spotlightAnimationDurationKey)
+    private var spotlightAnimationDuration = TabQuickSwitchSettings.defaultSpotlightDuration
+    #else
+    private let spotlightAnimationDuration = TabQuickSwitchSettings.defaultSpotlightDuration
+    #endif
+    @StoredTabQuickSwitchListAnimations private var listAnimations
     @State private var presentation = GlassTabBarPresentation()
     /// The controls' frame in global space, without the press zoom.
     @State private var controlsFrame: CGRect?
@@ -133,7 +142,9 @@ struct GlassTabBar: View {
                                  presentation: presentation, reflectionSource: reflectionSource,
                                  reflectionConfiguration: reflectionConfiguration, quickSwitch: quickSwitch,
                                  isQuickSwitchAvailable: !isHidden && scenePhase == .active,
-                                 onReselect: onReselect)
+                                 quickSwitchLayout: quickSwitchLayout,
+                                 spotlightDuration: TabQuickSwitchSettings.clampedSpotlightDuration(spotlightAnimationDuration),
+                                 listAnimations: listAnimations, onReselect: onReselect)
             // The vertical toolbar proposes its compact item width. Keep the
             // full capsule width in both Duo postures; the bottom bar can flex.
             .fixedSize(horizontal: layoutAxis == .vertical, vertical: true)
@@ -207,6 +218,9 @@ private struct GlassTabBarRepresentable: UIViewRepresentable {
     /// Off while the bar hides or the app is inactive, which ends a hold
     /// and closes its menu.
     let isQuickSwitchAvailable: Bool
+    let quickSwitchLayout: TabQuickSwitchLayout
+    let spotlightDuration: TimeInterval
+    let listAnimations: TabQuickSwitchListAnimationSettings
     let onReselect: ((RootTab) -> Void)?
 
     func makeUIView(context: Context) -> GlassTabBarView {
@@ -220,6 +234,8 @@ private struct GlassTabBarRepresentable: UIViewRepresentable {
         view.quickSwitch = quickSwitch
         view.updateQuickSwitchAvailability(isQuickSwitchAvailable)
         presentation.motion = motion
+        view.updateQuickSwitchPreferences(layout: quickSwitchLayout, holdDuration: motion.quickSwitchHoldDuration,
+                                         spotlightDuration: spotlightDuration, listAnimations: listAnimations)
         view.updateEnvironment(
             locale: context.environment.locale,
             contentSizeCategory: UIContentSizeCategory(context.environment.dynamicTypeSize),

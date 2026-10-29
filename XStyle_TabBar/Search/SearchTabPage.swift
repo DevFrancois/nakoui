@@ -47,29 +47,16 @@ struct SearchTabPage: View {
 /// menus themselves are turned on and off on the Profile page.
 private struct QuickSwitchAppearanceSection: View {
     @AppStorage(TabQuickSwitchSettings.enabledKey) private var isEnabled = TabQuickSwitchSettings.defaultEnabled
-    @AppStorage(TabQuickSwitchSettings.haloKey) private var halo = TabQuickSwitchHalo.defaultHalo
     @AppStorage(TabQuickSwitchSettings.layoutKey) private var layout = TabQuickSwitchLayout.defaultLayout
     @AppStorage(TabQuickSwitchSettings.holdDurationKey)
     private var holdDuration = TabQuickSwitchSettings.defaultHoldDuration
+    #if DEBUG
+    @State private var isShowingQuickSwitchDebug = false
+    #endif
 
     var body: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Halo")
-                        .font(.subheadline.weight(.semibold))
-                    Picker("Halo", selection: $halo) {
-                        ForEach(TabQuickSwitchHalo.allCases) { halo in
-                            Text(halo.title).tag(halo)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityIdentifier("search.quickSwitch.halo")
-                    Text(halo.summary)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Layout")
                         .font(.subheadline.weight(.semibold))
@@ -103,10 +90,18 @@ private struct QuickSwitchAppearanceSection: View {
                     }
                     .accessibilityValue(holdDurationText)
                     .accessibilityIdentifier("search.quickSwitch.holdDuration")
-                    Text("How long to hold a tab before its menu opens.")
+                    Text("How long to hold a tab to begin. Then slide between tabs and menus without lifting your finger.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+
+                #if DEBUG
+                Button("Quick Switch Debug", systemImage: "slider.horizontal.3") {
+                    isShowingQuickSwitchDebug = true
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("search.quickSwitch.debug")
+                #endif
             }
             .disabled(!isEnabled)
 
@@ -120,6 +115,11 @@ private struct QuickSwitchAppearanceSection: View {
         } label: {
             Text("Quick switch")
         }
+        #if DEBUG
+        .sheet(isPresented: $isShowingQuickSwitchDebug) {
+            QuickSwitchDebugSettings()
+        }
+        #endif
     }
 
     private var holdDurationText: String {
@@ -131,6 +131,173 @@ private struct QuickSwitchAppearanceSection: View {
                                                  fractionalPart: .show(length: 2)))
     }
 }
+
+#if DEBUG
+private struct QuickSwitchDebugSettings: View {
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(TabQuickSwitchSettings.listSwitchStyleKey)
+    private var switchStyle = TabQuickSwitchListAnimationSettings.defaults.switchStyle
+    @AppStorage(TabQuickSwitchSettings.listEntranceStyleKey)
+    private var entranceStyle = TabQuickSwitchListAnimationSettings.defaults.entranceStyle
+    @AppStorage(TabQuickSwitchSettings.listSwitchDurationKey)
+    private var switchDuration = TabQuickSwitchListAnimationSettings.defaults.switchDuration
+    @AppStorage(TabQuickSwitchSettings.listEntranceDurationKey)
+    private var entranceDuration = TabQuickSwitchListAnimationSettings.defaults.entranceDuration
+    @AppStorage(TabQuickSwitchSettings.spotlightAnimationDurationKey)
+    private var spotlightDuration = TabQuickSwitchSettings.defaultSpotlightDuration
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                QuickSwitchListSwitchSection(style: $switchStyle, duration: $switchDuration)
+                QuickSwitchListEntranceSection(style: $entranceStyle, duration: $entranceDuration)
+                QuickSwitchSpotlightSection(duration: $spotlightDuration)
+                Section {
+                    Button("Reset animation defaults") {
+                        TabQuickSwitchSettings.resetAnimationSettings()
+                    }
+                    .disabled(usesDefaultAnimations)
+                    .accessibilityIdentifier("search.quickSwitch.resetAnimations")
+                }
+            }
+            .navigationTitle("Quick Switch Debug")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", systemImage: "checkmark") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var usesDefaultAnimations: Bool {
+        let defaults = TabQuickSwitchListAnimationSettings.defaults
+        return switchStyle == defaults.switchStyle && entranceStyle == defaults.entranceStyle
+            && switchDuration == defaults.switchDuration && entranceDuration == defaults.entranceDuration
+            && spotlightDuration == TabQuickSwitchSettings.defaultSpotlightDuration
+    }
+}
+
+private struct QuickSwitchListSwitchSection: View {
+    @Binding var style: TabQuickSwitchListSwitchStyle
+    @Binding var duration: Double
+
+    var body: some View {
+        Section {
+            Picker("Switch style", selection: $style) {
+                ForEach(TabQuickSwitchListSwitchStyle.allCases) { style in
+                    Text(style.title).tag(style)
+                }
+            }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("search.quickSwitch.listSwitchStyle")
+            QuickSwitchAnimationDurationControls(
+                title: "Switch duration", storedDuration: $duration,
+                defaultDuration: TabQuickSwitchListAnimationSettings.defaults.switchDuration,
+                range: TabQuickSwitchSettings.listDurationRange, step: TabQuickSwitchSettings.listDurationStep,
+                accessibilityID: "search.quickSwitch.listSwitchDuration"
+            )
+            .disabled(style == .immediate)
+        } header: {
+            Text("List switching")
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(style.summary)
+                Text("These controls apply only to List. Bubbles keep their current animation.")
+            }
+        }
+    }
+}
+
+private struct QuickSwitchListEntranceSection: View {
+    @Binding var style: TabQuickSwitchListEntranceStyle
+    @Binding var duration: Double
+
+    var body: some View {
+        Section {
+            Picker("Entrance style", selection: $style) {
+                ForEach(TabQuickSwitchListEntranceStyle.allCases) { style in
+                    Text(style.title).tag(style)
+                }
+            }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("search.quickSwitch.listEntranceStyle")
+            QuickSwitchAnimationDurationControls(
+                title: "Entrance duration", storedDuration: $duration,
+                defaultDuration: TabQuickSwitchListAnimationSettings.defaults.entranceDuration,
+                range: TabQuickSwitchSettings.listDurationRange, step: TabQuickSwitchSettings.listDurationStep,
+                accessibilityID: "search.quickSwitch.listEntranceDuration"
+            )
+        } header: {
+            Text("List entrance")
+        } footer: {
+            Text(style.summary)
+        }
+    }
+}
+
+private struct QuickSwitchSpotlightSection: View {
+    @Binding var duration: Double
+
+    var body: some View {
+        Section {
+            QuickSwitchAnimationDurationControls(
+                title: "Movement duration", storedDuration: $duration,
+                defaultDuration: TabQuickSwitchSettings.defaultSpotlightDuration,
+                range: TabQuickSwitchSettings.spotlightDurationRange,
+                step: TabQuickSwitchSettings.spotlightDurationStep,
+                accessibilityID: "search.quickSwitch.spotlightDuration"
+            )
+        } header: {
+            Text("Spotlight")
+        } footer: {
+            Text("Controls how long the spotlight takes to move and resize around the active area. New targets are tracked immediately. Reduce Motion keeps movement and resizing instant.")
+        }
+    }
+}
+
+private struct QuickSwitchAnimationDurationControls: View {
+    let title: LocalizedStringResource
+    @Binding var storedDuration: Double
+    let defaultDuration: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let accessibilityID: String
+
+    var body: some View {
+        Group {
+            LabeledContent {
+                Text(seconds(storedDuration[clampedTo: range, fallback: defaultDuration]))
+                    .monospacedDigit()
+            } label: {
+                Text(title)
+            }
+            Slider(value: $storedDuration[clampedTo: range, fallback: defaultDuration], in: range, step: step) {
+                Text(title)
+            } minimumValueLabel: {
+                Text(seconds(range.lowerBound))
+            } maximumValueLabel: {
+                Text(seconds(range.upperBound))
+            }
+            .accessibilityValue(seconds(storedDuration[clampedTo: range, fallback: defaultDuration]))
+            .accessibilityIdentifier(accessibilityID)
+        }
+    }
+
+    private func seconds(_ value: Double) -> String {
+        Duration.seconds(value).formatted(.units(allowed: [.seconds], width: .abbreviated,
+                                                 fractionalPart: .show(length: 2)))
+    }
+}
+
+/// A key-path projection keeps invalid stored values out of the sliders.
+private extension Double {
+    subscript(clampedTo range: ClosedRange<Double>, fallback fallback: Double) -> Double {
+        get { isFinite ? min(max(self, range.lowerBound), range.upperBound) : fallback }
+        set { self = newValue.isFinite ? min(max(newValue, range.lowerBound), range.upperBound) : fallback }
+    }
+}
+#endif
 
 #Preview {
     SearchTabPage()

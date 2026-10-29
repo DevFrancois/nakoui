@@ -16,8 +16,6 @@ enum TabQuickSwitchMetrics {
     static let bubbleDiameter: CGFloat = 56
     /// How far the spotlight's edge fades.
     static let spotlightFeather: CGFloat = 48
-    static let glowWidth: CGFloat = 8
-    static let glowBlur: CGFloat = 14
     /// The fan's angle between neighbouring bubbles, and the most it sweeps.
     static let fanStep: CGFloat = .pi * 34 / 180
     static let fanMaximumSpan: CGFloat = .pi * 110 / 180

@@ -1,13 +1,31 @@
 import SwiftUI
 import UIKit
 
-/// A held tab's menu of pages, pets or views to switch to. The tab bar owns
-/// the finger and drives the menu; `TabQuickSwitchOverlay` draws the halo and
-/// the items, and reports where the items are. Frames and points here are in
-/// the overlay's space: `coordinateView` takes window points into it.
+/// A retained list surface resolves against its currently visible geometry.
+/// The model keeps interaction ownership and supplies scrolling and hover.
+@MainActor
+protocol TabQuickSwitchListDisplaying: AnyObject {
+    func destination(at point: CGPoint, presentationID: UInt64) -> TabQuickSwitchDestination?
+    func setScrollOffset(_ offset: CGFloat, limit: CGFloat, presentationID: UInt64)
+    func setHighlighted(_ destination: TabQuickSwitchDestination?, presentationID: UInt64)
+    func canAutoscroll(presentationID: UInt64) -> Bool
+}
+
+/// One held touch can browse the bar and several menus without ending its
+/// spotlight session. The bar owns the finger; the overlay reports where
+/// the current menu's items are. All stored geometry is in overlay space.
+@MainActor
 @Observable
 final class TabQuickSwitchMenu {
+    struct Session: Equatable {
+        let id: UInt64
+        let barFrame: CGRect
+        let axis: Axis
+    }
+
     struct Presentation: Equatable {
+        /// A submenu's generation, independent of the uninterrupted touch.
+        let id: UInt64
         let tab: RootTab
         let items: [TabQuickSwitchItem]
         /// Where the held tab and the whole bar rest, without the press zoom.
@@ -16,7 +34,22 @@ final class TabQuickSwitchMenu {
         let axis: Axis
     }
 
-    /// The open menu; nil while none is.
+    struct FocusContraction: Equatable {
+        let deadline: TimeInterval
+        let generation: UInt64
+        let sessionID: UInt64
+    }
+
+    static let focusContractionDelay: TimeInterval = 0.1
+
+    /// Remains alive while the finger browses the bar with no submenu open.
+    private(set) var session: Session?
+    var isActive: Bool { session != nil }
+    /// The most recent finger location, including while choices collapse.
+    private(set) var pointer: CGPoint?
+    /// Last resolved active area, retained while a replacement menu lays out.
+    private(set) var focusFrame: CGRect?
+    /// The currently expanded submenu, if any.
     private(set) var presentation: Presentation?
     /// The item under the finger.
     private(set) var highlighted: TabQuickSwitchDestination?
@@ -24,13 +57,26 @@ final class TabQuickSwitchMenu {
     private(set) var listOffset: CGFloat = 0
     private(set) var listOffsetLimit: CGFloat = 0
 
-    @ObservationIgnored weak var coordinateView: UIView?
+    @ObservationIgnored weak var coordinateView: UIView? {
+        willSet {
+            if coordinateView !== newValue { cancel() }
+        }
+    }
     /// Called as the finger reaches an item it wasn't on, for a haptic.
     @ObservationIgnored var onReachItem: (() -> Void)?
     @ObservationIgnored private var tracking = TabQuickSwitchTracking()
     @ObservationIgnored private var listScroll: TabQuickSwitchListScroll?
     @ObservationIgnored private var scrollLink: CADisplayLink?
     @ObservationIgnored private var lastScrollTime: CFTimeInterval?
+    @ObservationIgnored private var sessionGeneration: UInt64 = 0
+    @ObservationIgnored private var presentationGeneration: UInt64 = 0
+    @ObservationIgnored private var focusContractionGeneration: UInt64 = 0
+    @ObservationIgnored private var focusContractionTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var pendingFocusContraction: FocusContraction?
+    @ObservationIgnored private weak var listDisplay: (any TabQuickSwitchListDisplaying)?
+    /// Kept even if the renderer disappears, so list hits never fall back to
+    /// invisible rows in the raw layout snapshot.
+    @ObservationIgnored private var listDisplayGeneration: UInt64?
     @ObservationIgnored private let catalog: (RootTab) -> [TabQuickSwitchItem]
     @ObservationIgnored private let destinationHandler: (TabQuickSwitchDestination, Bool) -> Void
     @ObservationIgnored private let focusHandler: (TabQuickSwitchDestination?) -> Void
@@ -73,34 +119,46 @@ final class TabQuickSwitchMenu {
     /// Whether the overlay is on screen to show a menu.
     var canOpen: Bool { coordinateView?.window != nil }
 
-    /// Opens `tab`'s menu. The frames are in window space.
+    /// Opens or replaces `tab`'s submenu without ending the active touch.
+    /// The frames are in window space.
     func open(tab: RootTab, items: [TabQuickSwitchItem], tabFrame: CGRect, barFrame: CGRect,
               axis: NSLayoutConstraint.Axis) {
         guard let coordinateView, coordinateView.window != nil else { return }
-        close()
+        cancelFocusContraction()
+        resetSubmenuTracking()
+        presentationGeneration &+= 1
         let presentation = Presentation(
-            tab: tab, items: items,
+            id: presentationGeneration, tab: tab, items: items,
             tabFrame: coordinateView.convert(tabFrame, from: nil),
             barFrame: coordinateView.convert(barFrame, from: nil),
             axis: axis == .vertical ? .vertical : .horizontal
         )
-        // Lifting on the bar, the held tab included, picks nothing.
+        if session == nil {
+            sessionGeneration &+= 1
+            session = Session(id: sessionGeneration, barFrame: presentation.barFrame, axis: presentation.axis)
+            pointer = CGPoint(x: presentation.tabFrame.midX, y: presentation.tabFrame.midY)
+            focusFrame = presentation.barFrame
+        }
+        // The interaction pipeline handles bar releases separately.
         tracking = TabQuickSwitchTracking(excluding: presentation.barFrame)
+        if let pointer { tracking.move(to: pointer) }
         self.presentation = presentation
     }
 
     /// From the overlay as it lays an item out: a bubble in the overlay's
     /// space, a list row in its list's; see `setListViewport`.
-    func setFrame(_ frame: CGRect?, for destination: TabQuickSwitchDestination) {
-        guard presentation != nil else { return }
+    func setFrame(_ frame: CGRect?, for destination: TabQuickSwitchDestination, presentationID: UInt64? = nil) {
+        guard let presentation,
+              presentationID == nil || presentationID == presentation.id,
+              presentation.items.contains(where: { $0.destination == destination }) else { return }
         tracking.setFrame(frame, for: destination)
         updateHighlight()
     }
 
     /// From a list as it lays out: its visible card, in the overlay's space,
     /// and its rows' whole height. Rows outside the card can't be picked.
-    func setListViewport(_ viewport: CGRect, contentHeight: CGFloat) {
-        guard presentation != nil else { return }
+    func setListViewport(_ viewport: CGRect, contentHeight: CGFloat, presentationID: UInt64? = nil) {
+        guard let presentation, presentationID == nil || presentationID == presentation.id else { return }
         var scroll = listScroll ?? TabQuickSwitchListScroll(viewport: viewport, contentHeight: contentHeight)
         scroll.update(viewport: viewport, contentHeight: contentHeight)
         listScroll = scroll
@@ -108,29 +166,108 @@ final class TabQuickSwitchMenu {
         updateScrolling()
     }
 
+    /// Registers before the list publishes layout. A registered list uses
+    /// only the renderer's visible geometry for hover and release.
+    func setListDisplay(_ display: any TabQuickSwitchListDisplaying, presentationID: UInt64) {
+        guard presentation?.id == presentationID else { return }
+        listDisplay = display
+        listDisplayGeneration = presentationID
+        display.setScrollOffset(listOffset, limit: listOffsetLimit, presentationID: presentationID)
+        updateHighlight()
+        display.setHighlighted(highlighted, presentationID: presentationID)
+        updateScrolling()
+    }
+
+    /// Entrance/exit changes can reveal a row beneath a stationary finger.
+    func listDisplayDidUpdate(presentationID: UInt64) {
+        guard presentation?.id == presentationID, listDisplayGeneration == presentationID else { return }
+        updateHighlight()
+        updateScrolling()
+    }
+
+    /// Reports a complete submenu's visible area. Outgoing panels cannot
+    /// change the spotlight while the next generation lays itself out.
+    func setFocusFrame(_ frame: CGRect, presentationID: UInt64) {
+        guard let session, presentation?.id == presentationID,
+              !frame.isEmpty, !frame.isNull,
+              frame.minX.isFinite, frame.minY.isFinite,
+              frame.maxX.isFinite, frame.maxY.isFinite else { return }
+        focusFrame = session.barFrame.union(frame)
+    }
+
+    /// Hides choices immediately, allowing a brief crossing to another tab
+    /// before the spotlight contracts to the bar.
+    func collapse(at time: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        guard let session else { return }
+        resetSubmenuTracking()
+        presentation = nil
+        guard focusFrame != session.barFrame, pendingFocusContraction == nil else { return }
+        focusContractionGeneration &+= 1
+        let contraction = FocusContraction(deadline: time + Self.focusContractionDelay,
+                                           generation: focusContractionGeneration, sessionID: session.id)
+        pendingFocusContraction = contraction
+        startFocusContractionTimer(contraction, after: Self.focusContractionDelay)
+    }
+
+    /// Takes time explicitly so grace-period transitions need no real waits
+    /// in tests. Both generation and session reject an outgoing timer.
+    func advanceFocusContraction(generation: UInt64, at time: TimeInterval) {
+        guard let pending = pendingFocusContraction, pending.generation == generation,
+              let session, session.id == pending.sessionID, presentation == nil else { return }
+        guard time >= pending.deadline else {
+            startFocusContractionTimer(pending, after: pending.deadline - time)
+            return
+        }
+        cancelFocusContraction()
+        focusFrame = session.barFrame
+    }
+
     /// Follows the finger, in window space.
     func move(to windowPoint: CGPoint) {
-        guard presentation != nil, let point = convert(windowPoint) else { return }
+        guard isActive, let point = convert(windowPoint) else { return }
+        pointer = point
+        guard presentation != nil else { return }
         tracking.move(to: point)
         updateHighlight()
         updateScrolling()
     }
 
-    /// Closes the menu, returning the item the finger lifted on, if any.
+    /// Ends the touch, returning the item the finger lifted on, if any.
     func release(at windowPoint: CGPoint) -> TabQuickSwitchItem? {
-        guard let presentation else { return nil }
-        let destination = convert(windowPoint).flatMap { tracking.release(at: $0) }
+        guard isActive else { return nil }
+        let items = presentation?.items ?? []
+        let destination: TabQuickSwitchDestination?
+        if let point = convert(windowPoint) {
+            tracking.move(to: point)
+            destination = resolvedDestination
+        } else {
+            destination = nil
+        }
         close()
-        return presentation.items.first { $0.destination == destination }
+        return items.first { $0.destination == destination }
     }
 
     func cancel() {
-        guard presentation != nil else { return }
+        guard isActive else { return }
         close()
     }
 
     private func close() {
+        cancelFocusContraction()
+        resetSubmenuTracking()
+        presentation = nil
+        session = nil
+        pointer = nil
+        focusFrame = nil
+    }
+
+    private func resetSubmenuTracking() {
         stopScrolling()
+        if let listDisplayGeneration {
+            listDisplay?.setHighlighted(nil, presentationID: listDisplayGeneration)
+        }
+        listDisplay = nil
+        listDisplayGeneration = nil
         tracking = TabQuickSwitchTracking()
         listScroll = nil
         listOffset = 0
@@ -139,15 +276,42 @@ final class TabQuickSwitchMenu {
             highlighted = nil
             focusHandler(nil)
         }
-        presentation = nil
     }
 
     private func updateHighlight() {
         let previous = highlighted
-        highlighted = tracking.highlighted
+        highlighted = resolvedDestination
         guard highlighted != previous else { return }
+        if let listDisplayGeneration {
+            listDisplay?.setHighlighted(highlighted, presentationID: listDisplayGeneration)
+        }
         if highlighted != nil { onReachItem?() }
         focusHandler(highlighted)
+    }
+
+    private var resolvedDestination: TabQuickSwitchDestination? {
+        guard let presentation, let point = tracking.point else { return nil }
+        guard let listDisplayGeneration else { return tracking.highlighted }
+        guard listDisplayGeneration == presentation.id,
+              !presentation.barFrame.contains(point),
+              let destination = listDisplay?.destination(at: point, presentationID: presentation.id),
+              presentation.items.contains(where: { $0.destination == destination }) else { return nil }
+        return destination
+    }
+
+    private func startFocusContractionTimer(_ contraction: FocusContraction, after delay: TimeInterval) {
+        focusContractionTask?.cancel()
+        focusContractionTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            self?.advanceFocusContraction(generation: contraction.generation, at: ProcessInfo.processInfo.systemUptime)
+        }
+    }
+
+    private func cancelFocusContraction() {
+        focusContractionTask?.cancel()
+        focusContractionTask = nil
+        pendingFocusContraction = nil
     }
 
     /// Moves the list's rows, and what the finger can reach, to its offset.
@@ -157,11 +321,18 @@ final class TabQuickSwitchMenu {
         listOffsetLimit = listScroll.maximumOffset
         let viewport = listScroll.viewport
         tracking.setViewport(origin: CGPoint(x: viewport.minX, y: viewport.minY - listScroll.offset), clip: viewport)
+        if let listDisplayGeneration {
+            listDisplay?.setScrollOffset(listOffset, limit: listOffsetLimit, presentationID: listDisplayGeneration)
+        }
         updateHighlight()
     }
 
     private var scrollVelocity: CGFloat {
         guard presentation != nil, let listScroll, let point = tracking.point else { return 0 }
+        if let listDisplayGeneration {
+            guard presentation?.id == listDisplayGeneration,
+                  listDisplay?.canAutoscroll(presentationID: listDisplayGeneration) == true else { return 0 }
+        }
         return listScroll.velocity(at: point)
     }
 
@@ -179,22 +350,32 @@ final class TabQuickSwitchMenu {
     }
 
     private func scrollStep(_ link: CADisplayLink) {
-        let velocity = scrollVelocity
-        guard velocity != 0, var scroll = listScroll else {
+        guard scrollLink === link else { return }
+        guard scrollVelocity != 0 else {
             stopScrolling()
             return
         }
         // The first frame only starts the clock. A late frame moves no
         // further than a slow one would.
-        defer { lastScrollTime = link.timestamp }
-        guard let lastScrollTime else { return }
-        let elapsed = min(link.timestamp - lastScrollTime, 1.0 / 15)
+        let previousTime = lastScrollTime
+        lastScrollTime = link.timestamp
+        guard let previousTime else { return }
+        if !advanceListScroll(by: link.timestamp - previousTime) { stopScrolling() }
+    }
+
+    /// The same bounded step used by the display link, with an explicit
+    /// elapsed time for deterministic transition and scrolling tests.
+    @discardableResult
+    func advanceListScroll(by elapsed: TimeInterval) -> Bool {
+        let velocity = scrollVelocity
+        guard velocity != 0, var scroll = listScroll, elapsed.isFinite, elapsed > 0 else { return false }
+        let elapsed = min(elapsed, 1.0 / 15)
         guard scroll.scroll(by: velocity * elapsed) else {
-            stopScrolling()
-            return
+            return false
         }
         listScroll = scroll
         applyListScroll()
+        return true
     }
 
     private func stopScrolling() {
@@ -226,16 +407,54 @@ private final class TabQuickSwitchScrollTarget: NSObject {
 struct TabQuickSwitchCoordinateSpace: UIViewRepresentable {
     let menu: TabQuickSwitchMenu
 
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        view.isOpaque = false
-        view.isUserInteractionEnabled = false
-        view.accessibilityElementsHidden = true
+    func makeUIView(context: Context) -> TabQuickSwitchCoordinateView {
+        let view = TabQuickSwitchCoordinateView(menu: menu)
         menu.coordinateView = view
         return view
     }
 
-    func updateUIView(_ view: UIView, context: Context) {
+    func updateUIView(_ view: TabQuickSwitchCoordinateView, context: Context) {
+        if view.menu !== menu {
+            if let previous = view.menu, previous.coordinateView === view {
+                previous.coordinateView = nil
+            }
+            view.menu = menu
+        }
         if menu.coordinateView !== view { menu.coordinateView = view }
+    }
+
+    static func dismantleUIView(_ view: TabQuickSwitchCoordinateView, coordinator: ()) {
+        // A late dismantle from an outgoing overlay must leave its successor.
+        if let menu = view.menu, menu.coordinateView === view {
+            menu.coordinateView = nil
+        }
+        view.menu = nil
+    }
+}
+
+/// Cancels a touch if its overlay leaves or changes windows while the bar
+/// itself remains mounted. Geometry from that window cannot be reused.
+final class TabQuickSwitchCoordinateView: UIView {
+    weak var menu: TabQuickSwitchMenu?
+    private var windowIdentity: ObjectIdentifier?
+
+    init(menu: TabQuickSwitchMenu) {
+        self.menu = menu
+        super.init(frame: .zero)
+        isOpaque = false
+        isUserInteractionEnabled = false
+        accessibilityElementsHidden = true
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        let nextWindow = window.map { ObjectIdentifier($0) }
+        defer { windowIdentity = nextWindow }
+        guard nextWindow != windowIdentity, let menu, menu.coordinateView === self else { return }
+        menu.cancel()
     }
 }

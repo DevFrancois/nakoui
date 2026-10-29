@@ -1,14 +1,15 @@
 import SwiftUI
 
-/// Draws a held tab's menu over the pages and under the tab bar: a halo that
-/// draws the eye to the bar, and the items. It never takes touches; the bar's
-/// recognizer keeps the finger throughout. The bar's frames are window points,
+/// Draws the continuous session's spotlight and optional submenu. It never
+/// takes touches; the bar's recognizer keeps the finger throughout. The bar's frames are window points,
 /// so the overlay lays out left to right whatever the language; the items'
 /// content keeps the language's direction.
 struct TabQuickSwitchOverlay: View {
     let menu: TabQuickSwitchMenu
-    @AppStorage(TabQuickSwitchSettings.haloKey) private var halo = TabQuickSwitchHalo.defaultHalo
     @AppStorage(TabQuickSwitchSettings.layoutKey) private var layout = TabQuickSwitchLayout.defaultLayout
+    @StoredTabQuickSwitchListAnimations private var listAnimations
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .title3) private var bubbleDiameter = TabQuickSwitchMetrics.bubbleDiameter
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The overlay's safe area, and its whole extent, in global space.
@@ -26,11 +27,30 @@ struct TabQuickSwitchOverlay: View {
             }
             .overlay {
                 ZStack {
-                    if let presentation = menu.presentation, let area {
-                        TabQuickSwitchPanel(menu: menu, presentation: presentation, area: area, halo: halo,
-                                            layout: layout, contentDirection: layoutDirection)
+                    if let session = menu.session {
+                        TabQuickSwitchSpotlight(menu: menu, barFrame: session.barFrame)
+                            .id(session.id)
                             .transition(.opacity)
                     }
+                    if let session = menu.session, let area {
+                        // Retain one native List surface across replacements
+                        // and collapse. Only its target content is optional.
+                        TabQuickSwitchListPresenter(menu: menu,
+                            presentation: menu.presentation.flatMap { usesList($0, in: area) ? $0 : nil },
+                            area: area, contentDirection: layoutDirection, animations: listAnimations)
+                            .id(session.id)
+                            .transition(.identity)
+                            .transaction { $0.animation = nil }
+                    }
+                    ZStack {
+                        if let presentation = menu.presentation, let area, !usesList(presentation, in: area) {
+                            TabQuickSwitchBubblePanel(menu: menu, presentation: presentation, area: area,
+                                                      contentDirection: layoutDirection, bubbleDiameter: bubbleDiameter)
+                                .id(presentation.id)
+                                .transition(.opacity)
+                        }
+                    }
+                    .animation(.easeOut(duration: 0.15), value: menu.presentation?.id)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onGeometryChange(for: CGRect.self) { proxy in
@@ -45,9 +65,18 @@ struct TabQuickSwitchOverlay: View {
                 .environment(\.layoutDirection, .leftToRight)
                 .ignoresSafeArea()
             }
-            .animation(.easeOut(duration: reduceMotion ? 0.15 : 0.25), value: menu.presentation == nil)
+            .animation(.easeOut(duration: reduceMotion ? 0.15 : 0.25), value: menu.isActive)
+            .onDisappear { menu.cancel() }
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+    }
+
+    private func usesList(_ presentation: TabQuickSwitchMenu.Presentation, in area: CGRect) -> Bool {
+        layout == .list || dynamicTypeSize.isAccessibilitySize || TabQuickSwitchPlacement.fan(
+            count: presentation.items.count, diameter: bubbleDiameter, tab: presentation.tabFrame,
+            bar: presentation.barFrame, area: area, axis: presentation.axis,
+            isRightToLeft: layoutDirection == .rightToLeft, spacing: TabQuickSwitchMetrics.spacing
+        ) == nil
     }
 
     /// Where a menu may go: the safe area less a margin, in the overlay's space.
@@ -59,37 +88,24 @@ struct TabQuickSwitchOverlay: View {
 }
 
 /// One open menu, made afresh each time one opens.
-private struct TabQuickSwitchPanel: View {
+private struct TabQuickSwitchBubblePanel: View {
     let menu: TabQuickSwitchMenu
     let presentation: TabQuickSwitchMenu.Presentation
     let area: CGRect
-    let halo: TabQuickSwitchHalo
-    let layout: TabQuickSwitchLayout
     let contentDirection: LayoutDirection
+    let bubbleDiameter: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ScaledMetric(relativeTo: .title3) private var bubbleDiameter = TabQuickSwitchMetrics.bubbleDiameter
     /// Whether the items have come out of the held tab.
     @State private var isExpanded = false
-    /// What the spotlight lights past the bar: the list's card, or the
-    /// bubbles laid out so far.
-    @State private var listFrame: CGRect?
+    /// Keep the previous submenu's resolved focus until all new bubbles
+    /// have a frame; partial layout must not shrink the spotlight.
     @State private var bubbleFrames: [TabQuickSwitchDestination: CGRect] = [:]
     /// The bubble the fan's label last named; it fades rather than leaves.
     @State private var labelIndex: Int?
 
     var body: some View {
-        ZStack {
-            TabQuickSwitchHaloView(halo: halo, bar: presentation.barFrame, focus: focus)
-            GlassEffectContainer {
-                if showsBubbles {
-                    fan
-                } else {
-                    list
-                }
-            }
-        }
-        .animation(.snappy(duration: 0.2), value: menu.highlighted)
+        GlassEffectContainer { fan }
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: menu.highlighted)
         .onChange(of: menu.highlighted, initial: true) {
             if let index = presentation.items.firstIndex(where: { $0.id == menu.highlighted }) {
                 labelIndex = index
@@ -104,37 +120,6 @@ private struct TabQuickSwitchPanel: View {
         }
     }
 
-    /// Bubbles only where they fit: large text, or too little room for the
-    /// fan, shows the list.
-    private var showsBubbles: Bool {
-        layout == .bubbles && !dynamicTypeSize.isAccessibilitySize
-            && TabQuickSwitchPlacement.fan(
-                count: presentation.items.count, diameter: bubbleDiameter, tab: presentation.tabFrame,
-                bar: presentation.barFrame, area: area, axis: presentation.axis,
-                isRightToLeft: contentDirection == .rightToLeft, spacing: TabQuickSwitchMetrics.spacing
-            ) != nil
-    }
-
-    private var focus: CGRect {
-        let menuFrames = showsBubbles ? Array(bubbleFrames.values) : listFrame.map { [$0] } ?? []
-        return menuFrames.reduce(presentation.barFrame) { $0.union($1) }
-    }
-
-    private var list: some View {
-        TabQuickSwitchListLayout(tab: presentation.tabFrame, bar: presentation.barFrame, area: area,
-                                 axis: presentation.axis) {
-            TabQuickSwitchList(menu: menu, items: presentation.items, contentDirection: contentDirection)
-                .onGeometryChange(for: CGRect.self) { proxy in
-                    proxy.frame(in: .named(TabQuickSwitchOverlay.space))
-                } action: { frame in
-                    listFrame = frame
-                }
-                .scaleEffect(isExpanded ? 1 : 0.6, anchor: towardsBar)
-                .opacity(isExpanded ? 1 : 0)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
     private var fan: some View {
         let pivot = CGPoint(x: presentation.tabFrame.midX, y: presentation.tabFrame.midY)
         return TabQuickSwitchFanLayout(tab: presentation.tabFrame, bar: presentation.barFrame, area: area,
@@ -147,15 +132,16 @@ private struct TabQuickSwitchPanel: View {
                         proxy.frame(in: .named(TabQuickSwitchOverlay.space))
                     } action: { frame in
                         bubbleFrames[item.id] = frame
-                        menu.setFrame(frame, for: item.id)
+                        menu.setFrame(frame, for: item.id, presentationID: presentation.id)
+                        reportFanFocus()
                     }
-                    .scaleEffect(isExpanded ? (isHighlighted ? 1.15 : 1) : 0.4)
+                    .scaleEffect(reduceMotion ? 1 : (isExpanded ? (isHighlighted ? 1.15 : 1) : 0.4))
                     .opacity(isExpanded ? 1 : 0)
                     // Out of the held tab: drawn from its centre, laid out
                     // where it ends, so the finger meets it there at once.
-                    .visualEffect { [isExpanded] content, proxy in
+                    .visualEffect { [isExpanded, reduceMotion] content, proxy in
                         let frame = proxy.frame(in: .named(TabQuickSwitchOverlay.space))
-                        return content.offset(isExpanded ? .zero
+                        return content.offset(reduceMotion || isExpanded ? .zero
                                               : CGSize(width: pivot.x - frame.midX, height: pivot.y - frame.midY))
                     }
             }
@@ -174,81 +160,18 @@ private struct TabQuickSwitchPanel: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// The list grows out of the bar's side.
-    private var towardsBar: UnitPoint {
-        switch presentation.axis {
-        case .horizontal: .bottom
-        case .vertical: presentation.barFrame.midX < area.midX ? .leading : .trailing
-        }
-    }
-}
-
-/// A held tab's list card: as tall as its rows, or as there's room for,
-/// scrolling the rest while the finger rests near an edge. Rows report their
-/// frames in the list's own space, which scrolling leaves alone; the card
-/// reports where it shows them.
-private struct TabQuickSwitchList: View {
-    let menu: TabQuickSwitchMenu
-    let items: [TabQuickSwitchItem]
-    let contentDirection: LayoutDirection
-    @State private var viewport: CGRect?
-    @State private var contentHeight: CGFloat?
-
-    nonisolated static let space = "tabQuickSwitch.list"
-
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: TabQuickSwitchMetrics.listCornerRadius)
-        VStack(spacing: 0) {
-            ForEach(items) { item in
-                TabQuickSwitchRow(item: item, isHighlighted: item.id == menu.highlighted)
-                    .onGeometryChange(for: CGRect.self) { proxy in
-                        proxy.frame(in: .named(Self.space))
-                    } action: { frame in
-                        menu.setFrame(frame, for: item.id)
-                    }
-            }
-        }
-        .padding(TabQuickSwitchMetrics.listInset)
-        // As tall as the rows at the card's width, each as wide as the widest.
-        .fixedSize(horizontal: false, vertical: true)
-        .coordinateSpace(.named(Self.space))
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
-        } action: { height in
-            contentHeight = height
-            reportViewport()
-        }
-        .offset(y: -menu.listOffset)
-        .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
-        .clipShape(shape)
-        .onGeometryChange(for: CGRect.self) { proxy in
-            proxy.frame(in: .named(TabQuickSwitchOverlay.space))
-        } action: { frame in
-            viewport = frame
-            reportViewport()
-        }
-        .overlay(alignment: .top) {
-            if menu.listOffset > 0 {
-                TabQuickSwitchScrollHint(symbol: "chevron.compact.up")
-            }
-        }
-        .overlay(alignment: .bottom) {
-            if menu.listOffset < menu.listOffsetLimit {
-                TabQuickSwitchScrollHint(symbol: "chevron.compact.down")
-            }
-        }
-        .glassEffect(.regular, in: shape)
-        .environment(\.layoutDirection, contentDirection)
+    private func reportFanFocus() {
+        let frames = presentation.items.compactMap { bubbleFrames[$0.id] }
+        guard frames.count == presentation.items.count,
+              frames.allSatisfy({ !$0.isEmpty && !$0.isInfinite && !$0.isNull }) else { return }
+        let focus = frames.reduce(presentation.barFrame) { $0.union($1) }
+        menu.setFocusFrame(focus, presentationID: presentation.id)
     }
 
-    private func reportViewport() {
-        guard let viewport, let contentHeight else { return }
-        menu.setListViewport(viewport, contentHeight: contentHeight)
-    }
 }
 
 /// Shows more rows past a scrolling list's edge.
-private struct TabQuickSwitchScrollHint: View {
+struct TabQuickSwitchScrollHint: View {
     let symbol: String
 
     var body: some View {
@@ -262,7 +185,7 @@ private struct TabQuickSwitchScrollHint: View {
     }
 }
 
-private struct TabQuickSwitchRow: View {
+struct TabQuickSwitchRow: View {
     let item: TabQuickSwitchItem
     let isHighlighted: Bool
 
@@ -327,66 +250,51 @@ private struct TabQuickSwitchBubble: View {
     }
 }
 
-/// Spotlights the bar and its menu, or rings the bar with a glow.
-private struct TabQuickSwitchHaloView: View {
-    let halo: TabQuickSwitchHalo
-    let bar: CGRect
-    /// What the spotlight lights.
-    let focus: CGRect
+/// Lives for the whole touch session, independently of submenu panels, and
+/// frames the complete visible active area.
+private struct TabQuickSwitchSpotlight: View {
+    let menu: TabQuickSwitchMenu
+    let barFrame: CGRect
+    #if DEBUG
+    @AppStorage(TabQuickSwitchSettings.spotlightAnimationDurationKey)
+    private var storedDuration = TabQuickSwitchSettings.defaultSpotlightDuration
+    #endif
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Group {
-            switch halo {
-            case .spotlight:
-                dim
-            case .blurredSpotlight:
-                ZStack {
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                        .mask { spotlightMask }
-                    dim
-                }
-            case .glowRing:
-                glow
-            }
-        }
-        .animation(.smooth(duration: 0.3), value: focus)
-    }
-
-    private var dim: some View {
+        let geometry = TabQuickSwitchSpotlightGeometry.resolve(focus: menu.focusFrame ?? barFrame)
+        let feather = TabQuickSwitchMetrics.spotlightFeather
+        let diameter = (geometry.radius + feather) * 2
         Rectangle()
             .fill(.black.opacity(colorScheme == .dark ? 0.5 : 0.3))
-            .mask { spotlightMask }
-    }
-
-    /// Opaque but for a soft round hole around `focus`. The hole's fade
-    /// starts past `focus`'s corners, so all of it stays lit.
-    private var spotlightMask: some View {
-        let diameter = hypot(focus.width, focus.height) + TabQuickSwitchMetrics.spotlightFeather * 2
-        return Rectangle()
-            .overlay {
-                Circle()
-                    .frame(width: diameter, height: diameter)
-                    .blur(radius: TabQuickSwitchMetrics.spotlightFeather)
-                    .position(x: focus.midX, y: focus.midY)
-                    .blendMode(.destinationOut)
+            .mask {
+                Rectangle()
+                    .overlay {
+                        Circle()
+                            .frame(width: diameter, height: diameter)
+                            .blur(radius: feather)
+                            .position(x: geometry.center.x, y: geometry.center.y)
+                            .blendMode(.destinationOut)
+                            .transaction { transaction in
+                                if reduceMotion {
+                                    // Ancestor entry/end fades must not animate
+                                    // the spotlight's center or clear radius.
+                                    transaction.animation = nil
+                                    transaction.disablesAnimations = true
+                                }
+                            }
+                    }
+                    .compositingGroup()
             }
-            .compositingGroup()
+            .animation(reduceMotion ? nil : .smooth(duration: duration, extraBounce: 0), value: geometry)
     }
 
-    private var glow: some View {
-        let width = TabQuickSwitchMetrics.glowWidth
-        return ZStack {
-            Capsule()
-                .fill(Color.accentColor.opacity(0.3))
-                .frame(width: bar.width + width * 4, height: bar.height + width * 4)
-                .blur(radius: TabQuickSwitchMetrics.glowBlur * 2)
-            Capsule()
-                .stroke(Color.accentColor, lineWidth: width)
-                .frame(width: bar.width + width, height: bar.height + width)
-                .blur(radius: TabQuickSwitchMetrics.glowBlur)
-        }
-        .position(x: bar.midX, y: bar.midY)
+    private var duration: Double {
+        #if DEBUG
+        TabQuickSwitchSettings.clampedSpotlightDuration(storedDuration)
+        #else
+        TabQuickSwitchSettings.defaultSpotlightDuration
+        #endif
     }
 }

@@ -78,47 +78,53 @@ struct GlassTabBarInteractionTests {
         }
     }
 
-    @Test("A hold can open its tab's menu only while the finger stays on that tab, close to where it came down")
-    func holdOpensMenuOnlyInPlace() {
+    @Test("A hold anchor follows tab crossings and movement beyond its tolerance")
+    func movementRearmsHold() {
         let geometry = geometry()
-        let allowance: CGFloat = 10
         let profile = center(of: .profile, in: geometry)
         var interaction = GlassTabBarInteraction(selection: .home)
         interaction.begin(at: profile, geometry: geometry)
-        interaction.move(to: CGPoint(x: profile.x + allowance, y: profile.y))
-        #expect(interaction.canOpenMenu(allowableMovement: allowance) == .profile)
-
-        interaction.move(to: CGPoint(x: profile.x, y: profile.y - allowance - 1))
-        #expect(interaction.canOpenMenu(allowableMovement: allowance) == nil)
-        // The furthest drift counts, even once the finger is back.
-        interaction.move(to: profile)
-        #expect(interaction.openMenu(allowableMovement: allowance) == nil)
-        #expect(interaction.tracking?.menuTab == nil)
-
-        interaction.begin(at: profile, geometry: geometry)
-        interaction.move(to: center(of: .search, in: geometry))
-        #expect(interaction.openMenu(allowableMovement: .infinity) == nil)
-        #expect(interaction.release(at: center(of: .search, in: geometry)) == .search)
+        let within = interaction.move(to: CGPoint(x: profile.x + 10, y: profile.y))
+        #expect(within == .none)
+        let drift = interaction.move(to: CGPoint(x: profile.x + 11, y: profile.y))
+        #expect(drift == .restartHold)
+        #expect(interaction.canOpenMenu(allowableMovement: 10) == .profile)
+        let crossing = interaction.move(to: center(of: .search, in: geometry))
+        #expect(crossing == .restartHold)
+        #expect(interaction.canOpenMenu(allowableMovement: 10) == .search)
+        let departure = interaction.move(to: CGPoint(x: profile.x, y: -20))
+        #expect(departure == .cancelHold)
+        #expect(interaction.canOpenMenu(allowableMovement: 10) == nil)
+        let returning = interaction.move(to: profile)
+        #expect(returning == .restartHold)
+        let opened = interaction.openMenu(allowableMovement: 10)
+        #expect(opened == .profile)
+        let duplicate = interaction.openMenu(allowableMovement: 10)
+        #expect(duplicate == nil)
     }
 
-    @Test("With a menu open the bar keeps the held tab and never commits a release")
-    func openMenuKeepsTabAndCommitsNothing() {
+    @Test("An active session changes tabs only over physical controls and commits on release")
+    func activeSessionUsesPhysicalTabHits() {
         for geometry in [geometry(), geometry(rightToLeft: true), geometry(axis: .vertical)] {
             let profile = center(of: .profile, in: geometry)
             var interaction = GlassTabBarInteraction(selection: .home)
             interaction.begin(at: profile, geometry: geometry)
-            let position = interaction.tracking?.position
-            #expect(interaction.openMenu(allowableMovement: 10) == .profile)
-            #expect(interaction.openMenu(allowableMovement: 10) == nil)
-
-            for tab in RootTab.allCases {
-                interaction.move(to: center(of: tab, in: geometry))
-                #expect(interaction.tracking?.candidate == .profile)
-                #expect(interaction.tracking?.position == position)
-            }
-            #expect(interaction.release(at: center(of: .search, in: geometry)) == nil)
+            let opened = interaction.openMenu(allowableMovement: 10)
+            #expect(opened == .profile)
+            let search = center(of: .search, in: geometry)
+            let outside = geometry.axis == .vertical ? CGPoint(x: 500, y: search.y) : CGPoint(x: search.x, y: -100)
+            interaction.move(to: outside)
+            #expect(interaction.tracking?.candidate == .profile)
             #expect(interaction.selection == .home)
+            let crossing = interaction.move(to: search)
+            #expect(crossing == .openMenu(.search))
+            #expect(interaction.tracking?.candidate == .search)
+            #expect(interaction.selection == .home)
+            let destination = interaction.release(at: search)
+            #expect(destination == .search)
             #expect(interaction.tracking == nil)
+            let duplicate = interaction.release(at: search)
+            #expect(duplicate == nil)
         }
     }
 
