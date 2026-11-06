@@ -89,6 +89,8 @@ final class ScannerModel {
     /// Whether the result sheet rests at full over the camera, which stops
     /// meanwhile; see `setCameraSuspended`.
     @ObservationIgnored private var isCameraSuspended = false
+    @ObservationIgnored private var isSheetSuspendingCamera = false
+    @ObservationIgnored private var uploadActivity = ScannerUploadCameraActivity.camera
     /// The latest suspension or resumption. Each waits for the one before,
     /// so they reach the camera in order.
     @ObservationIgnored private var suspensionTask: Task<Void, Never>?
@@ -451,6 +453,29 @@ final class ScannerModel {
     /// camera stops there, turning the camera indicator off, and starts again
     /// as the sheet leaves full, with the run's tuning and torch as they were.
     func setCameraSuspended(_ isSuspended: Bool) {
+        isSheetSuspendingCamera = isSuspended
+        updateCameraSuspension()
+    }
+
+    /// Upload and the result sheet are independent reasons to pause. One must never clear the other's pause.
+    func setUploadActivity(_ activity: ScannerUploadCameraActivity) {
+        guard uploadActivity != activity else { return }
+        uploadActivity = activity
+        updateScanning()
+        updateCameraSuspension()
+    }
+
+    var shouldSuspendCamera: Bool {
+        isSheetSuspendingCamera || uploadActivity.suspendsCapture
+    }
+
+    var canRecognizeCodes: Bool {
+        state == .scanning && reveal == nil && !isCameraHidden && !isPausedForResult
+            && !uploadActivity.blocksRecognition
+    }
+
+    private func updateCameraSuspension() {
+        let isSuspended = shouldSuspendCamera
         guard isSuspended != isCameraSuspended else { return }
         isCameraSuspended = isSuspended
         // Before the first run there's no camera: `run()` applies it.
@@ -467,7 +492,7 @@ final class ScannerModel {
     /// only if `scansWithResultOpen`, holding back the result's code for as
     /// long as it shows and a dismissed one for a moment.
     private func updateScanning(force: Bool = false) {
-        let isScanning = state == .scanning && reveal == nil && !isCameraHidden && !isPausedForResult
+        let isScanning = canRecognizeCodes
         let plan: ScanningPlan? = if !isScanning {
             nil
         } else if let scannedCode {
@@ -525,7 +550,7 @@ final class ScannerModel {
     private func handle(_ event: ScanEvent) {
         switch event {
         case .detected(let detection):
-            guard reveal == nil, scanningPlan != nil, let analyzer else { return }
+            guard canRecognizeCodes, scanningPlan != nil, let analyzer else { return }
             // The analyzer follows this code now, until the freeze pauses it.
             scanningPlan = nil
             closedCode = nil

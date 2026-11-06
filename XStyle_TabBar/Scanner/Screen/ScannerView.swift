@@ -23,44 +23,13 @@ struct ScannerView: View {
     /// keeps showing it while it slides away.
     @State private var sheetState = ScanSheetState()
     @State private var isSideBySide = false
+    @State private var upload = ScannerUploadController()
     /// Illustrative until products are looked up.
     private let analysis = PetFoodAnalysis.example
 
     var body: some View {
-        Group {
-            if isSideBySide {
-                SplitPane(
-                    breakpoint: .constant(.half), breakpoints: [.half],
-                    sideBySideFraction: ScannerMetrics.sideBySideResultFraction,
-                    topEffect: ScannerViewportAppearance(entrance: model.viewportEntrance, isActive: isActive)
-                ) {
-                    // The pane's top-leading corner is the screen's: inset
-                    // clear of the island.
-                    cameraPane(historyButtonInset: 16)
-                } bottom: {
-                    sideResult
-                }
-            } else {
-                PaneSheetLayout(sheet: sheet, settings: settings,
-                                paneEffect: ScannerViewportAppearance(entrance: model.viewportEntrance, isActive: isActive)) {
-                    // Concentric with the viewport's rounded corner.
-                    cameraPane(historyButtonInset: PaneMetrics.viewportCornerRadius - TopMenuMetrics.minimumTapSize / 2)
-                } paneFooter: {
-                    // The hint until the first result closes; then the
-                    // camera eases into its room. In a stack, which reports
-                    // no height once it's empty.
-                    ZStack {
-                        if !history.isButtonRevealed {
-                            ScannerAimingHint(isShown: model.isAiming && model.scannedCode == nil && !history.hasScanned)
-                        }
-                    }
-                } header: {
-                    sheetHeader(for: sheetState.route)
-                } content: {
-                    sheetContent(for: sheetState.route, horizontalPadding: sheet.metrics.scrollContentPadding,
-                                 bottomPadding: sheet.canvas.safeAreaBottom)
-                }
-            }
+        ScannerUploadPresentation(controller: upload) {
+            scannerContent
         }
         .onGeometryChange(for: Bool.self) { proxy in
             ScannerMetrics.usesSideBySide(in: proxy.size)
@@ -79,6 +48,7 @@ struct ScannerView: View {
         // Coming back, the tab opens on the camera, not the history left up.
         .onChange(of: isActive) {
             if !isActive {
+                upload.reset()
                 apply(sheetState.closeHistory())
             }
         }
@@ -112,12 +82,78 @@ struct ScannerView: View {
         .modifier(ScannerCameraLifecycle(model: model, previewHost: model.previewHost, sheet: sheet,
                                          isActive: isActive, isSideBySide: isSideBySide, route: sheetState.route))
         .modifier(ScanSheetRequestReceiver(model: model, isActive: isActive, onRequest: showRequested))
+        .onAppear {
+            let scanner = model
+            upload.onActivityChange = { [weak scanner] activity in
+                if activity.blocksRecognition { scanner?.viewportEntrance.finish() }
+                scanner?.setUploadActivity(activity)
+            }
+            model.setUploadActivity(upload.activity)
+        }
+        .onDisappear {
+            upload.reset()
+            upload.onActivityChange = nil
+        }
+    }
+
+    @ViewBuilder
+    private var scannerContent: some View {
+        if isSideBySide {
+            SplitPane(
+                breakpoint: .constant(.half), breakpoints: [.half],
+                sideBySideFraction: ScannerMetrics.sideBySideResultFraction,
+                topEffect: ScannerViewportAppearance(entrance: model.viewportEntrance, isActive: isActive)
+            ) {
+                VStack(spacing: 12) {
+                    cameraPane(historyButtonInset: 16)
+                        .clipShape(.rect(cornerRadius: PaneMetrics.viewportCornerRadius))
+                    ScannerUploadButton(isEnabled: canOpenUpload, action: openUpload)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
+                }
+            } bottom: {
+                sideResult
+            }
+        } else {
+            PaneSheetLayout(sheet: sheet, settings: settings,
+                            paneEffect: ScannerViewportAppearance(entrance: model.viewportEntrance, isActive: isActive)) {
+                cameraPane(historyButtonInset: PaneMetrics.viewportCornerRadius - TopMenuMetrics.minimumTapSize / 2)
+            } paneFooter: {
+                VStack(spacing: 8) {
+                    if !history.isButtonRevealed {
+                        ScannerAimingHint(isShown: model.isAiming && model.scannedCode == nil && !history.hasScanned)
+                    }
+                    ScannerUploadButton(isEnabled: canOpenUpload, action: openUpload)
+                }
+            } header: {
+                sheetHeader(for: sheetState.route)
+            } content: {
+                sheetContent(for: sheetState.route, horizontalPadding: sheet.metrics.scrollContentPadding,
+                             bottomPadding: sheet.canvas.safeAreaBottom)
+            }
+        }
+    }
+
+    private var canOpenUpload: Bool {
+        ScannerUploadController.canOpen(
+            sheetIsHidden: sheet.detent == .hidden,
+            sheetHasSettled: isSideBySide || (sheet.sheetTop.map { abs($0 - sheet.tops.hidden) < 1 } ?? false),
+            hasResult: model.scannedCode != nil,
+            isRevealing: model.revealedCode != nil
+        )
+    }
+
+    private func openUpload() {
+        guard canOpenUpload else { return }
+        model.viewportEntrance.finish()
+        upload.showUpload()
     }
 
     /// The camera, with the history button over its top-leading corner once
     /// the first result has closed. Its tip waits for the sheet to go.
     private func cameraPane(historyButtonInset: CGFloat) -> some View {
         ScannerCameraPane(model: model, previewHost: model.previewHost)
+            .modifier(ScannerUploadDragSurface(controller: upload, source: .camera, isEnabled: canOpenUpload))
             .overlay(alignment: .topLeading) {
                 ZStack {
                     if history.isButtonRevealed {
@@ -203,6 +239,7 @@ struct ScannerView: View {
 
     /// The tab bar's quick switch asks for the camera or the history.
     private func showRequested(_ route: ScanSheetRequest.Route) {
+        upload.takeRequest(route)
         switch route {
         case .camera: closeSheet()
         case .history: openHistory()
