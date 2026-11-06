@@ -24,8 +24,9 @@ struct TabQuickSwitchListPresenterTests {
         #expect(fixture.controller.destination(at: try fixture.firstRowCenter(), presentationID: second) == .scan)
     }
 
-    @Test("Reopening an unchanged menu reverses its in-flight close without hiding or rebuilding its rows")
-    func reopeningReversesDisplayedClose() async throws {
+    @Test("Reopening an unchanged menu reverses its close without hiding or rebuilding its rows",
+          arguments: [CGFloat(0), 0.35])
+    func reopeningReversesDisplayedClose(progress: CGFloat) async throws {
         let fixture = NativeListFixture()
         defer { fixture.close() }
         let first = try fixture.open()
@@ -40,9 +41,9 @@ struct TabQuickSwitchListPresenterTests {
         fixture.update()
         let closingAnimator = try #require(fixture.controller.animator)
         closingAnimator.pauseAnimation()
-        closingAnimator.fractionComplete = 0.35
-        // Pause at a deterministic in-flight position; machine load cannot
-        // let the short close finish before the test sends its reopen.
+        closingAnimator.fractionComplete = progress
+        // Include a close paused before any progress, as well as one already
+        // displayed. Neither may stall when the same menu opens again.
         try await Task.sleep(for: .milliseconds(25))
         let closingOpacity = try #require(viewport.layer.presentation()?.opacity)
         #expect(closingOpacity > 0.05)
@@ -55,6 +56,8 @@ struct TabQuickSwitchListPresenterTests {
         let resumedOpacity = viewport.layer.presentation()?.opacity ?? Float(viewport.alpha)
         #expect(resumedOpacity >= closingOpacity - 0.05, "Reopening should reverse the fade, never reset opacity to zero")
         try await fixture.waitUntilVisible(reopened)
+        #expect(viewport.alpha == 1)
+        #expect(glass.effect is UIGlassEffect)
         #expect(fixture.controller.destination(at: try fixture.firstRowCenter(), presentationID: reopened) == .scan)
     }
 

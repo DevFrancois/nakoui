@@ -304,6 +304,9 @@ final class TabQuickSwitchListController: UIViewController, TabQuickSwitchListDi
         let generation = transition.generation
         let needsEntranceCompletion = closingStartOpacity < 0.999
         animator.pauseAnimation()
+        // UIKit complements the fraction when the direction changes. Inspect
+        // the forward close's progress before reversing it.
+        let closingProgress = animator.fractionComplete
         animator.isReversed = true
         animator.addCompletion { [weak self] _ in
             guard let self, self.transition.generation == generation,
@@ -322,7 +325,16 @@ final class TabQuickSwitchListController: UIViewController, TabQuickSwitchListDi
             }
         }
         startDisplayLink()
-        animator.continueAnimation(withTimingParameters: nil, durationFactor: 1)
+        if closingProgress == 0 {
+            // A close can be reopened before its first rendered frame. There
+            // is no reverse distance to animate, and continuing at zero can
+            // leave UIKit's animator active without delivering a completion.
+            // Finish at the original pose through the same guarded completion.
+            animator.stopAnimation(false)
+            animator.finishAnimation(at: .start)
+        } else {
+            animator.continueAnimation(withTimingParameters: nil, durationFactor: 1)
+        }
         notifyDisplayChanged()
     }
 

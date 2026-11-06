@@ -26,7 +26,17 @@ struct ArticlePresentation<Gallery: View, Reading: View>: View {
                 .padding(.vertical, ArticleMetrics.pageMargin)
             }
             .scrollPosition($readingPosition, anchor: .top)
+            .scrollTargetBehavior(ArticleReadingScrollBehavior())
         }
+    }
+}
+
+/// Paragraphs move horizontally as columns reflow or a split pane resizes.
+/// Keep their horizontal position out of the vertical reader's scroll offset.
+private nonisolated struct ArticleReadingScrollBehavior: ScrollTargetBehavior {
+    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
+        target.rect.origin.x = 0
+        target.rect.size.width = context.containerSize.width
     }
 }
 
@@ -52,6 +62,7 @@ private struct ArticleSplitPresentation<Gallery: View, Reading: View>: View {
                     .padding(ArticleMetrics.pageMargin)
             }
             .scrollPosition($readingPosition, anchor: .top)
+            .scrollTargetBehavior(ArticleReadingScrollBehavior())
         }
         // Either split axis is valid; the system follows the active fold rather
         // than hiding the reader when a horizontal-only split cannot fit.

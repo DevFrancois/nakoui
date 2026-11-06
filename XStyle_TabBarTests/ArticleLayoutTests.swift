@@ -36,11 +36,13 @@ struct ArticleLayoutTests {
         #expect(accessibility.isStacked)
     }
 
-    @Test("Article selection and reading remain usable across regular and compact presentations")
-    func selectedImageAndReaderSurvivePresentationChanges() async throws {
-        let fixture = try makeHost()
+    @Test("Article selection and reading remain usable across regular and compact presentations",
+          arguments: [false, true])
+    func selectedImageAndReaderSurvivePresentationChanges(rightToLeft: Bool) async throws {
+        let state = ArticlePresentationState()
+        state.layoutDirection = rightToLeft ? .rightToLeft : .leftToRight
+        let fixture = try makeHost(state: state)
         defer { fixture.window.isHidden = true }
-        let state = fixture.state
         let host = fixture.host
 
         resize(host, width: 1_032, height: 700)
@@ -55,6 +57,7 @@ struct ArticleLayoutTests {
         }
         try #require(initialTargetReached,
                      "The selected image and paragraph must be reached before resizing. \(layoutDescription(in: host.view)); selected=\(String(describing: state.selectedImage)); reader=\(String(describing: state.readingPosition.viewID(type: ArticleReadingPosition.self)))")
+        try expectReaderStaysOnVerticalAxis(in: host.view)
 
         // This exercises actual native scroll views and the size-class branch;
         // simulator posture transitions are verified separately on Duo.
@@ -81,6 +84,7 @@ struct ArticleLayoutTests {
             #expect(state.isLiked)
             #expect(state.isBookmarked)
             #expect(state.readingPosition.viewID(type: ArticleReadingPosition.self) != nil)
+            try expectReaderStaysOnVerticalAxis(in: host.view)
             assertFiniteContent(in: host.view)
         }
     }
@@ -181,6 +185,12 @@ struct ArticleLayoutTests {
         return reader.contentOffset.y + reader.adjustedContentInset.top
     }
 
+    private func expectReaderStaysOnVerticalAxis(in root: UIView) throws {
+        let reader = try #require(readerScrollView(in: root))
+        #expect(abs(reader.contentOffset.x + reader.adjustedContentInset.left) < 1,
+                "Restoring a paragraph after reflow must not scroll the vertical reader sideways. \(layoutDescription(in: root))")
+    }
+
     private func galleryScrollView(in root: UIView) -> UIScrollView? {
         scrollViews(in: root).first { $0.bounds.width > 0 && $0.contentSize.width > $0.bounds.width * 1.5 }
     }
@@ -230,6 +240,7 @@ struct ArticleLayoutTests {
 private final class ArticlePresentationState {
     let article = Article.placeholder(number: 2, tint: .green)
     var sizeClass = UserInterfaceSizeClass.regular
+    var layoutDirection = LayoutDirection.leftToRight
     var dynamicTypeSize = DynamicTypeSize.large
     var selectedImage: ImageResource?
     var galleryPosition: CGFloat = 0
@@ -255,6 +266,7 @@ private struct ArticlePresentationFixture: View {
             )
         }
         .environment(\.horizontalSizeClass, state.sizeClass)
+        .environment(\.layoutDirection, state.layoutDirection)
         .environment(\.dynamicTypeSize, state.dynamicTypeSize)
     }
 }
