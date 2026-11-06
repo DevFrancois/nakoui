@@ -37,6 +37,25 @@ struct RootTabContent<Home: View>: View {
                 // Keep the paging viewport full width while explicitly carrying
                 // the outer stack's toolbar/rail insets into UIKit's children.
                 .ignoresSafeArea(.container)
+                // Read the actual container width in this layout pass. A
+                // geometry-state round trip would first size the legacy bar
+                // with no width limit, then resize it on the following frame.
+                .toolbar {
+                    GlassTabBarToolbar(
+                        selection: $selection, layoutAxis: $layoutAxis,
+                        isHidden: hidesTabBar,
+                        windowBottom: windowBottom,
+                        top: $tabBarTop,
+                        reflectionSource: reflectionSource,
+                        onScanOriginChange: { scanner.viewportEntrance.sourcePoint = $0 },
+                        quickSwitch: quickSwitch,
+                        // Scan opens on its camera: tapping it again closes the history.
+                        onReselect: { tab in
+                            if tab == .scanner { scanner.requestSheet(.closeHistory) }
+                        },
+                        availableHorizontalWidth: max(0, geometry.size.width - 32)
+                    )
+                }
         }
         .overlay {
             if let quickSwitch {
@@ -52,23 +71,6 @@ struct RootTabContent<Home: View>: View {
                 self.tabBarTop = tabBarTop + windowBottom - self.windowBottom
             }
             self.windowBottom = windowBottom
-        }
-        // Let the navigation container coordinate the root toolbar's visibility
-        // with pushed destinations, including interactive dismissal.
-        .toolbar {
-            GlassTabBarToolbar(
-                selection: $selection, layoutAxis: $layoutAxis,
-                isHidden: hidesTabBar,
-                windowBottom: windowBottom,
-                top: $tabBarTop,
-                reflectionSource: reflectionSource,
-                onScanOriginChange: { scanner.viewportEntrance.sourcePoint = $0 },
-                quickSwitch: quickSwitch,
-                // Scan opens on its camera: tapping it again closes the history.
-                onReselect: { tab in
-                    if tab == .scanner { scanner.requestSheet(.closeHistory) }
-                }
-            )
         }
         // The bar leaves with its toolbar while a scan result shows: a toolbar
         // left in place keeps taking the touches in its band, which the

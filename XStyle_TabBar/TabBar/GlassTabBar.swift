@@ -19,6 +19,9 @@ struct GlassTabBarToolbar: ToolbarContent {
     var quickSwitch: TabQuickSwitchMenu? = nil
     /// A release or tap on the tab that already shows.
     var onReselect: ((RootTab) -> Void)? = nil
+    /// The root's usable width. Older toolbars otherwise choose the item's
+    /// minimum width even when there is room for its full capsule.
+    var availableHorizontalWidth: CGFloat? = nil
 
     var body: some ToolbarContent {
         ToolbarSpacer(.flexible, placement: .bottomBar)
@@ -39,7 +42,7 @@ struct GlassTabBarToolbar: ToolbarContent {
                 reportingTop(of: GlassTabBar(selection: $selection, isHidden: isHidden, windowBottom: windowBottom,
                                              restingTop: top, reflectionSource: reflectionSource,
                                              onScanOriginChange: onScanOriginChange, quickSwitch: quickSwitch,
-                                             onReselect: onReselect))
+                                             onReselect: onReselect, availableHorizontalWidth: availableHorizontalWidth))
             }
             .sharedBackgroundVisibility(.hidden)
         }
@@ -105,6 +108,9 @@ struct GlassTabBar: View {
     var quickSwitch: TabQuickSwitchMenu? = nil
     /// A release or tap on the tab that already shows.
     var onReselect: ((RootTab) -> Void)? = nil
+    /// Opts the legacy toolbar into a content-sized capsule bounded by the
+    /// root's available space, independently of its compressed size probes.
+    var availableHorizontalWidth: CGFloat? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
@@ -144,10 +150,11 @@ struct GlassTabBar: View {
                                  isQuickSwitchAvailable: !isHidden && scenePhase == .active,
                                  quickSwitchLayout: quickSwitchLayout,
                                  spotlightDuration: TabQuickSwitchSettings.clampedSpotlightDuration(spotlightAnimationDuration),
-                                 listAnimations: listAnimations, onReselect: onReselect)
-            // The vertical toolbar proposes its compact item width. Keep the
-            // full capsule width in both Duo postures; the bottom bar can flex.
-            .fixedSize(horizontal: layoutAxis == .vertical, vertical: true)
+                                 listAnimations: listAnimations, onReselect: onReselect,
+                                 availableHorizontalWidth: availableHorizontalWidth)
+            // Rails keep their full width. The legacy horizontal toolbar's
+            // ideal is already bounded by the root; modern bars remain flexible.
+            .fixedSize(horizontal: layoutAxis == .vertical || availableHorizontalWidth != nil, vertical: true)
             .onGeometryChange(for: CGRect.self) { proxy in
                 // The press zoom scales about the centre, which it leaves in
                 // place: the resting frame is the centre and the laid-out size.
@@ -222,6 +229,7 @@ private struct GlassTabBarRepresentable: UIViewRepresentable {
     let spotlightDuration: TimeInterval
     let listAnimations: TabQuickSwitchListAnimationSettings
     let onReselect: ((RootTab) -> Void)?
+    let availableHorizontalWidth: CGFloat?
 
     func makeUIView(context: Context) -> GlassTabBarView {
         GlassTabBarView(selection: selection, presentation: presentation)
@@ -258,6 +266,7 @@ private struct GlassTabBarRepresentable: UIViewRepresentable {
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: GlassTabBarView, context: Context) -> CGSize? {
         // One measurement owns the controls, glass, and unscaled touch anchor.
         // A separate clamping frame could give those layers different widths.
-        uiView.fittingSize(proposedWidth: proposal.width)
+        uiView.fittingSize(proposedWidth: layoutAxis == .horizontal
+                          ? availableHorizontalWidth ?? proposal.width : proposal.width)
     }
 }
